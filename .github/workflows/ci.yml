@@ -1,0 +1,94 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fmt:
+    name: rustfmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - run: cargo fmt --all --check
+
+  clippy:
+    name: clippy
+    # clippy.toml 把 SystemTime 列为禁用类型（Z-6），因此必须在能编译
+    # Windows 专有模块的 runner 上跑，否则 #[cfg(windows)] 的代码不会被检查。
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+
+  test:
+    name: cargo test
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --workspace
+
+  coverage:
+    name: coverage gate
+    # 覆盖率只对纯逻辑与解析器设门槛（§14.1）；platform / Tauri / 托盘光栅
+    # 走手工验收，不在这里衡量。
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+      - uses: taiki-e/install-action@cargo-llvm-cov
+      - run: cargo llvm-cov -p voltnest-core --fail-under-lines 90
+      - run: cargo llvm-cov -p voltnest-hid --fail-under-lines 85
+      - run: cargo llvm-cov -p voltnest-ble --fail-under-lines 85
+      - run: cargo llvm-cov -p voltnest-provider --fail-under-lines 90
+
+  frontend:
+    name: frontend
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/desktop
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/desktop/package-lock.json
+      - run: npm ci
+      - run: npm run test
+      - run: npm run build
+
+  matrix:
+    name: test matrix completeness
+    # §14.2：docs/test-matrix.md 必须把每条规则映射到测试函数。
+    # 具体校验逻辑在 scripts/check-test-matrix.ps1，本地可单独运行。
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: 校验测试矩阵
+        run: "& ./scripts/check-test-matrix.ps1"
+        shell: pwsh
