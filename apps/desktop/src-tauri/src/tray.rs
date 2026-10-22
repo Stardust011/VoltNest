@@ -113,6 +113,23 @@ pub fn sync(app: &AppHandle, shared: &Arc<Shared>, snap: &Snapshot) {
         app.remove_tray_by_id(&TrayIconId::new(tray_id_for(stale)));
     }
     *known = wanted;
+
+    // 基础图标的 tooltip 是唯一能表达「被截断掉的设备」的位置（§12：超过上限时
+    // 显示「还有 N 台」，而不是假装设备只有 4 台）。
+    if let Some(base) = app.tray_by_id(&TrayIconId::new(BASE_TRAY_ID)) {
+        let _ = base.set_tooltip(Some(summary_tooltip(snap)));
+    }
+}
+
+/// 基础托盘图标的 tooltip。
+fn summary_tooltip(snap: &Snapshot) -> String {
+    let total = snap.devices.len();
+    let shown = snap.tray.visible_device_ids.len();
+    match (total, shown) {
+        (0, _) => "VoltNest".to_string(),
+        (t, s) if t > s => format!("VoltNest · 托盘显示 {s} 台，还有 {} 台", t - s),
+        (t, _) => format!("VoltNest · {t} 台设备"),
+    }
 }
 
 /// 设备托盘图标的 id：`tray:<stableId>`。
@@ -294,6 +311,37 @@ mod tests {
         let text = tooltip_for(&d);
         assert!(text.chars().count() <= TOOLTIP_LIMIT);
         assert!(text.ends_with('…'));
+    }
+
+    #[test]
+    fn summary_tooltip_reports_truncated_devices() {
+        let mut snap = Snapshot {
+            rev: 1,
+            server_now_ms: 0,
+            devices: Vec::new(),
+            cards: Vec::new(),
+            tray: voltnest_core::TrayDto {
+                visible_device_ids: Vec::new(),
+            },
+        };
+        assert_eq!(summary_tooltip(&snap), "VoltNest", "没有设备时保持朴素文案");
+
+        snap.devices = (0..6)
+            .map(|_| device(Some(80), DeviceState::Online))
+            .collect();
+        snap.tray.visible_device_ids = snap
+            .devices
+            .iter()
+            .take(4)
+            .map(|d| d.stable_id.clone())
+            .collect();
+        assert_eq!(
+            summary_tooltip(&snap),
+            "VoltNest · 托盘显示 4 台，还有 2 台"
+        );
+
+        snap.tray.visible_device_ids = snap.devices.iter().map(|d| d.stable_id.clone()).collect();
+        assert_eq!(summary_tooltip(&snap), "VoltNest · 6 台设备");
     }
 
     #[test]
