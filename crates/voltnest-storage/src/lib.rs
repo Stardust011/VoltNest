@@ -1,0 +1,32 @@
+//! VoltNest 持久化：`settings.json`（用户资产）与 `state.json`（可丢弃缓存）。
+//!
+//! 两个文件刻意分开（X）：合并会让**最高频的写入去碰最有价值的数据** ——
+//! 断电、磁盘满、杀软锁文件都可能一次同时毁掉阈值、隐藏列表和托盘顺序。
+//!
+//! 所有写入走原子替换：`.tmp` → `fsync` → `rename`（X-2）。
+//! 损坏恢复绝不阻塞启动：备份 → 用默认值启动 → 诊断页告警（X-4 / X-6）。
+
+#![forbid(unsafe_code)]
+#![deny(clippy::disallowed_types)]
+#![warn(missing_docs)]
+
+pub mod atomic;
+pub mod paths;
+pub mod settings;
+pub mod state;
+
+pub use paths::DataPaths;
+pub use settings::{
+    LoadedSettings, NotificationMode, NotificationSettings, Settings, SettingsLoadWarning,
+    SettingsStore, TraySettings,
+};
+pub use state::{DeviceStateEntry, NotificationStateEntry, StateFile, StateStore, StateThrottle};
+
+/// 两个文件共用的 schema 版本（整数，X-1）。
+pub const SCHEMA_VERSION: u32 = 1;
+
+/// `state.json` 写入节流（X-3）。
+pub const STATE_THROTTLE_MS: u64 = 5_000;
+
+/// 按 `stableId` 索引的条目上限（X-7）。超出时淘汰最久未出现项。
+pub const MAX_INDEXED_ENTRIES: usize = 32;

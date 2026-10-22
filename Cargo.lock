@@ -839,6 +839,8 @@ version = "0.1.0"
 name = "voltnest-storage"
 version = "0.1.0"
 dependencies = [
+ "serde",
+ "serde_json",
  "voltnest-provider",
 ]
 
