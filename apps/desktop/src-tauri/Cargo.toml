@@ -25,3 +25,8 @@ log = { workspace = true, features = ["std"] }
 
 tauri = { version = "2", features = ["tray-icon", "image-png"] }
 tauri-plugin-notification = "2"
+
+[lints.rust]
+# MSVC 的 link.exe 每轮都会把「正在创建库 …lib / …exp」写进 stdout，
+# rustc 1.9x 起把它当 warning 打出来，刷屏且没有信息量。
+linker_messages = "allow"
