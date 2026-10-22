@@ -151,8 +151,28 @@ pub enum SettingsLoadWarning {
     },
 }
 
-/// 加载结果：设置 + 可选告警。
-#[derive(Clone, Debug)]
+/// 告警文案直接进诊断页，因此写成人话而不是 `Debug` 输出。
+impl core::fmt::Display for SettingsLoadWarning {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::Corrupt { backup, .. } => write!(
+                f,
+                "settings.json 解析失败，已备份到 {} 并用默认值启动",
+                backup.display()
+            ),
+            Self::VersionTooHigh { found, backup } => write!(
+                f,
+                "settings.json 版本 {found} 高于本程序支持的版本，已备份到 {} 并用默认值启动",
+                backup.display()
+            ),
+            Self::Io { path, detail } => {
+                write!(f, "读取 {} 失败：{detail}", path.display())
+            }
+        }
+    }
+}
+
+/// 加载结果：设置 + 可选告警。#[derive(Clone, Debug)]
 pub struct LoadedSettings {
     /// 生效的设置。
     pub settings: Settings,
