@@ -1,0 +1,300 @@
+{
+  "source_file": "config.xml",
+  "software": {
+    "caption": "AJAZZ Driver（W1）",
+    "version": "1.0.7.6"
+  },
+  "device_count": 8,
+  "devices": [
+    {
+      "name": "AJ159 NL P",
+      "device_type": 101,
+      "device_attr": "mouse",
+      "image": "mouse.png",
+      "modes": [
+        {
+          "mode_value": 0,
+          "desc": "USB",
+          "vid": "0x7768",
+          "pid": "0x6D25",
+          "hid_interface": "VID_7768&PID_6D25&MI_01"
+        },
+        {
+          "mode_value": 1,
+          "desc": "2.4G",
+          "vid": "0x7768",
+          "pid": "0x6425",
+          "hid_interface": "VID_7768&PID_6425&MI_01"
+        }
+      ]
+    },
+    {
+      "name": "AJ159 NL",
+      "device_type": 102,
+      "device_attr": "mouse",
+      "image": "mouse.png",
+      "modes": [
+        {
+          "mode_value": 0,
+          "desc": "USB",
+          "vid": "0x7768",
+          "pid": "0x6D26",
+          "hid_interface": "VID_7768&PID_6D26&MI_01"
+        },
+        {
+          "mode_value": 1,
+          "desc": "2.4G",
+          "vid": "0x7768",
+          "pid": "0x6426",
+          "hid_interface": "VID_7768&PID_6426&MI_01"
+        }
+      ]
+    },
+    {
+      "name": "AJ179 NL P",
+      "device_type": 103,
+      "device_attr": "aj179",
+      "image": "aj179.png",
+      "modes": [
+        {
+          "mode_value": 0,
+          "desc": "USB",
+          "vid": "0x7768",
+          "pid": "0x6D2E",
+          "hid_interface": "VID_7768&PID_6D2E&MI_01"
+        },
+        {
+          "mode_value": 1,
+          "desc": "2.4G",
+          "vid": "0x7768",
+          "pid": "0x642E",
+          "hid_interface": "VID_7768&PID_642E&MI_01"
+        }
+      ]
+    },
+    {
+      "name": "AJ179 NL",
+      "device_type": 104,
+      "device_attr": "aj179",
+      "image": "aj179.png",
+      "modes": [
+        {
+          "mode_value": 0,
+          "desc": "USB",
+          "vid": "0x7768",
+          "pid": "0x6D2D",
+          "hid_interface": "VID_7768&PID_6D2D&MI_01"
+        },
+        {
+          "mode_value": 1,
+          "desc": "2.4G",
+          "vid": "0x7768",
+          "pid": "0x642D",
+          "hid_interface": "VID_7768&PID_642D&MI_01"
+        }
+      ]
+    },
+    {
+      "name": "AJ179 V2 NL P",
+      "device_type": 105,
+      "device_attr": "aj179v2",
+      "image": "aj179v2.png",
+      "modes": [
+        {
+          "mode_value": 0,
+          "desc": "USB",
+          "vid": "0x7768",
+          "pid": "0x6D32",
+          "hid_interface": "VID_7768&PID_6D32&MI_01"
+        },
+        {
+          "mode_value": 1,
+          "desc": "2.4G",
+          "vid": "0x7768",
+          "pid": "0x6432",
+          "hid_interface": "VID_7768&PID_6432&MI_01"
+        }
+      ]
+    },
+    {
+      "name": "AJ179 V2 NL",
+      "device_type": 106,
+      "device_attr": "aj179v2",
+      "image": "aj179v2.png",
+      "modes": [
+        {
+          "mode_value": 0,
+          "desc": "USB",
+          "vid": "0x7768",
+          "pid": "0x6D31",
+          "hid_interface": "VID_7768&PID_6D31&MI_01"
+        },
+        {
+          "mode_value": 1,
+          "desc": "2.4G",
+          "vid": "0x7768",
+          "pid": "0x6431",
+          "hid_interface": "VID_7768&PID_6431&MI_01"
+        }
+      ]
+    },
+    {
+      "name": "AJ139 V2 NL P",
+      "device_type": 107,
+      "device_attr": "aj139",
+      "image": "aj139.png",
+      "modes": [
+        {
+          "mode_value": 0,
+          "desc": "USB",
+          "vid": "0x7768",
+          "pid": "0x6D30",
+          "hid_interface": "VID_7768&PID_6D30&MI_01"
+        },
+        {
+          "mode_value": 1,
+          "desc": "2.4G",
+          "vid": "0x7768",
+          "pid": "0x6430",
+          "hid_interface": "VID_7768&PID_6430&MI_01"
+        }
+      ]
+    },
+    {
+      "name": "AJ139 V2 NL",
+      "device_type": 108,
+      "device_attr": "aj139",
+      "image": "aj139.png",
+      "modes": [
+        {
+          "mode_value": 0,
+          "desc": "USB",
+          "vid": "0x7768",
+          "pid": "0x6D2F",
+          "hid_interface": "VID_7768&PID_6D2F&MI_01"
+        },
+        {
+          "mode_value": 1,
+          "desc": "2.4G",
+          "vid": "0x7768",
+          "pid": "0x642F",
+          "hid_interface": "VID_7768&PID_642F&MI_01"
+        }
+      ]
+    }
+  ],
+  "by_vid_pid": {
+    "7768:6D25": {
+      "name": "AJ159 NL P",
+      "device_type": 101,
+      "mode": "USB",
+      "hid_interface": "VID_7768&PID_6D25&MI_01",
+      "device_attr": "mouse"
+    },
+    "7768:6425": {
+      "name": "AJ159 NL P",
+      "device_type": 101,
+      "mode": "2.4G",
+      "hid_interface": "VID_7768&PID_6425&MI_01",
+      "device_attr": "mouse"
+    },
+    "7768:6D26": {
+      "name": "AJ159 NL",
+      "device_type": 102,
+      "mode": "USB",
+      "hid_interface": "VID_7768&PID_6D26&MI_01",
+      "device_attr": "mouse"
+    },
+    "7768:6426": {
+      "name": "AJ159 NL",
+      "device_type": 102,
+      "mode": "2.4G",
+      "hid_interface": "VID_7768&PID_6426&MI_01",
+      "device_attr": "mouse"
+    },
+    "7768:6D2E": {
+      "name": "AJ179 NL P",
+      "device_type": 103,
+      "mode": "USB",
+      "hid_interface": "VID_7768&PID_6D2E&MI_01",
+      "device_attr": "aj179"
+    },
+    "7768:642E": {
+      "name": "AJ179 NL P",
+      "device_type": 103,
+      "mode": "2.4G",
+      "hid_interface": "VID_7768&PID_642E&MI_01",
+      "device_attr": "aj179"
+    },
+    "7768:6D2D": {
+      "name": "AJ179 NL",
+      "device_type": 104,
+      "mode": "USB",
+      "hid_interface": "VID_7768&PID_6D2D&MI_01",
+      "device_attr": "aj179"
+    },
+    "7768:642D": {
+      "name": "AJ179 NL",
+      "device_type": 104,
+      "mode": "2.4G",
+      "hid_interface": "VID_7768&PID_642D&MI_01",
+      "device_attr": "aj179"
+    },
+    "7768:6D32": {
+      "name": "AJ179 V2 NL P",
+      "device_type": 105,
+      "mode": "USB",
+      "hid_interface": "VID_7768&PID_6D32&MI_01",
+      "device_attr": "aj179v2"
+    },
+    "7768:6432": {
+      "name": "AJ179 V2 NL P",
+      "device_type": 105,
+      "mode": "2.4G",
+      "hid_interface": "VID_7768&PID_6432&MI_01",
+      "device_attr": "aj179v2"
+    },
+    "7768:6D31": {
+      "name": "AJ179 V2 NL",
+      "device_type": 106,
+      "mode": "USB",
+      "hid_interface": "VID_7768&PID_6D31&MI_01",
+      "device_attr": "aj179v2"
+    },
+    "7768:6431": {
+      "name": "AJ179 V2 NL",
+      "device_type": 106,
+      "mode": "2.4G",
+      "hid_interface": "VID_7768&PID_6431&MI_01",
+      "device_attr": "aj179v2"
+    },
+    "7768:6D30": {
+      "name": "AJ139 V2 NL P",
+      "device_type": 107,
+      "mode": "USB",
+      "hid_interface": "VID_7768&PID_6D30&MI_01",
+      "device_attr": "aj139"
+    },
+    "7768:6430": {
+      "name": "AJ139 V2 NL P",
+      "device_type": 107,
+      "mode": "2.4G",
+      "hid_interface": "VID_7768&PID_6430&MI_01",
+      "device_attr": "aj139"
+    },
+    "7768:6D2F": {
+      "name": "AJ139 V2 NL",
+      "device_type": 108,
+      "mode": "USB",
+      "hid_interface": "VID_7768&PID_6D2F&MI_01",
+      "device_attr": "aj139"
+    },
+    "7768:642F": {
+      "name": "AJ139 V2 NL",
+      "device_type": 108,
+      "mode": "2.4G",
+      "hid_interface": "VID_7768&PID_642F&MI_01",
+      "device_attr": "aj139"
+    }
+  }
+}

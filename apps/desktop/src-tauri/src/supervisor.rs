@@ -47,11 +47,11 @@ pub struct Spec {
 }
 
 impl Spec {
-    /// `hid-nearlink-ajazz`。
+    /// `hid-vbas`。
     pub fn hid() -> Self {
         Self {
             transport: Transport::Hid,
-            family: voltnest_provider::FAMILY_HID_NEARLINK_AJAZZ,
+            family: voltnest_provider::FAMILY_HID_VBAS,
             make: || Box::new(voltnest_hid::provider::HidProvider::new()),
         }
     }
@@ -401,7 +401,7 @@ mod tests {
     fn hid_spec(make: fn() -> Box<dyn Provider>) -> Spec {
         Spec {
             transport: Transport::Hid,
-            family: voltnest_provider::FAMILY_HID_NEARLINK_AJAZZ,
+            family: voltnest_provider::FAMILY_HID_VBAS,
             make,
         }
     }

@@ -6,7 +6,7 @@
 use crate::Provider;
 use crate::event::{DeviceFact, ProviderEvent, ValidReading};
 use crate::ids::{Percent, StableId};
-use crate::profile::{BLE_BAS, HID_NEARLINK_AJAZZ, ProviderProfile};
+use crate::profile::{BLE_BAS, HID_VBAS, ProviderProfile};
 use crate::transport::Transport;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -17,7 +17,7 @@ pub fn hid_fact(display_name: &str) -> DeviceFact {
     DeviceFact::new(
         StableId::hid(0x7768, 0x6426),
         Transport::Hid,
-        crate::FAMILY_HID_NEARLINK_AJAZZ,
+        crate::FAMILY_HID_VBAS,
         display_name,
         display_name,
     )
@@ -55,7 +55,7 @@ impl ScriptedProvider {
     /// HID 家族脚本。
     pub fn hid(script: Vec<ProviderEvent>) -> Self {
         Self {
-            profile: &HID_NEARLINK_AJAZZ,
+            profile: &HID_VBAS,
             script,
         }
     }
@@ -104,9 +104,7 @@ pub struct PanicProvider {
 impl PanicProvider {
     /// 默认使用 HID 家族声明。
     pub fn new() -> Self {
-        Self {
-            profile: &HID_NEARLINK_AJAZZ,
-        }
+        Self { profile: &HID_VBAS }
     }
 
     /// 指定 Profile（验证「只影响当前 transport」）。
@@ -143,7 +141,7 @@ impl LoopProvider {
         let ticks = Arc::new(AtomicUsize::new(0));
         (
             Self {
-                profile: &HID_NEARLINK_AJAZZ,
+                profile: &HID_VBAS,
                 ticks: Arc::clone(&ticks),
             },
             ticks,
@@ -205,7 +203,7 @@ mod tests {
             ble_fact("AJ159 NL").stable_id.as_str(),
             "ble:01:00:00:23:04:35"
         );
-        assert_eq!(hid_fact("AJ159 NL").provider, "hid-nearlink-ajazz");
+        assert_eq!(hid_fact("AJ159 NL").provider, "hid-vbas");
         assert_eq!(ble_fact("AJ159 NL").provider, "ble-bas");
     }
 
