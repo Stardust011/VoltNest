@@ -1,0 +1,9 @@
+[package]
+name = "voltnest-provider"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "VoltNest Provider 契约：纯类型，不含 I/O、状态机或平台 API"
+
+[dependencies]
