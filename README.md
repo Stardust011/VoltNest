@@ -85,3 +85,8 @@ pwsh scripts/check-test-matrix.ps1
    `Shell_NotifyIcon` 的气泡接口，v1 不为它引入自绘托盘窗口。选项仍是
    「系统通知 / 托盘气泡 / 关闭」三档，不自动降级。
 8. 分支覆盖率（core ≥90%）暂由评审保证：`cargo llvm-cov` 的分支统计仍需 nightly。
+9. **系统通知的「应用名 + 图标」由 AUMID 决定**：启动时写
+   `HKCU\Software\Classes\AppUserModelId\VoltNest.Desktop`（`DisplayName` + `IconUri`，
+   图标落在 `%APPDATA%\VoltNest\toast-icon.png`）。这两项缺一，Windows 会回落成
+   `powershell.exe` 的蓝色图标和「Windows PowerShell」标题。Toast 由本程序直接走
+   WinRT 发送（不经过 `tauri-plugin-notification`），开发运行同样显示 VoltNest。

@@ -16,6 +16,7 @@ mod host;
 mod logger;
 mod notification;
 mod supervisor;
+mod toast_icon;
 mod tray;
 
 use std::collections::HashMap;
@@ -56,8 +57,10 @@ fn main() {
     logger::init(&paths.logs_dir());
     log::info!("VoltNest 启动（autostart={launched_by_autostart}）");
 
-    // 3. AUMID：幂等写入当前用户，Toast 才有正确的应用归属。
-    if let Err(err) = voltnest_platform::aumid::register("VoltNest") {
+    // 3. AUMID：幂等写入当前用户，Toast 才有正确的应用名和图标（AC-8）。
+    //    图标必须先落盘：`IconUri` 只认真实文件，exe 内嵌资源不算。
+    let toast_icon = toast_icon::init(paths.root());
+    if let Err(err) = voltnest_platform::aumid::register("VoltNest", toast_icon.as_deref()) {
         log::warn!("AUMID 注册失败：{err}");
     }
 

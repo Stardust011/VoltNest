@@ -5,10 +5,23 @@
 //! 诊断页要区分「系统吞了」和「我们没发」，靠的就是这一层返回值。
 //!
 //! 不做自动降级：`system` 发不出就记 `failed`，不会偷偷改成托盘气泡。
+//!
+//! # 为什么 Windows 上不用 `tauri_plugin_notification`
+//!
+//! Toast 的应用名和图标由**发送方传入的 AUMID** 决定。插件在 Windows 上只在
+//! 「看起来已安装」时才设置 AUMID —— 它把位于 `target\debug` / `target\release`
+//! 的进程一律当成开发运行，直接不设（`tauri-plugin-notification` 的 `desktop.rs`），
+//! 于是 `notify-rust` 回落到 `Toast::POWERSHELL_APP_ID`。结果就是：开发运行时
+//! 通知顶上是 PowerShell 的蓝色图标和「Windows PowerShell」标题，跟我们的
+//! `HKCU\Software\Classes\AppUserModelId\VoltNest.Desktop` 注册毫无关系。
+//!
+//! 这里改用同一套 WinRT Toast API（`tauri-winrt-notification`），AUMID 恒定、
+//! 图标显式给，开发运行和安装版看到的是同一个「VoltNest」。
 
 use std::sync::Arc;
 
 use tauri::AppHandle;
+#[cfg(not(windows))]
 use tauri_plugin_notification::NotificationExt;
 
 use voltnest_core::{DiagLevel, LowBatteryAlert, Snapshot};
@@ -61,6 +74,22 @@ pub fn dispatch(
 }
 
 /// 发送一条 Windows Toast。
+///
+/// 标题是设备 + 现象，正文是读数与阈值：Windows 自己会把 AUMID 解析出的
+/// 「VoltNest」渲染在标题上方，标题本身不该重复应用名。
+#[cfg(windows)]
+fn send_toast(_app: &AppHandle, alert: &LowBatteryAlert) -> Result<(), String> {
+    toast(
+        &format!("{} 电量偏低", alert.display_name),
+        &format!(
+            "剩余 {}%，已跌破 {}% 提醒线。",
+            alert.battery, alert.threshold
+        ),
+    )
+}
+
+/// 非 Windows：仍走 Tauri 官方插件。
+#[cfg(not(windows))]
 fn send_toast(app: &AppHandle, alert: &LowBatteryAlert) -> Result<(), String> {
     app.notification()
         .builder()
@@ -71,6 +100,25 @@ fn send_toast(app: &AppHandle, alert: &LowBatteryAlert) -> Result<(), String> {
         ))
         .show()
         .map_err(|e| e.to_string())
+}
+
+/// Windows Toast：显式 AUMID + 显式图标。
+#[cfg(windows)]
+fn toast(title: &str, body: &str) -> Result<(), String> {
+    use tauri_winrt_notification::{Duration, IconCrop, Toast};
+
+    let mut toast = Toast::new(voltnest_platform::APP_USER_MODEL_ID)
+        .title(title)
+        .text1(body)
+        .duration(Duration::Short);
+
+    // `appLogoOverride`：头图直接指定文件，不依赖 AUMID 的 IconUri 能否解析，
+    // 用户把数据目录挪走 / 图标被清理工具删掉时也只是少一张图，不影响发送。
+    if let Some(icon) = crate::toast_icon::path() {
+        toast = toast.icon(icon, IconCrop::Square, "VoltNest");
+    }
+
+    toast.show().map_err(|err| err.to_string())
 }
 
 /// 托盘气泡模式：Tauri 2 没有暴露 `Shell_NotifyIcon` 的气泡接口，
@@ -95,6 +143,13 @@ fn bubble(app: &AppHandle, alert: &LowBatteryAlert) {
 }
 
 /// 测试通知：不写任何通知状态，只验证系统通道是否通。
+#[cfg(windows)]
+pub fn test(_app: &AppHandle) -> Result<(), String> {
+    toast("VoltNest 测试通知", "看到这条说明系统通知通道正常。")
+}
+
+/// 测试通知：不写任何通知状态，只验证系统通道是否通。
+#[cfg(not(windows))]
 pub fn test(app: &AppHandle) -> Result<(), String> {
     app.notification()
         .builder()
