@@ -1,0 +1,16 @@
+[package]
+name = "voltnest-hid"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "VoltNest HID Provider（hid-nearlink-ajazz）：枚举、读取、帧解析、型号表"
+
+[dependencies]
+voltnest-provider.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+# 锁定 2.6.x：0.13/2.x 的 API 在集合信息与 open_path 语义上有差异，
+# 实测通过的路径不能被一次 minor 升级悄悄改掉（规格 §7）。
+[target.'cfg(windows)'.dependencies]
+hidapi = { version = "~2.6", default-features = false }
