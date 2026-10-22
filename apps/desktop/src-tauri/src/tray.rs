@@ -1,20 +1,23 @@
 //! 托盘图标：每个可见设备一个环形电量图（§12）。
 //!
 //! 图标由本模块用 32×32 RGBA 手工光栅化，不引入任何图形渲染依赖（AA-4）。
-//! 语义与前端 `batteryColor()` 保持一致：正常主题色、<20% 橙、<10% 红、充电青，
-//! 离线但物理存在时为灰环加横线。
+//! 语义与前端 `batteryColor()` 一一对应：在线主题色、<20% 橙、<10% 红、充电青、
+//! 等待读数蓝、数据过期琥珀、读取失败橙，离线但物理存在时为灰环加横线。
 //!
 //! 图标**存在性只由物理存在决定**：`snapshot.tray.visibleDeviceIds` 已经由核心
 //! 按 `present && !hidden` 且截断到 4 个算好，这里只负责跟随，不做二次判断。
 //!
-//! # 基础图标（空心灰环）什么时候在
+//! # 基础图标（蓝色等待环）什么时候在
 //!
 //! 窗口关掉之后只剩托盘，**一张图标都没有就等于进程失联**：既打不开面板，也没
 //! 办法退出。所以托盘里必须始终至少有一张能用的图标。
 //!
-//! 基础灰环因此只在「一张设备图标都没有」时占位：有设备图标出现就让位（托盘里
-//! 的电量环本身就是入口，再挂一个灰环只会让人误以为是第二台设备）；设备全部拔掉
-//! 或全部被用户隐藏时它再回来。
+//! 这张占位图标与主界面「等待读数」同色（`#38bdf8`）：刚启动、还没发现设备时，
+//! 面板上是蓝环，托盘里也应当是蓝环，而不是一个看不出在干什么的空心灰圈。
+//!
+//! 它只在「一张设备图标都没有」时现身：有设备图标出现就让位（托盘里的电量环本身
+//! 就是入口，再挂一个只会让人误以为是第二台设备）；设备全部拔掉或全部被用户隐藏
+//! 时它再回来。
 //!
 //! 每张图标的右键菜单完全一致（打开面板 / 退出 VoltNest），任意一张都能退出软件。
 
@@ -45,11 +48,17 @@ const BUBBLE_MS: u64 = 6_000;
 const MENU_OPEN: &str = "tray:open";
 const MENU_QUIT: &str = "tray:quit";
 
+/// 与前端 `src/lib/format.ts` 的色值逐字对应：托盘与面板必须能并排看。
 const EMERALD: [u8; 3] = [16, 185, 129];
 const ORANGE: [u8; 3] = [249, 115, 22];
 const RED: [u8; 3] = [239, 68, 68];
 const CYAN: [u8; 3] = [6, 182, 212];
+const AMBER: [u8; 3] = [245, 158, 11];
+const SKY: [u8; 3] = [56, 189, 248];
 const GRAY: [u8; 3] = [148, 163, 184];
+
+/// 还没拿到任何读数时，整环按这个透明度画：蓝得看得见，又明显不是一次真实读数。
+const PENDING_ALPHA: f32 = 0.7;
 
 /// 每张图标「本该显示」的 tooltip：气泡提示只占用 6 秒，之后要原样还回去。
 static BASELINE_TOOLTIPS: Mutex<BTreeMap<String, String>> = Mutex::new(BTreeMap::new());
@@ -103,7 +112,7 @@ pub fn sync(app: &AppHandle, shared: &Arc<Shared>, snap: &Snapshot) {
         };
         let tray_id = tray_id_for(stable_id);
         let icon = ring_image(
-            device.battery,
+            displayed_battery(device),
             device.is_charging == Some(true),
             device.state,
         );
@@ -140,10 +149,10 @@ pub fn sync(app: &AppHandle, shared: &Arc<Shared>, snap: &Snapshot) {
     update_base(app, snap, has_device_icons);
 }
 
-/// 基础灰环的显隐：有设备图标就隐身让位，没有就出来占位。
+/// 基础等待环的显隐：有设备图标就隐身让位，没有就出来占位。
 ///
 /// 只切可见性、不销毁重建：图标一旦重建就会跑到托盘末尾（甚至被折叠进溢出区），
-/// 用户眼前的东西自己跳位比多看一个灰环更难受。
+/// 用户眼前的东西自己跳位比多看一眼占位环更难受。
 fn update_base(app: &AppHandle, snap: &Snapshot, has_device_icons: bool) {
     let tooltip = summary_tooltip(snap);
     let visible = !has_device_icons;
@@ -337,10 +346,50 @@ fn clamp_chars(text: String, limit: usize) -> String {
     out
 }
 
+/// 与前端 `displayedBattery()` 同一条规则：首次读数还没到（`state == Unknown`）时
+/// 用 `lastKnownBattery` 撑住图标，免得启动瞬间托盘变成一个没有比例的空环。
+///
+/// `Unavailable` / `Offline` 不算 —— 那是「确定读不到」，不能假装还有实时读数。
+fn displayed_battery(device: &DeviceDto) -> Option<u8> {
+    if device.battery.is_some() {
+        return device.battery;
+    }
+    match device.state {
+        DeviceState::Unknown => device.last_known_battery,
+        _ => None,
+    }
+}
+
+/// 环的颜色：与前端 `batteryColor()` 逐条对应（规格 §12）。
+///
+/// 只有 `Online` / `Stale` 才有「当前读数」可按阈值着色，其余状态直接沿用状态色 ——
+/// 这正是面板上「等待读数」显示蓝环、「读取失败」显示橙环的那套规则。
+fn ring_tone(battery: Option<u8>, charging: bool, state: DeviceState) -> [u8; 3] {
+    let tone = match state {
+        DeviceState::Online => EMERALD,
+        DeviceState::Stale => AMBER,
+        DeviceState::Unavailable => ORANGE,
+        DeviceState::Offline => GRAY,
+        DeviceState::Unknown => SKY,
+    };
+    if !matches!(state, DeviceState::Online | DeviceState::Stale) {
+        return tone;
+    }
+    if charging {
+        return CYAN;
+    }
+    match battery {
+        Some(v) if v < 10 => RED,
+        Some(v) if v < 20 => ORANGE,
+        _ => tone,
+    }
+}
+
 /// 生成一张 32×32 的环形电量图。
 ///
-/// - `battery == None`：空心环（无读数 / 尚未发现设备）；
+/// - `battery == None`：等待环（一整圈状态色，透明度压低一档）；
 /// - `offline`：灰环 + 横线（物理存在但链路不在）；
+/// - `unknown`：蓝环（与面板「等待读数」同色，启动回填也走这条）；
 /// - `charging`：青色整环；
 /// - 其余按 20% / 10% 分档着色。
 pub fn ring_image(battery: Option<u8>, charging: bool, state: DeviceState) -> Image<'static> {
@@ -349,25 +398,20 @@ pub fn ring_image(battery: Option<u8>, charging: bool, state: DeviceState) -> Im
     let outer = size * 0.44;
     let inner = outer - size * 0.155;
 
-    let (rgb, draw_line) = if state == DeviceState::Offline {
-        (GRAY, true)
-    } else if charging {
-        (CYAN, false)
-    } else {
-        match battery {
-            Some(v) if v < 10 => (RED, false),
-            Some(v) if v < 20 => (ORANGE, false),
-            _ => (EMERALD, false),
-        }
-    };
+    let rgb = ring_tone(battery, charging, state);
+    let draw_line = state == DeviceState::Offline;
+    // 一圈都没有读数（刚启动、还没回填到缓存值）：整环用状态色画满，
+    // 这样托盘里始终是「一块看得懂的颜色」，而不是只剩灰轨道。
+    let pending = battery.is_none() && !draw_line;
 
-    let ratio = if state == DeviceState::Offline {
+    let ratio = if state == DeviceState::Offline || pending {
         1.0
     } else {
         battery
             .map(|v| f32::from(v.min(100)) / 100.0)
             .unwrap_or(0.0)
     };
+    let arc_alpha = if pending { PENDING_ALPHA } else { 1.0 };
 
     // 3×3 超采样：32px 上不做抗锯齿的环会明显锯齿。
     const SS: usize = 3;
@@ -413,7 +457,7 @@ pub fn ring_image(battery: Option<u8>, charging: bool, state: DeviceState) -> Im
             let track_a = track_hits as f32 / total;
             let arc_a = arc_hits as f32 / total;
             let line_a = line_hits as f32 / total;
-            let (r, g, b, a) = blend(rgb, arc_a, TRACK, track_a, line_a);
+            let (r, g, b, a) = blend(rgb, arc_a * arc_alpha, TRACK, track_a, line_a);
             if a > 0.0 {
                 buf[idx] = r;
                 buf[idx + 1] = g;
@@ -549,6 +593,78 @@ mod tests {
     fn tooltip_marks_offline_and_null_battery() {
         let d = device(None, DeviceState::Offline);
         assert_eq!(tooltip_for(&d, 0), "AJ159 NL · —（离线）");
+    }
+
+    #[test]
+    fn waiting_icon_is_the_panel_blue() {
+        // 面板「等待读数」是 #38bdf8；刚启动、还没发现设备时托盘必须是同一个蓝。
+        assert_eq!(ring_tone(None, false, DeviceState::Unknown), SKY);
+        assert_eq!(
+            ring_tone(Some(87), false, DeviceState::Unknown),
+            SKY,
+            "回填的缓存读数仍属「等待读数」，不能画成在线的绿"
+        );
+
+        let img = ring_image(None, false, DeviceState::Unknown);
+        let brightest = img
+            .rgba()
+            .chunks(4)
+            .filter(|p| p[3] > 0)
+            .max_by_key(|p| p[3])
+            .expect("等待环不能是一张空图");
+        // 半透明像素做混合除法时会有一两级的取整误差，按容差比色。
+        let close = |got: u8, want: u8| (i32::from(got) - i32::from(want)).abs() <= 2;
+        assert!(
+            close(brightest[0], SKY[0])
+                && close(brightest[1], SKY[1])
+                && close(brightest[2], SKY[2]),
+            "等待环应为 #38bdf8，实际 {:?}",
+            &brightest[..3]
+        );
+        assert!(
+            brightest[3] > 120 && brightest[3] < 255,
+            "等待环比真实读数暗一档，别让人误读成满电：{}",
+            brightest[3]
+        );
+    }
+
+    #[test]
+    fn waiting_with_cached_reading_draws_a_full_strength_arc() {
+        let img = ring_image(Some(90), false, DeviceState::Unknown);
+        let max_alpha = img.rgba().chunks(4).map(|p| p[3]).max().unwrap_or(0);
+        assert_eq!(max_alpha, 255, "有缓存读数时环要画实，只有真没数据才压暗");
+    }
+
+    #[test]
+    fn tones_follow_panel_battery_color() {
+        assert_eq!(ring_tone(Some(96), false, DeviceState::Online), EMERALD);
+        assert_eq!(ring_tone(Some(15), false, DeviceState::Online), ORANGE);
+        assert_eq!(ring_tone(Some(5), false, DeviceState::Online), RED);
+        assert_eq!(
+            ring_tone(Some(5), true, DeviceState::Online),
+            CYAN,
+            "充电色优先于低电量色"
+        );
+        assert_eq!(ring_tone(Some(96), false, DeviceState::Stale), AMBER);
+        assert_eq!(
+            ring_tone(Some(96), false, DeviceState::Unavailable),
+            ORANGE,
+            "读取失败沿用状态色，不按电量分档"
+        );
+        assert_eq!(ring_tone(None, false, DeviceState::Offline), GRAY);
+    }
+
+    #[test]
+    fn waiting_uses_cached_battery_but_not_after_failure() {
+        let mut d = device(None, DeviceState::Unknown);
+        d.last_known_battery = Some(87);
+        assert_eq!(displayed_battery(&d), Some(87), "启动回填要撑住首屏");
+        d.state = DeviceState::Unavailable;
+        assert_eq!(
+            displayed_battery(&d),
+            None,
+            "读取失败是「确定读不到」，不能假装还有读数"
+        );
     }
 
     #[test]
