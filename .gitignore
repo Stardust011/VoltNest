@@ -1,0 +1,26 @@
+# Rust 构建产物
+target/
+**/*.rs.bk
+*.pdb
+
+# Node / 前端
+node_modules/
+dist/
+apps/desktop/src-tauri/gen/
+
+# 运行时与本地数据
+*.log
+logs/
+%APPDATA%/
+
+# 工具链与编辑器
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# 本地产物
+*.tmp
+
+# WorkBuddy 本地项目数据
+.workbuddy/
