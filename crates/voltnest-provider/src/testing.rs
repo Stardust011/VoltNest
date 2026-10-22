@@ -3,9 +3,9 @@
 //! Phase 2 的全部状态机测试都通过这些实现驱动，因此它们必须随 crate 一起发布，
 //! 而不是只存在于本 crate 的测试二进制里。
 
+use crate::Provider;
 use crate::event::{DeviceFact, ProviderEvent, ValidReading};
 use crate::ids::{Percent, StableId};
-use crate::Provider;
 use crate::profile::{BLE_BAS, HID_NEARLINK_AJAZZ, ProviderProfile};
 use crate::transport::Transport;
 use std::sync::Arc;
@@ -54,12 +54,18 @@ impl ScriptedProvider {
 
     /// HID 家族脚本。
     pub fn hid(script: Vec<ProviderEvent>) -> Self {
-        Self { profile: &HID_NEARLINK_AJAZZ, script }
+        Self {
+            profile: &HID_NEARLINK_AJAZZ,
+            script,
+        }
     }
 
     /// BLE 家族脚本。
     pub fn ble(script: Vec<ProviderEvent>) -> Self {
-        Self { profile: &BLE_BAS, script }
+        Self {
+            profile: &BLE_BAS,
+            script,
+        }
     }
 
     /// 脚本长度，便于宿主测试断言。
@@ -98,7 +104,9 @@ pub struct PanicProvider {
 impl PanicProvider {
     /// 默认使用 HID 家族声明。
     pub fn new() -> Self {
-        Self { profile: &HID_NEARLINK_AJAZZ }
+        Self {
+            profile: &HID_NEARLINK_AJAZZ,
+        }
     }
 
     /// 指定 Profile（验证「只影响当前 transport」）。
@@ -133,7 +141,13 @@ impl LoopProvider {
     /// 构造，并返回可观测的 tick 计数器。
     pub fn new() -> (Self, Arc<AtomicUsize>) {
         let ticks = Arc::new(AtomicUsize::new(0));
-        (Self { profile: &HID_NEARLINK_AJAZZ, ticks: Arc::clone(&ticks) }, ticks)
+        (
+            Self {
+                profile: &HID_NEARLINK_AJAZZ,
+                ticks: Arc::clone(&ticks),
+            },
+            ticks,
+        )
     }
 }
 
@@ -166,7 +180,9 @@ mod tests {
         let stop = Arc::new(AtomicBool::new(false));
         let script = vec![
             ProviderEvent::Arrived(hid_fact("AJ159 NL")),
-            ProviderEvent::Reading(reading(StableId::hid(0x7768, 0x6426), 90, Some(false)).unwrap()),
+            ProviderEvent::Reading(
+                reading(StableId::hid(0x7768, 0x6426), 90, Some(false)).unwrap(),
+            ),
         ];
         Box::new(ScriptedProvider::hid(script)).run(tx, stop);
         let got: Vec<_> = rx.try_iter().map(|e| e.kind()).collect();
@@ -185,7 +201,10 @@ mod tests {
     #[test]
     fn factories_use_expected_ids() {
         assert_eq!(hid_fact("AJ159 NL").stable_id.as_str(), "hid:7768:6426");
-        assert_eq!(ble_fact("AJ159 NL").stable_id.as_str(), "ble:01:00:00:23:04:35");
+        assert_eq!(
+            ble_fact("AJ159 NL").stable_id.as_str(),
+            "ble:01:00:00:23:04:35"
+        );
         assert_eq!(hid_fact("AJ159 NL").provider, "hid-nearlink-ajazz");
         assert_eq!(ble_fact("AJ159 NL").provider, "ble-bas");
     }

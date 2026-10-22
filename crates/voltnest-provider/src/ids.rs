@@ -28,7 +28,9 @@ impl StableId {
     /// `ble:{a:02x}:{b:02x}:...`，小写、冒号分隔（Y-4）。
     pub fn ble(mac: [u8; 6]) -> Self {
         let [a, b, c, d, e, f] = mac;
-        Self(format!("ble:{a:02x}:{b:02x}:{c:02x}:{d:02x}:{e:02x}:{f:02x}"))
+        Self(format!(
+            "ble:{a:02x}:{b:02x}:{c:02x}:{d:02x}:{e:02x}:{f:02x}"
+        ))
     }
 
     /// 原始字符串。
@@ -38,7 +40,9 @@ impl StableId {
 
     /// 由前缀推导 transport。格式非法时返回 `None`（不猜测）。
     pub fn transport(&self) -> Option<Transport> {
-        self.0.split_once(':').and_then(|(p, _)| Transport::from_prefix(p))
+        self.0
+            .split_once(':')
+            .and_then(|(p, _)| Transport::from_prefix(p))
     }
 
     /// 严格解析（ADR-0010 契约细节）。
@@ -57,10 +61,11 @@ impl StableId {
         if parts.len() != want_parts {
             return None;
         }
-        if !parts
-            .iter()
-            .all(|p| p.len() == want_len && p.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)))
-        {
+        if !parts.iter().all(|p| {
+            p.len() == want_len
+                && p.bytes()
+                    .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+        }) {
             return None;
         }
         Some(Self(raw.to_string()))
@@ -137,13 +142,25 @@ mod tests {
     #[test]
     fn parse_is_strict_about_case_and_width() {
         // Y-3 依赖严格解析；宽容会让冲突检测漏判。
-        assert!(StableId::parse("hid:7768:6426:mi_01col02").is_none(), "不得带 mi/col");
+        assert!(
+            StableId::parse("hid:7768:6426:mi_01col02").is_none(),
+            "不得带 mi/col"
+        );
         assert!(StableId::parse("HID:7768:6426").is_none(), "前缀必须小写");
-        assert!(StableId::parse("hid:7768:06426").is_none(), "段宽必须恰好 4 位");
+        assert!(
+            StableId::parse("hid:7768:06426").is_none(),
+            "段宽必须恰好 4 位"
+        );
         assert!(StableId::parse("hid:776:6426").is_none());
         assert!(StableId::parse("hid:7768").is_none());
-        assert!(StableId::parse("ble:01:00:00:23:04").is_none(), "BLE 必须六段");
-        assert!(StableId::parse("ble:1:0:0:23:4:35").is_none(), "段宽必须恰好 2 位");
+        assert!(
+            StableId::parse("ble:01:00:00:23:04").is_none(),
+            "BLE 必须六段"
+        );
+        assert!(
+            StableId::parse("ble:1:0:0:23:4:35").is_none(),
+            "段宽必须恰好 2 位"
+        );
         assert!(StableId::parse("ble:01:00:00:23:04:3Z").is_none());
         assert!(StableId::parse("usb:7768:6426").is_none());
         assert!(StableId::parse("").is_none());

@@ -72,7 +72,11 @@ pub struct ValidReading {
 impl ValidReading {
     /// 构造。
     pub fn new(stable_id: StableId, battery: Percent, charging: Option<bool>) -> Self {
-        Self { stable_id, battery, charging }
+        Self {
+            stable_id,
+            battery,
+            charging,
+        }
     }
 
     /// 设备标识。
@@ -182,7 +186,11 @@ mod tests {
     use super::*;
 
     fn reading() -> ValidReading {
-        ValidReading::new(StableId::hid(0x7768, 0x6426), Percent::new(90).unwrap(), Some(false))
+        ValidReading::new(
+            StableId::hid(0x7768, 0x6426),
+            Percent::new(90).unwrap(),
+            Some(false),
+        )
     }
 
     #[test]
@@ -205,11 +213,26 @@ mod tests {
                 "AJ159 NL",
             )),
             ProviderEvent::Reading(reading()),
-            ProviderEvent::Unreadable { stable_id: id.clone(), code: ErrorCode::MalformedFrame },
-            ProviderEvent::LinkLost { stable_id: id.clone(), code: ErrorCode::DeviceGone },
-            ProviderEvent::Removed { stable_id: id.clone(), reason: RemovalReason::Unplugged },
-            ProviderEvent::TransportDown { code: ErrorCode::Internal, detail: "panic".into() },
-            ProviderEvent::BindingConflict { stable_id: id.clone(), detail: "dup".into() },
+            ProviderEvent::Unreadable {
+                stable_id: id.clone(),
+                code: ErrorCode::MalformedFrame,
+            },
+            ProviderEvent::LinkLost {
+                stable_id: id.clone(),
+                code: ErrorCode::DeviceGone,
+            },
+            ProviderEvent::Removed {
+                stable_id: id.clone(),
+                reason: RemovalReason::Unplugged,
+            },
+            ProviderEvent::TransportDown {
+                code: ErrorCode::Internal,
+                detail: "panic".into(),
+            },
+            ProviderEvent::BindingConflict {
+                stable_id: id.clone(),
+                detail: "dup".into(),
+            },
         ];
         let kinds: Vec<_> = events.iter().map(ProviderEvent::kind).collect();
         assert_eq!(
@@ -225,7 +248,10 @@ mod tests {
             ]
         );
         assert!(events[5].stable_id().is_none());
-        assert_eq!(events[0].stable_id().map(StableId::as_str), Some("hid:7768:6426"));
+        assert_eq!(
+            events[0].stable_id().map(StableId::as_str),
+            Some("hid:7768:6426")
+        );
     }
 
     #[test]
