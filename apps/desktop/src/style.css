@@ -1,0 +1,33 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system,
+    "Microsoft YaHei UI", sans-serif;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: var(--font-sans);
+  background: #f5f6f8;
+  color: #111827;
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
+
+@media (prefers-color-scheme: dark) {
+  body {
+    background: #0b0f14;
+    color: #e5e7eb;
+  }
+}
+
+/* 允许在诊断页选中文本（复制错误码）。 */
+.selectable {
+  user-select: text;
+}
