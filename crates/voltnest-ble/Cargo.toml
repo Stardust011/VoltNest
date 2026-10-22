@@ -1,0 +1,18 @@
+[package]
+name = "voltnest-ble"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "VoltNest BLE Provider（ble-bas）：发现、连接、通知、轮询与解析"
+
+[dependencies]
+voltnest-provider.workspace = true
+
+# 锁定 btleplug 0.13.x：Windows 后端在 0.13 才提供 Uncached 读取路径，
+# 也不能被一次 minor 升级悄悄换掉（规格 §8）。
+[target.'cfg(windows)'.dependencies]
+btleplug = { version = "~0.13", features = ["serde"] }
+futures = "0.3"
+tokio = { version = "1", features = ["rt-multi-thread", "time", "sync", "macros"] }
+uuid = "1"
