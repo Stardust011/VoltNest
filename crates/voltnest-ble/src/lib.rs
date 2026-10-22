@@ -1,0 +1,48 @@
+//! `ble-bas` 协议家族：标准 BLE Battery Service 的电量读取。
+//!
+//! 实测结论（`docs/ble-rust-verification.md`）：
+//!
+//! - 服务 `0x180F` Battery Service，特征 `0x2A19` Battery Level（READ + NOTIFY）；
+//! - 设备名必须读 GAP `0x2A00`，**禁止**使用 `BluetoothLEDevice.Name` /
+//!   `properties().local_name`（Windows 注册表缓存，用户可改名）；
+//! - 读取一律 `Uncached`，缓存值不得进入状态机（E）；
+//! - 充电状态协议层不可得（`0x2BF0`/`0x2BEA` 未实现，`0x2BED` 失真）→ 恒为 Unknown。
+
+#![forbid(unsafe_code)]
+#![deny(clippy::disallowed_types)]
+#![warn(missing_docs)]
+
+pub mod bas;
+pub mod policy;
+
+#[cfg(target_os = "windows")]
+pub mod provider;
+
+/// 建链超时：实测已配对无链路的设备 `connect()` 要 7.97s 才返回，
+/// 必须自带 4s 超时，否则会拖住整个刷新周期（O-4 / E）。
+pub const CONNECT_TIMEOUT_MS: u64 = 4_000;
+
+/// 服务发现超时。
+pub const DISCOVER_TIMEOUT_MS: u64 = 3_000;
+
+/// 单次读取超时。
+pub const READ_TIMEOUT_MS: u64 = 2_000;
+
+/// 无 `0x180F` 的负缓存 TTL（O-2）：30 分钟。
+pub const NEGATIVE_CACHE_MS: u64 = 30 * 60_000;
+
+/// 跟踪上限（O-6）：超出只在诊断页列出、不建链。
+pub const MAX_TRACKED: usize = 8;
+
+/// 全局同时建链上限（O-4）。
+pub const MAX_CONCURRENT: usize = 2;
+
+/// 定时器槽位上限：`btleplug` 的单线程巡检最坏 8×9s=72s > 60s 周期，
+/// 所以 I/O 必须是 2 个并行执行器（ADR-0010 D6 的算术依据）。
+pub const IO_WORKERS: usize = 2;
+
+/// 连续失败多少次后进入退避（O-5）。
+pub const FAILURES_BEFORE_BACKOFF: u32 = 3;
+
+/// 退避上限（O-5）。
+pub const BACKOFF_CAP_MS: u64 = 10 * 60_000;
