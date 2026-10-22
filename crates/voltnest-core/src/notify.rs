@@ -490,22 +490,23 @@ mod tests {
     fn host_can_overwrite_delivery_result() {
         let mut b = book();
         assert!(b.observe("a", "A", 15, Some(false), T0).is_some());
+        let pick = |b: &NotificationBook, threshold: u8| {
+            b.entries()
+                .into_iter()
+                .find(|e| e.threshold == threshold)
+                .unwrap()
+                .last_result
+        };
         assert_eq!(
-            b.entries()[0].last_result.as_deref(),
+            pick(&b, 20).as_deref(),
             Some("sent"),
             "策略层先记下「应当发送」"
         );
         b.mark_result("a", 20, "suppressed_mode_off");
-        assert_eq!(
-            b.entries()[0].last_result.as_deref(),
-            Some("suppressed_mode_off")
-        );
+        assert_eq!(pick(&b, 20).as_deref(), Some("suppressed_mode_off"));
         // 未知设备 / 未知阈值是空操作，不能 panic。
         b.mark_result("nope", 20, "failed");
         b.mark_result("a", 7, "failed");
-        assert_eq!(
-            b.entries()[0].last_result.as_deref(),
-            Some("suppressed_mode_off")
-        );
+        assert_eq!(pick(&b, 20).as_deref(), Some("suppressed_mode_off"));
     }
 }
