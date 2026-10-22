@@ -19,7 +19,7 @@ crates/
   voltnest-ble/        ble-bas：发现、连接、通知、轮询、解析
   voltnest-platform/   Windows 适配（自启、单实例、AUMID）
   voltnest-storage/    settings.json / state.json 原子读写
-apps/desktop/          Tauri 宿主 + Vue 前端
+apps/desktop/          Tauri 宿主（src-tauri）+ Vue 前端（src）
 tools/                 取证探针（hid-probe-rs / ble-probe-rs），不被产品 crate 依赖
 ```
 
@@ -28,16 +28,50 @@ tools/                 取证探针（hid-probe-rs / ble-probe-rs），不被产
 
 ## 开发
 
+需要 Rust 稳定版（见 `rust-toolchain.toml`）、Node 22、WebView2（Windows 11 自带）。
+
 ```bash
-cargo test --workspace          # 全部单元测试
+cargo test --workspace          # 全部单元测试（200+）
 cargo clippy --workspace --all-targets -- -D warnings
 cargo fmt --check
-cd apps/desktop && npm install && npm run build
-cd apps/desktop && npm run tauri build
+
+cd apps/desktop
+npm install
+npm run test                    # Vitest，只测纯函数
+npm run build                   # vue-tsc + vite build
+npm run tauri dev               # 开发调试（会先起 Vite）
+npm run tauri build             # 出 NSIS 安装包
 ```
 
-前端只做渲染：先订阅 `state://snapshot`，再 `get_snapshot()`，随后丢弃
-`rev <= snapshot.rev` 的事件（W-7）。业务状态、命名、分组、排序全部由 Rust 决定。
+`cargo clippy` 是**门禁**而不只是建议：`clippy.toml` 把 `std::time::SystemTime`
+列为禁用类型（Z-6），全仓只有 `voltnest_provider::clock::now_utc_ms()` 能读时钟。
+
+测试矩阵与代码的一致性由脚本校验（CI 同款）：
+
+```powershell
+pwsh scripts/check-test-matrix.ps1
+```
+
+## 运行时行为要点
+
+- **Rust 是唯一状态来源**：前端先订阅 `state://snapshot`，再 `get_snapshot()`，
+  随后丢弃 `rev <= localRev` 的事件；命名、分组、排序全部由 Rust 决定。
+- **快照合并窗口 250ms**（≤4Hz），1s tick 驱动状态退化，只有真变化才发布。
+- **关闭窗口只隐藏到托盘**，托盘菜单「退出」才结束进程；二次启动唤起已有窗口。
+- **数据目录**：`%APPDATA%\VoltNest\`（`settings.json` / `state.json` / `logs/`），
+  安装目录只读，运行时不写入。
+- **采集异常隔离**：每个 transport 独立监管线程，`catch_unwind` 兜住 panic 后按
+  5s / 15s / 60s 退避重启，连续 5 次失败转「不可用」，由诊断页手动重启。
+
+## v1 指标（§14.4）
+
+| 指标 | 目标 | 现状 |
+|---|---|---|
+| HID 拔插发现 | ≤6s | 枚举周期 5s，待真机复测 |
+| BLE 掉线发现 | ≤2s | 依赖 I/O 错误即时判定，待真机复测 |
+| BLE 首次出现 | ≤60s | 由系统性连接状态巡检覆盖 |
+| 前端 bundle | 计入程序目录 | JS ≈91KB / CSS ≈24KB（gzip 后 ≈40KB） |
+| 安装包 / 内存 | 统计项 | 待出包后记录 |
 
 ## 已知限制（v1 有意接受）
 
@@ -47,3 +81,7 @@ cd apps/desktop && npm run tauri build
 4. 仅跟踪 Windows 当前**已连接**的 BLE 设备；仅配对未连接的设备不主动拉起（O-1）。
 5. v1 不做代码签名，Windows SmartScreen 可能显示「未知发布者」。v1 不做自动更新。
 6. BLE 充电状态协议层不可得，界面显示 `Unknown`，不会显示「未充电」。
+7. **托盘气泡模式**以「托盘 tooltip 提示 6 秒」实现：Tauri 2 未暴露
+   `Shell_NotifyIcon` 的气泡接口，v1 不为它引入自绘托盘窗口。选项仍是
+   「系统通知 / 托盘气泡 / 关闭」三档，不自动降级。
+8. 分支覆盖率（core ≥90%）暂由评审保证：`cargo llvm-cov` 的分支统计仍需 nightly。
