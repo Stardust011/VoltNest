@@ -88,14 +88,24 @@ export function stateLabel(state: DeviceState): string {
 /** 副行文案：充电 / 上次已知 / 无读数，全部由快照字段决定。 */
 export function secondaryLine(device: DeviceDto): string {
   if (device.battery === null) {
-    if (device.lastKnownBattery !== null) {
-      return `上次 ${device.lastKnownBattery}%`;
-    }
+    // 缓存值已经在主读数位显示（见 displayedBattery），副行只补时间语义。
+    if (device.lastKnownBattery !== null) return "上次读数";
     return device.state === "unknown" ? "尚未收到读数" : "无可用读数";
   }
   if (device.isCharging === true) return "充电中";
   if (device.isCharging === null) return "充电状态未知";
   return "使用电池";
+}
+
+/**
+ * 卡片主读数：本次会话还没有读数、状态仍是 `unknown`（启动回填 / 离线后重新出现）时，
+ * 用 `lastKnownBattery` 撑住首屏，避免出现「— + 空进度条」。
+ *
+ * `unavailable` / `offline` 不算 —— 那是「确定读不到」，不能假装还有实时读数。
+ */
+export function displayedBattery(device: DeviceDto): number | null {
+  if (device.battery !== null) return device.battery;
+  return device.state === "unknown" ? device.lastKnownBattery : null;
 }
 
 export function transportLabel(transport: "hid" | "ble"): string {

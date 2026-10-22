@@ -16,7 +16,6 @@ import {
   getSettings,
   restartTransport,
   setAutostart,
-  testNotification,
   updateSettings,
 } from "./lib/ipc";
 import type { CardDto, DiagnosticsDto, OnboardingChoice, SettingsDto } from "./lib/types";
@@ -84,7 +83,7 @@ const deviceById = computed(() => {
 const statusText = computed(() => {
   if (!connected.value) return "正在连接…";
   const count = snapshot.value?.devices.length ?? 0;
-  return count === 0 ? "尚未发现设备" : `已跟踪 ${count} 台设备`;
+  return count === 0 ? "尚未发现设备" : `正在监控 ${count} 台设备`;
 });
 
 function fail(e: unknown) {
@@ -141,18 +140,6 @@ async function doRestart(transport: "hid" | "ble") {
   busy.value = true;
   try {
     await restartTransport(transport);
-    if (view.value === "diagnostics") await loadDiagnostics();
-  } catch (e) {
-    fail(e);
-  } finally {
-    busy.value = false;
-  }
-}
-
-async function doTestNotification() {
-  busy.value = true;
-  try {
-    await testNotification();
     if (view.value === "diagnostics") await loadDiagnostics();
   } catch (e) {
     fail(e);
@@ -232,11 +219,8 @@ onMounted(() => {
       <SettingsPanel
         v-else-if="view === 'settings' && settings"
         :settings="settings"
-        :busy="busy"
         @change="applySettings"
         @autostart="applyAutostart"
-        @test-notification="doTestNotification"
-        @restart="doRestart"
       />
 
       <DiagnosticsPanel

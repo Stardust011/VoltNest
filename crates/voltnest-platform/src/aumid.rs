@@ -112,7 +112,9 @@ mod tests {
 
     #[test]
     fn icon_uri_is_a_forward_slash_file_url() {
-        let uri = file_uri(Path::new(r"C:\Users\John Doe\AppData\Roaming\VoltNest\toast-icon.png"));
+        let uri = file_uri(Path::new(
+            r"C:\Users\John Doe\AppData\Roaming\VoltNest\toast-icon.png",
+        ));
         assert_eq!(
             uri,
             "file:///C:/Users/John%20Doe/AppData/Roaming/VoltNest/toast-icon.png"
@@ -130,7 +132,9 @@ mod tests {
 
         use winreg::RegKey;
         use winreg::enums::HKEY_CURRENT_USER;
-        let key = RegKey::predef(HKEY_CURRENT_USER).open_subkey(AUMID_KEY).unwrap();
+        let key = RegKey::predef(HKEY_CURRENT_USER)
+            .open_subkey(AUMID_KEY)
+            .unwrap();
         let name: String = key.get_value(DISPLAY_NAME_VALUE).unwrap();
         let uri: String = key.get_value(ICON_URI_VALUE).unwrap();
         assert_eq!(name, "VoltNest");
