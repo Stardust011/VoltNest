@@ -155,10 +155,9 @@ fn main() {
                 app.manage(guard);
             }
 
-            // 5.6 首屏显隐：自启路径始终静默；手动启动看设置。
+            // 5.6 首屏显隐：自启与手动启动一致，统一由「启动时最小化到托盘」管控。
             if let Some(window) = app.get_webview_window("main") {
-                let should_show = !launched_by_autostart && !start_minimized;
-                if should_show {
+                if !start_minimized {
                     let _ = window.show();
                     let _ = window.set_focus();
                 }

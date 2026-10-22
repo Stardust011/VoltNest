@@ -77,7 +77,7 @@ function finish() {
             >
               <span class="text-sm">开机时自动启动</span>
               <span class="text-muted-foreground text-xs font-normal">
-                默认关闭。开启后写入当前用户的启动项，启动过程静默到托盘
+                默认关闭。开启后写入当前用户的启动项，可随时关闭
               </span>
             </Label>
             <Checkbox
@@ -95,7 +95,7 @@ function finish() {
             >
               <span class="text-sm">启动时最小化到托盘</span>
               <span class="text-muted-foreground text-xs font-normal">
-                手动启动时也不弹窗，只留托盘图标
+                启动时不弹窗，只留托盘图标
               </span>
             </Label>
             <Checkbox

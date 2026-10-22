@@ -78,7 +78,7 @@ pub struct Settings {
     pub notifications: NotificationSettings,
     /// 开机自启：**永不默认开启**（AC-1）。
     pub autostart: bool,
-    /// 手动启动时最小化到托盘（AC-8）。
+    /// 启动时最小化到托盘（AC-8：手动启动与开机自启共用这一项）。
     pub start_minimized: bool,
     /// 首启引导是否完成（AC-2：不用「文件是否存在」判断）。
     pub onboarding_completed: bool,

@@ -145,32 +145,23 @@ function onCheckbox(value: boolean | "indeterminate", apply: (checked: boolean) 
         <CardTitle class="text-sm">启动</CardTitle>
       </CardHeader>
       <CardContent class="flex flex-col gap-3 px-4">
-        <div class="flex items-start justify-between gap-3">
-          <Label for="autostart" class="flex flex-1 cursor-pointer flex-col items-start gap-0.5 font-normal">
-            <span class="text-sm">开机时自动启动</span>
-            <span class="text-muted-foreground text-xs font-normal">登录后自动运行，可随时关闭</span>
+        <div class="flex items-center justify-between gap-3">
+          <Label for="autostart" class="flex-1 cursor-pointer text-sm font-normal">
+            开机时自动启动
           </Label>
           <Checkbox
             id="autostart"
-            class="mt-0.5"
             :model-value="settings.autostart"
             @update:model-value="(value) => onCheckbox(value, (checked) => emit('autostart', checked))"
           />
         </div>
 
-        <div class="flex items-start justify-between gap-3">
-          <Label
-            for="start-minimized"
-            class="flex flex-1 cursor-pointer flex-col items-start gap-0.5 font-normal"
-          >
-            <span class="text-sm">启动时最小化到托盘</span>
-            <span class="text-muted-foreground text-xs font-normal">
-              仅对手动启动生效，自启时始终静默
-            </span>
+        <div class="flex items-center justify-between gap-3">
+          <Label for="start-minimized" class="flex-1 cursor-pointer text-sm font-normal">
+            启动时最小化到托盘
           </Label>
           <Checkbox
             id="start-minimized"
-            class="mt-0.5"
             :model-value="settings.startMinimized"
             @update:model-value="
               (value) => onCheckbox(value, (checked) => patch({ startMinimized: checked }))
