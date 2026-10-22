@@ -51,8 +51,8 @@ const MENU_QUIT: &str = "tray:quit";
 
 /// 与前端 `src/lib/format.ts` 的色值逐字对应：托盘与面板必须能并排看。
 ///
-/// 唯一例外是充电：面板沿用青色 `#06b6d4` + 百分号旁的闪电，托盘用绿色
-/// （`#10b981` 在任务栏上比青色更跳），靠环心闪电表达「在充电」。
+/// 充电时两侧都用这里的 `EMERALD`（面板 `batteryColor()` 的 `CHARGING_GREEN`
+/// 就是同一个值），靠闪电这一形状表达「在充电」，颜色不再区分两侧。
 const EMERALD: [u8; 3] = [16, 185, 129];
 const ORANGE: [u8; 3] = [249, 115, 22];
 const RED: [u8; 3] = [239, 68, 68];
@@ -419,7 +419,7 @@ fn displayed_battery(device: &DeviceDto) -> Option<Reading> {
 /// 这正是面板上「等待读数」显示蓝环、「读取失败」显示橙环的那套规则。
 ///
 /// 充电不看电量高低，一律用绿色：闪电已经把「在充电」说清楚了，弧长继续表达
-/// 充到哪了，和面板青色 `#06b6d4` 的差异由闪电这个形状来补。
+/// 充到哪了；面板那一侧同样是这个绿色（`CHARGING_GREEN`），两侧完全一致。
 fn ring_tone(battery: Option<u8>, charging: bool, state: DeviceState) -> [u8; 3] {
     let tone = match state {
         DeviceState::Online => EMERALD,
@@ -753,7 +753,7 @@ mod tests {
         assert_eq!(
             ring_tone(Some(5), true, DeviceState::Online),
             EMERALD,
-            "充电不看电量分档，统一绿环 + 闪电（面板那侧仍用青色）"
+            "充电不看电量分档，统一绿环 + 闪电（面板那侧同色）"
         );
         assert_eq!(ring_tone(Some(96), false, DeviceState::Stale), AMBER);
         assert_eq!(
