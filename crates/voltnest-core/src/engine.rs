@@ -617,7 +617,7 @@ impl Engine {
 
     // ---------- 回填 ----------
 
-    /// 用 `state.json` 回填：设备一律 `Unknown`，主电量显示「—」（§11 / D8）。
+    /// 用 `state.json` 回填：设备一律 `Unknown`，`lastKnownBattery` 供 UI 首屏显示缓存值（§11 / D8）。
     pub fn seed(&mut self, entries: &[SeedEntry], now_ms: u64) {
         for entry in entries {
             let Some(stable_id) = StableId::parse(&entry.stable_id) else {

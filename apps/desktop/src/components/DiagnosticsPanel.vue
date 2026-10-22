@@ -1,13 +1,7 @@
 <script setup lang="ts">
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { humanizeAgo } from "../lib/time";
 import type { DiagnosticsDto } from "../lib/types";
 
@@ -33,6 +27,18 @@ function ago(atMs: number) {
 function transportName(t: string) {
   return t === "hid" ? "2.4G" : "蓝牙";
 }
+
+/**
+ * 家族 ID 的展示名：内部 ID 带厂商标识，诊断页统一收敛成协议简称。
+ * 未登记的家族原样显示，避免新增 Provider 时界面失去辨识能力。
+ */
+const FAMILY_LABELS: Record<string, string> = {
+  "hid-nearlink-ajazz": "hid-vbas",
+};
+
+function familyLabel(family: string) {
+  return FAMILY_LABELS[family] ?? family;
+}
 </script>
 
 <template>
@@ -52,7 +58,7 @@ function transportName(t: string) {
               <div class="min-w-0">
                 <p class="flex items-baseline gap-1.5 text-sm font-medium">
                   {{ transportName(t.transport) }}
-                  <span class="text-muted-foreground font-mono text-[11px]">{{ t.family }}</span>
+                  <span class="text-muted-foreground font-mono text-[11px]">{{ familyLabel(t.family) }}</span>
                 </p>
                 <p class="text-muted-foreground mt-1 flex flex-wrap items-center gap-1.5 text-xs">
                   <Badge
@@ -80,11 +86,8 @@ function transportName(t: string) {
     </Card>
 
     <Card class="gap-3 py-4">
-      <CardHeader class="gap-1 px-4">
-        <CardTitle class="text-sm">通知状态</CardTitle>
-        <CardDescription class="text-xs">
-          用来二分「系统吞了通知」还是「我们没发」：`armed` 为否说明这一档还没恢复武装。
-        </CardDescription>
+      <CardHeader class="px-4">
+        <CardTitle class="text-sm">通知触发节点</CardTitle>
       </CardHeader>
       <CardContent class="px-4">
         <div v-if="diagnostics.notifications.length === 0" class="text-muted-foreground text-xs">
@@ -99,9 +102,7 @@ function transportName(t: string) {
             <span class="min-w-0 truncate font-mono">{{ n.stableId }}</span>
             <span class="text-muted-foreground flex shrink-0 items-center gap-1.5">
               {{ n.threshold }}%
-              <Badge :variant="n.armed ? 'secondary' : 'outline'" class="font-normal">
-                {{ n.armed ? "已武装" : "已触发" }}
-              </Badge>
+              <Badge v-if="!n.armed" variant="outline" class="font-normal">已触发</Badge>
               <template v-if="n.lastNotifiedAtMs"> · {{ ago(n.lastNotifiedAtMs) }}</template>
               <template v-if="n.lastResult"> · {{ n.lastResult }}</template>
             </span>
@@ -122,8 +123,6 @@ function transportName(t: string) {
           <dd class="font-mono break-all select-text">{{ diagnostics.dataRoot }}</dd>
           <dt class="text-muted-foreground">开机自启</dt>
           <dd>{{ diagnostics.autostartRegistered ? "已注册" : "未注册" }}</dd>
-          <dt class="text-muted-foreground">AUMID</dt>
-          <dd>{{ diagnostics.aumidRegistered ? "已写入 HKCU" : "未写入" }}</dd>
         </dl>
       </CardContent>
     </Card>

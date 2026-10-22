@@ -3,7 +3,8 @@
 //! 硬性规则（AC-1 / AC-5 / AC-6 / AC-7）：
 //!
 //! - **永不默认开启**，只有用户在引导或设置页显式勾选才写注册项；
-//! - 命令固定带 `--autostart`，且该路径永远静默到托盘；
+//! - 命令固定带 `--autostart`（仅用于日志与诊断定位，不改变首屏行为）；
+//!   首屏显隐与手动启动一致，统一由「启动时最小化到托盘」决定；
 //! - 卸载必须清除该项；
 //! - 设置页改动立即生效，不做「重启后生效」。
 
@@ -119,7 +120,7 @@ mod tests {
 
     #[test]
     fn command_always_carries_autostart_flag() {
-        // AC-6：自启路径永远静默进托盘，与「启动时最小化」设置无关。
+        // AC-6：命令恒定带 --autostart 标记（首屏显隐另由「启动时最小化」决定）。
         for p in [r"C:\a b\VoltNest.exe", r"C:\a\VoltNest.exe"] {
             assert!(run_command(&PathBuf::from(p)).ends_with("--autostart"));
         }
