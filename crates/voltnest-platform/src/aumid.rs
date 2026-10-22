@@ -27,7 +27,9 @@ pub fn register(_display_name: &str) -> std::io::Result<()> {
 pub fn is_registered() -> bool {
     use winreg::RegKey;
     use winreg::enums::HKEY_CURRENT_USER;
-    RegKey::predef(HKEY_CURRENT_USER).open_subkey(AUMID_KEY).is_ok()
+    RegKey::predef(HKEY_CURRENT_USER)
+        .open_subkey(AUMID_KEY)
+        .is_ok()
 }
 
 /// 非 Windows 恒为 false。
@@ -63,7 +65,13 @@ mod tests {
     fn aumid_path_is_under_classes() {
         assert!(AUMID_KEY.starts_with(r"Software\Classes\AppUserModelId\"));
         assert!(AUMID_KEY.ends_with("VoltNest.Desktop"));
-        assert_eq!(AUMID_KEY, format!(r"Software\Classes\AppUserModelId\{}", crate::APP_USER_MODEL_ID));
+        assert_eq!(
+            AUMID_KEY,
+            format!(
+                r"Software\Classes\AppUserModelId\{}",
+                crate::APP_USER_MODEL_ID
+            )
+        );
     }
 
     #[cfg(windows)]

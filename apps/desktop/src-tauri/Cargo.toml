@@ -1,0 +1,27 @@
+[package]
+name = "voltnest-desktop"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "VoltNest 桌面应用：组合 Provider 线程组、核心状态机与 Tauri 外壳"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+voltnest-provider = { workspace = true }
+voltnest-core = { workspace = true }
+voltnest-hid = { workspace = true }
+voltnest-ble = { workspace = true }
+voltnest-platform = { workspace = true }
+voltnest-storage = { workspace = true }
+
+serde = { workspace = true }
+serde_json = { workspace = true }
+log = { workspace = true, features = ["std"] }
+
+tauri = { version = "2", features = ["tray-icon", "image-png"] }
+tauri-plugin-notification = "2"

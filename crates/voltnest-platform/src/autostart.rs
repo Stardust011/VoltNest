@@ -105,7 +105,10 @@ mod tests {
     #[test]
     fn command_quotes_paths_with_spaces() {
         let cmd = run_command(&PathBuf::from(r"C:\Program Files\VoltNest\VoltNest.exe"));
-        assert_eq!(cmd, "\"C:\\Program Files\\VoltNest\\VoltNest.exe\" --autostart");
+        assert_eq!(
+            cmd,
+            "\"C:\\Program Files\\VoltNest\\VoltNest.exe\" --autostart"
+        );
     }
 
     #[test]
