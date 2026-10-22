@@ -29,10 +29,7 @@ use voltnest_provider::clock;
 use voltnest_storage::NotificationMode;
 
 use crate::host::{Shared, lock};
-use crate::tray::BASE_TRAY_ID;
-
-/// 托盘气泡模式的提示时长。
-const BUBBLE_MS: u64 = 6_000;
+use crate::tray;
 
 /// 投递一批低电量通知。
 pub fn dispatch(
@@ -65,8 +62,19 @@ pub fn dispatch(
                 }
             },
             NotificationMode::TrayBubble => {
-                bubble(app, &alert);
-                "tray_tooltip"
+                let text = format!(
+                    "{} 电量 {}%（阈值 {}%）",
+                    alert.display_name, alert.battery, alert.threshold
+                );
+                if tray::bubble(app, &alert.stable_id, &text) {
+                    "tray_tooltip"
+                } else {
+                    log::warn!(
+                        "托盘里没有可用图标，低电量提示未送出（{}）",
+                        alert.stable_id
+                    );
+                    "failed"
+                }
             }
         };
         lock(&shared.engine).mark_notification_result(&alert.stable_id, alert.threshold, result);
@@ -119,27 +127,6 @@ fn toast(title: &str, body: &str) -> Result<(), String> {
     }
 
     toast.show().map_err(|err| err.to_string())
-}
-
-/// 托盘气泡模式：Tauri 2 没有暴露 `Shell_NotifyIcon` 的气泡接口，
-/// 这里退化为「基础托盘图标 tooltip 提示 6 秒」，并在 README 的已知限制里写明。
-fn bubble(app: &AppHandle, alert: &LowBatteryAlert) {
-    let Some(tray) = app.tray_by_id(&tauri::tray::TrayIconId::new(BASE_TRAY_ID)) else {
-        return;
-    };
-    let text = format!(
-        "{} 电量 {}%（阈值 {}%）",
-        alert.display_name, alert.battery, alert.threshold
-    );
-    let _ = tray.set_tooltip(Some(&text));
-
-    let app = app.clone();
-    std::thread::spawn(move || {
-        std::thread::sleep(std::time::Duration::from_millis(BUBBLE_MS));
-        if let Some(tray) = app.tray_by_id(&tauri::tray::TrayIconId::new(BASE_TRAY_ID)) {
-            let _ = tray.set_tooltip(Some("VoltNest"));
-        }
-    });
 }
 
 /// 测试通知：不写任何通知状态，只验证系统通道是否通。
