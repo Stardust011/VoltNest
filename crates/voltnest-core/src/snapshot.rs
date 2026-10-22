@@ -98,7 +98,7 @@ mod tests {
             devices: vec![DeviceDto {
                 stable_id: "hid:7768:6426".into(),
                 transport: "hid".into(),
-                provider: "hid-nearlink-ajazz".into(),
+                provider: "hid-vbas".into(),
                 display_name: "AJ159 NL".into(),
                 model_key: Some("aj159 nl".into()),
                 battery: None,

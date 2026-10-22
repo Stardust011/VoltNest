@@ -1,16 +1,15 @@
-//! 官方驱动 `config.xml` 导出的「VID:PID → 型号」快照表。
+//! 「VID:PID → 型号」快照表（品牌无关的加载器）。
 //!
-//! 数据源是 `data/ajazz_device_map.json`（由 `tools/probe/dump_driver_config.py`
-//! 从 `AJAZZ Driver（W1）config.xml` 导出），编译期通过 `include_str!` 内嵌，
-//! 保证二进制不依赖运行目录，也不会与快照分叉（ADR-0010 D7）。
+//! 每个品牌一份 JSON 快照，由 [`crate::brands::BrandSpec::device_table_json`]
+//! 编译期嵌入（`include_str!`）：安装目录不需要携带数据文件，也不会与二进制
+//! 版本分叉（ADR-0010 D7）。新增品牌只新增一份数据文件 + 一个注册项，
+//! 本文件无需改动（ADR-0011）。
 //!
 //! 匹配必须**精确**：`0x6425 = AJ159 NL P`、`0x6426 = AJ159 NL`，只差一位，
 //! 任何前缀 / 区间匹配都会把型号搞错（规格 §2「型号匹配必须使用表驱动的 Profile」）。
 
-use crate::data::AJAZZ_DEVICE_MAP;
 use serde::Deserialize;
 use std::collections::HashMap;
-use std::sync::OnceLock;
 
 /// 一个 VID:PID 对应的型号信息。
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
@@ -30,7 +29,7 @@ pub struct Entry {
 impl Entry {
     /// 从 `hid_interface` 取接口号：`MI_01` → `1`。
     ///
-    /// 集合选择顺序是「VID/PID 精确 → 表内 MI_xx → UsagePage == 0xFFB2」，
+    /// 集合选择顺序是「VID/PID 精确 → 表内 MI_xx → UsagePage」，
     /// 三者缺一不可（`docs/hid-rust-verification.md` §集合选择）。
     pub fn interface_index(&self) -> Option<u8> {
         let tail = self.hid_interface.rsplit("MI_").next()?;
@@ -50,7 +49,7 @@ struct RawSoftware {
     version: String,
 }
 
-/// 编译期嵌入的型号表。
+/// 一个品牌编译期嵌入的型号表。
 #[derive(Debug)]
 pub struct DeviceTable {
     map: HashMap<(u16, u16), Entry>,
@@ -93,15 +92,6 @@ impl DeviceTable {
         })
     }
 
-    /// 进程内唯一实例：解析一次，之后只读。
-    pub fn embedded() -> &'static Self {
-        static TABLE: OnceLock<DeviceTable> = OnceLock::new();
-        TABLE.get_or_init(|| {
-            Self::parse(AJAZZ_DEVICE_MAP)
-                .expect("内置型号表必须可解析（编译期嵌入，失败即发版事故）")
-        })
-    }
-
     /// 精确匹配。**禁止**前缀 / 区间匹配。
     pub fn lookup(&self, vid: u16, pid: u16) -> Option<&Entry> {
         self.map.get(&(vid, pid))
@@ -112,7 +102,7 @@ impl DeviceTable {
         self.lookup(vid, pid).map(|e| e.name.as_str())
     }
 
-    /// 条数（当前快照：8 型号 × 2 模式 = 16）。
+    /// 条数。
     pub fn len(&self) -> usize {
         self.map.len()
     }
@@ -129,77 +119,45 @@ impl DeviceTable {
         v
     }
 
-    /// 该 VID 是否属于本表覆盖的代际（NearLink / W1 代）。
+    /// 该 VID 是否属于本表覆盖的代际。
     pub fn known_vid(&self, vid: u16) -> bool {
         self.map.keys().any(|(v, _)| *v == vid)
     }
-}
-
-/// 便捷入口：按 VID/PID 查型号名。
-pub fn model_name(vid: u16, pid: u16) -> Option<&'static str> {
-    DeviceTable::embedded().name(vid, pid)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    const JSON: &str = r#"{
+        "source_file": "config.xml",
+        "software": { "version": "9.9.9" },
+        "by_vid_pid": {
+            "7768:6426": { "name": "M1", "device_type": 1, "mode": "2.4G", "hid_interface": "VID_7768&PID_6426&MI_01", "device_attr": "mouse" },
+            "7768:6D26": { "name": "M1", "device_type": 1, "mode": "USB",  "hid_interface": "VID_7768&PID_6D26&MI_00", "device_attr": "mouse" }
+        }
+    }"#;
+
     #[test]
-    fn table_has_16_entries() {
-        let t = DeviceTable::embedded();
-        assert_eq!(t.len(), 16, "8 型号 × 2 模式");
-        assert!(!t.is_empty());
+    fn parses_and_matches_exactly() {
+        let t = DeviceTable::parse(JSON).unwrap();
+        assert_eq!(t.len(), 2);
         assert_eq!(t.source_file, "config.xml");
-        assert_eq!(t.source_version, "1.0.7.6");
-    }
-
-    #[test]
-    fn exact_match_on_verified_device() {
-        // 本机验证设备：VID 0x7768 / PID 0x6426。
-        let e = DeviceTable::embedded()
-            .lookup(0x7768, 0x6426)
-            .expect("6426 必须在表内");
-        assert_eq!(e.name, "AJ159 NL");
-        assert_eq!(e.mode, "2.4G");
-        assert_eq!(e.interface_index(), Some(1));
-        assert_eq!(model_name(0x7768, 0x6426), Some("AJ159 NL"));
-    }
-
-    #[test]
-    fn p_variant_is_not_prefix_matched() {
-        let t = DeviceTable::embedded();
-        assert_eq!(t.name(0x7768, 0x6425), Some("AJ159 NL P"));
-        assert_eq!(t.name(0x7768, 0x6426), Some("AJ159 NL"));
-        assert_eq!(t.name(0x7768, 0x6427), None, "6427 不存在，必须 miss");
-    }
-
-    #[test]
-    fn usb_and_24g_share_one_name() {
-        let t = DeviceTable::embedded();
-        let usb = t.lookup(0x7768, 0x6D26).unwrap();
-        let g24 = t.lookup(0x7768, 0x6426).unwrap();
-        assert_eq!(usb.name, g24.name);
-        assert_ne!(usb.mode, g24.mode);
-    }
-
-    #[test]
-    fn unknown_vendor_is_miss() {
-        let t = DeviceTable::embedded();
-        assert!(
-            t.lookup(0x249A, 0x5C2F).is_none(),
-            "不同品牌的 VID 不得复用协议/型号"
-        );
-        assert!(!t.known_vid(0x249A));
+        assert_eq!(t.source_version, "9.9.9");
+        assert_eq!(t.name(0x7768, 0x6426), Some("M1"));
+        assert_eq!(t.lookup(0x7768, 0x6426).unwrap().interface_index(), Some(1));
+        assert_eq!(t.lookup(0x7768, 0x6D26).unwrap().interface_index(), Some(0));
+        assert_eq!(t.name(0x7768, 0x6427), None, "近似 PID 必须 miss");
         assert!(t.known_vid(0x7768));
+        assert!(!t.known_vid(0x249A));
     }
 
     #[test]
-    fn entries_are_sorted_and_complete() {
-        let entries = DeviceTable::embedded().entries();
-        assert_eq!(entries.len(), 16);
-        let names: std::collections::BTreeSet<_> =
-            entries.iter().map(|(_, e)| e.name.clone()).collect();
-        assert_eq!(names.len(), 8, "8 个型号");
+    fn entries_are_sorted() {
+        let table = DeviceTable::parse(JSON).unwrap();
+        let entries = table.entries();
+        assert_eq!(entries[0].0, (0x7768, 0x6426));
+        assert_eq!(entries[1].0, (0x7768, 0x6D26));
     }
 
     #[test]

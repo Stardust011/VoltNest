@@ -29,15 +29,11 @@ function transportName(t: string) {
 }
 
 /**
- * 家族 ID 的展示名：内部 ID 带厂商标识，诊断页统一收敛成协议简称。
- * 未登记的家族原样显示，避免新增 Provider 时界面失去辨识能力。
+ * 家族 ID 直接用作展示名：`hid-vbas` / `ble-bas` 本身是协议名，不含品牌，
+ * 新增品牌不新增家族（ADR-0011），因此这里不再需要「ID → 简称」的收敛表。
  */
-const FAMILY_LABELS: Record<string, string> = {
-  "hid-nearlink-ajazz": "hid-vbas",
-};
-
 function familyLabel(family: string) {
-  return FAMILY_LABELS[family] ?? family;
+  return family;
 }
 </script>
 

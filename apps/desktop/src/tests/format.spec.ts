@@ -15,7 +15,7 @@ function device(overrides: Partial<DeviceDto> = {}): DeviceDto {
   return {
     stableId: "hid:7768:6426",
     transport: "hid",
-    provider: "hid-nearlink-ajazz",
+    provider: "hid-vbas",
     displayName: "AJ159 NL",
     modelKey: "aj159 nl",
     battery: 90,
