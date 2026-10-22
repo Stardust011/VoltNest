@@ -71,6 +71,9 @@ pwsh scripts/check-test-matrix.ps1
   随后丢弃 `rev <= localRev` 的事件；命名、分组、排序全部由 Rust 决定。
 - **快照合并窗口 250ms**（≤4Hz），1s tick 驱动状态退化，只有真变化才发布。
 - **关闭窗口只隐藏到托盘**，托盘菜单「退出」才结束进程；二次启动唤起已有窗口。
+- **托盘图标跟着物理设备走**：每台可见设备一个电量环，右键菜单都是同一份
+  「打开面板 / 退出 VoltNest」。空心灰环只在没有设备图标时占位（无设备，或设备
+  全被隐藏），有设备图标时它隐身让位，不会多出一个像第二台设备的灰环。
 - **数据目录**：`%APPDATA%\VoltNest\`（`settings.json` / `state.json` / `logs/`），
   安装目录只读，运行时不写入。
 - **采集异常隔离**：每个 transport 独立监管线程，`catch_unwind` 兜住 panic 后按
@@ -94,8 +97,9 @@ pwsh scripts/check-test-matrix.ps1
 4. 仅跟踪 Windows 当前**已连接**的 BLE 设备；仅配对未连接的设备不主动拉起（O-1）。
 5. v1 不做代码签名，Windows SmartScreen 可能显示「未知发布者」。v1 不做自动更新。
 6. BLE 充电状态协议层不可得，界面显示 `Unknown`，不会显示「未充电」。
-7. **托盘气泡模式**以「托盘 tooltip 提示 6 秒」实现：Tauri 2 未暴露
-   `Shell_NotifyIcon` 的气泡接口，v1 不为它引入自绘托盘窗口。选项仍是
+7. **托盘气泡模式**以「对应托盘的 tooltip 提示 6 秒」实现：Tauri 2 未暴露
+   `Shell_NotifyIcon` 的气泡接口，v1 不为它引入自绘托盘窗口。提示挂在设备自己的
+   图标上（没有则挂基础图标），6 秒后还原原 tooltip。选项仍是
    「系统通知 / 托盘气泡 / 关闭」三档，不自动降级。
 8. 分支覆盖率（core ≥90%）暂由评审保证：`cargo llvm-cov` 的分支统计仍需 nightly。
 9. **系统通知的「应用名 + 图标」由 AUMID 决定**：启动时写
