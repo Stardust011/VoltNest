@@ -163,11 +163,17 @@ impl ProviderProfile {
         }
         match segments.next() {
             Some(protocol) if !protocol.is_empty() => {}
-            _ => return Err(ProfileError::FamilyIdWithoutProtocol { family_id: self.family_id }),
+            _ => {
+                return Err(ProfileError::FamilyIdWithoutProtocol {
+                    family_id: self.family_id,
+                });
+            }
         }
         for brand in BRAND_BLACKLIST {
             if self.family_id.eq_ignore_ascii_case(brand) || first.eq_ignore_ascii_case(brand) {
-                return Err(ProfileError::BrandInFamilyId { family_id: self.family_id });
+                return Err(ProfileError::BrandInFamilyId {
+                    family_id: self.family_id,
+                });
             }
         }
 
@@ -202,7 +208,9 @@ impl ProviderProfile {
                     });
                 }
             }
-            Cadence::PushOnly { expected_interval_ms } => {
+            Cadence::PushOnly {
+                expected_interval_ms,
+            } => {
                 if t.stale_ms * 2 < expected_interval_ms * 3 {
                     return Err(ProfileError::StaleBelowExpectedInterval {
                         stale_ms: t.stale_ms,
@@ -216,7 +224,9 @@ impl ProviderProfile {
         match (self.presence_poll_ms, self.transport) {
             (Some(0), _) => return Err(ProfileError::PresencePollZero),
             (Some(_), Transport::Ble) => {
-                return Err(ProfileError::PresencePollNotAllowed { transport: self.transport });
+                return Err(ProfileError::PresencePollNotAllowed {
+                    transport: self.transport,
+                });
             }
             _ => {}
         }
@@ -307,22 +317,35 @@ pub enum ProfileError {
 impl core::fmt::Display for ProfileError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
-            Self::ThresholdOrder { stale_ms, unavailable_ms, offline_ms } => write!(
+            Self::ThresholdOrder {
+                stale_ms,
+                unavailable_ms,
+                offline_ms,
+            } => write!(
                 f,
                 "PC-1 违反：阈值链必须 stale<unavailable<offline，实际 {stale_ms}/{unavailable_ms}/{offline_ms}"
             ),
-            Self::StaleBelowPollFloor { stale_ms, poll_min_ms } => write!(
+            Self::StaleBelowPollFloor {
+                stale_ms,
+                poll_min_ms,
+            } => write!(
                 f,
                 "PC-2 违反：staleAfter={stale_ms}ms 必须 >= 1.5×轮询下限({poll_min_ms}ms)"
             ),
-            Self::StaleBelowExpectedInterval { stale_ms, expected_interval_ms } => write!(
+            Self::StaleBelowExpectedInterval {
+                stale_ms,
+                expected_interval_ms,
+            } => write!(
                 f,
                 "PC-3 违反：staleAfter={stale_ms}ms 必须 >= 1.5×期望间隔({expected_interval_ms}ms)"
             ),
             Self::BrandInFamilyId { family_id } => {
                 write!(f, "PC-4 违反：家族 ID {family_id} 不得以品牌名标识协议")
             }
-            Self::TransportPrefixMismatch { family_id, transport } => write!(
+            Self::TransportPrefixMismatch {
+                family_id,
+                transport,
+            } => write!(
                 f,
                 "PC-4 违反：家族 ID {family_id} 必须以 \"{}-*\" 开头",
                 transport.as_str()
@@ -336,7 +359,11 @@ impl core::fmt::Display for ProfileError {
                 transport.as_str()
             ),
             Self::PresencePollZero => write!(f, "PC-6 违反：presence_poll_ms 不得为 0"),
-            Self::PollRangeInvalid { min_ms, max_ms, default_ms } => write!(
+            Self::PollRangeInvalid {
+                min_ms,
+                max_ms,
+                default_ms,
+            } => write!(
                 f,
                 "PC-7 违反：轮询区间非法 min={min_ms} default={default_ms} max={max_ms}（要求 30000..=300000 且 min<=default<=max）"
             ),
@@ -344,7 +371,11 @@ impl core::fmt::Display for ProfileError {
                 write!(f, "D5 违反：家族 ID {family_id} 重复")
             }
             Self::DuplicateTransport { transport } => {
-                write!(f, "D5 违反：transport {} 被多个 Provider 占用", transport.as_str())
+                write!(
+                    f,
+                    "D5 违反：transport {} 被多个 Provider 占用",
+                    transport.as_str()
+                )
             }
         }
     }
@@ -356,8 +387,14 @@ impl std::error::Error for ProfileError {}
 pub static HID_NEARLINK_AJAZZ: ProviderProfile = ProviderProfile {
     family_id: crate::FAMILY_HID_NEARLINK_AJAZZ,
     transport: Transport::Hid,
-    cadence: Cadence::PushOnly { expected_interval_ms: 30_000 },
-    thresholds: Thresholds { stale_ms: 45_000, unavailable_ms: 60_000, offline_ms: 180_000 },
+    cadence: Cadence::PushOnly {
+        expected_interval_ms: 30_000,
+    },
+    thresholds: Thresholds {
+        stale_ms: 45_000,
+        unavailable_ms: 60_000,
+        offline_ms: 180_000,
+    },
     charging: ChargingSupport::FromReading,
     // P-2：内部常量，不进 settings.json。
     presence_poll_ms: Some(5_000),
@@ -368,9 +405,17 @@ pub static BLE_BAS: ProviderProfile = ProviderProfile {
     family_id: crate::FAMILY_BLE_BAS,
     transport: Transport::Ble,
     cadence: Cadence::NotifyWithPoll {
-        poll: PollPolicy { min_ms: 60_000, max_ms: 300_000, default_ms: 60_000 },
+        poll: PollPolicy {
+            min_ms: 60_000,
+            max_ms: 300_000,
+            default_ms: 60_000,
+        },
     },
-    thresholds: Thresholds { stale_ms: 90_000, unavailable_ms: 120_000, offline_ms: 360_000 },
+    thresholds: Thresholds {
+        stale_ms: 90_000,
+        unavailable_ms: 120_000,
+        offline_ms: 360_000,
+    },
     // 0x2BF0 / 0x2BEA 未实现，0x2BED 失真（BLE 充电状态不可用）。
     charging: ChargingSupport::Unavailable,
     // 出现由 60s 巡检天然覆盖（PC-6）。
@@ -388,10 +433,14 @@ pub fn validate_registry(profiles: &[&'static ProviderProfile]) -> Result<(), Pr
     for (i, p) in profiles.iter().enumerate() {
         for other in profiles.iter().skip(i + 1) {
             if p.family_id == other.family_id {
-                return Err(ProfileError::DuplicateFamilyId { family_id: p.family_id });
+                return Err(ProfileError::DuplicateFamilyId {
+                    family_id: p.family_id,
+                });
             }
             if p.transport == other.transport {
-                return Err(ProfileError::DuplicateTransport { transport: p.transport });
+                return Err(ProfileError::DuplicateTransport {
+                    transport: p.transport,
+                });
             }
         }
     }
@@ -422,15 +471,24 @@ mod tests {
     fn pc1_rejects_equal_or_inverted_chain() {
         let mut p = base_hid();
         p.thresholds.unavailable_ms = p.thresholds.stale_ms;
-        assert!(matches!(p.validate(), Err(ProfileError::ThresholdOrder { .. })));
+        assert!(matches!(
+            p.validate(),
+            Err(ProfileError::ThresholdOrder { .. })
+        ));
 
         let mut p = base_hid();
         p.thresholds.offline_ms = p.thresholds.unavailable_ms;
-        assert!(matches!(p.validate(), Err(ProfileError::ThresholdOrder { .. })));
+        assert!(matches!(
+            p.validate(),
+            Err(ProfileError::ThresholdOrder { .. })
+        ));
 
         let mut p = base_hid();
         p.thresholds.stale_ms = 200_000; // 大于 offline
-        assert!(matches!(p.validate(), Err(ProfileError::ThresholdOrder { .. })));
+        assert!(matches!(
+            p.validate(),
+            Err(ProfileError::ThresholdOrder { .. })
+        ));
     }
 
     // ---------- PC-2 ----------
@@ -442,7 +500,10 @@ mod tests {
 
         let mut p = base_ble();
         p.thresholds.stale_ms = 89_999;
-        assert!(matches!(p.validate(), Err(ProfileError::StaleBelowPollFloor { .. })));
+        assert!(matches!(
+            p.validate(),
+            Err(ProfileError::StaleBelowPollFloor { .. })
+        ));
     }
 
     // ---------- PC-3 ----------
@@ -454,7 +515,10 @@ mod tests {
 
         let mut p = base_hid();
         p.thresholds.stale_ms = 44_999;
-        assert!(matches!(p.validate(), Err(ProfileError::StaleBelowExpectedInterval { .. })));
+        assert!(matches!(
+            p.validate(),
+            Err(ProfileError::StaleBelowExpectedInterval { .. })
+        ));
     }
 
     // ---------- PC-4 ----------
@@ -463,15 +527,24 @@ mod tests {
     fn pc4_rejects_brand_as_transport() {
         let mut p = base_hid();
         p.family_id = "ajazz-hid";
-        assert!(matches!(p.validate(), Err(ProfileError::TransportPrefixMismatch { .. })));
+        assert!(matches!(
+            p.validate(),
+            Err(ProfileError::TransportPrefixMismatch { .. })
+        ));
 
         let mut p = base_hid();
         p.family_id = "ajazz";
-        assert!(matches!(p.validate(), Err(ProfileError::TransportPrefixMismatch { .. })));
+        assert!(matches!(
+            p.validate(),
+            Err(ProfileError::TransportPrefixMismatch { .. })
+        ));
 
         let mut p = base_hid();
         p.family_id = "xctech-lightspeed";
-        assert!(matches!(p.validate(), Err(ProfileError::TransportPrefixMismatch { .. })));
+        assert!(matches!(
+            p.validate(),
+            Err(ProfileError::TransportPrefixMismatch { .. })
+        ));
     }
 
     #[test]
@@ -486,11 +559,17 @@ mod tests {
     fn pc4_requires_protocol_segment() {
         let mut p = base_hid();
         p.family_id = "hid-";
-        assert!(matches!(p.validate(), Err(ProfileError::FamilyIdWithoutProtocol { .. })));
+        assert!(matches!(
+            p.validate(),
+            Err(ProfileError::FamilyIdWithoutProtocol { .. })
+        ));
 
         let mut p = base_hid();
         p.family_id = "hid";
-        assert!(matches!(p.validate(), Err(ProfileError::FamilyIdWithoutProtocol { .. })));
+        assert!(matches!(
+            p.validate(),
+            Err(ProfileError::FamilyIdWithoutProtocol { .. })
+        ));
     }
 
     // ---------- PC-5 ----------
@@ -522,7 +601,10 @@ mod tests {
 
         let mut p = base_ble();
         p.presence_poll_ms = Some(5_000);
-        assert!(matches!(p.validate(), Err(ProfileError::PresencePollNotAllowed { .. })));
+        assert!(matches!(
+            p.validate(),
+            Err(ProfileError::PresencePollNotAllowed { .. })
+        ));
     }
 
     #[test]
@@ -538,34 +620,66 @@ mod tests {
     fn pc7_enforces_range_and_order() {
         let mut p = base_ble();
         p.cadence = Cadence::NotifyWithPoll {
-            poll: PollPolicy { min_ms: 20_000, max_ms: 300_000, default_ms: 60_000 },
+            poll: PollPolicy {
+                min_ms: 20_000,
+                max_ms: 300_000,
+                default_ms: 60_000,
+            },
         };
-        assert!(matches!(p.validate(), Err(ProfileError::PollRangeInvalid { .. })));
+        assert!(matches!(
+            p.validate(),
+            Err(ProfileError::PollRangeInvalid { .. })
+        ));
 
         let mut p = base_ble();
         p.cadence = Cadence::NotifyWithPoll {
-            poll: PollPolicy { min_ms: 60_000, max_ms: 400_000, default_ms: 60_000 },
+            poll: PollPolicy {
+                min_ms: 60_000,
+                max_ms: 400_000,
+                default_ms: 60_000,
+            },
         };
-        assert!(matches!(p.validate(), Err(ProfileError::PollRangeInvalid { .. })));
+        assert!(matches!(
+            p.validate(),
+            Err(ProfileError::PollRangeInvalid { .. })
+        ));
 
         let mut p = base_ble();
         p.cadence = Cadence::NotifyWithPoll {
-            poll: PollPolicy { min_ms: 60_000, max_ms: 120_000, default_ms: 50_000 },
+            poll: PollPolicy {
+                min_ms: 60_000,
+                max_ms: 120_000,
+                default_ms: 50_000,
+            },
         };
-        assert!(matches!(p.validate(), Err(ProfileError::PollRangeInvalid { .. })));
+        assert!(matches!(
+            p.validate(),
+            Err(ProfileError::PollRangeInvalid { .. })
+        ));
 
         let mut p = base_ble();
         p.cadence = Cadence::NotifyWithPoll {
-            poll: PollPolicy { min_ms: 60_000, max_ms: 120_000, default_ms: 130_000 },
+            poll: PollPolicy {
+                min_ms: 60_000,
+                max_ms: 120_000,
+                default_ms: 130_000,
+            },
         };
-        assert!(matches!(p.validate(), Err(ProfileError::PollRangeInvalid { .. })));
+        assert!(matches!(
+            p.validate(),
+            Err(ProfileError::PollRangeInvalid { .. })
+        ));
     }
 
     #[test]
     fn pc7_accepts_full_legal_range() {
         let mut p = base_ble();
         p.cadence = Cadence::NotifyWithPoll {
-            poll: PollPolicy { min_ms: 30_000, max_ms: 300_000, default_ms: 30_000 },
+            poll: PollPolicy {
+                min_ms: 30_000,
+                max_ms: 300_000,
+                default_ms: 30_000,
+            },
         };
         // poll.min=30s → 要求 stale >= 45s，BLE 是 90s，通过。
         assert!(p.validate().is_ok());
@@ -577,11 +691,19 @@ mod tests {
     fn thresholds_match_spec_table_verbatim() {
         assert_eq!(
             HID_NEARLINK_AJAZZ.thresholds,
-            Thresholds { stale_ms: 45_000, unavailable_ms: 60_000, offline_ms: 180_000 }
+            Thresholds {
+                stale_ms: 45_000,
+                unavailable_ms: 60_000,
+                offline_ms: 180_000
+            }
         );
         assert_eq!(
             BLE_BAS.thresholds,
-            Thresholds { stale_ms: 90_000, unavailable_ms: 120_000, offline_ms: 360_000 }
+            Thresholds {
+                stale_ms: 90_000,
+                unavailable_ms: 120_000,
+                offline_ms: 360_000
+            }
         );
     }
 
@@ -591,25 +713,45 @@ mod tests {
         let hid = HID_NEARLINK_AJAZZ;
         assert_eq!(
             hid.thresholds_for(Sensitivity::Sensitive),
-            Thresholds { stale_ms: 22_500, unavailable_ms: 30_000, offline_ms: 90_000 }
+            Thresholds {
+                stale_ms: 22_500,
+                unavailable_ms: 30_000,
+                offline_ms: 90_000
+            }
         );
         assert_eq!(
             hid.thresholds_for(Sensitivity::Standard),
-            Thresholds { stale_ms: 45_000, unavailable_ms: 60_000, offline_ms: 180_000 }
+            Thresholds {
+                stale_ms: 45_000,
+                unavailable_ms: 60_000,
+                offline_ms: 180_000
+            }
         );
         assert_eq!(
             hid.thresholds_for(Sensitivity::Loose),
-            Thresholds { stale_ms: 90_000, unavailable_ms: 120_000, offline_ms: 360_000 }
+            Thresholds {
+                stale_ms: 90_000,
+                unavailable_ms: 120_000,
+                offline_ms: 360_000
+            }
         );
 
         let ble = BLE_BAS;
         assert_eq!(
             ble.thresholds_for(Sensitivity::Sensitive),
-            Thresholds { stale_ms: 45_000, unavailable_ms: 60_000, offline_ms: 180_000 }
+            Thresholds {
+                stale_ms: 45_000,
+                unavailable_ms: 60_000,
+                offline_ms: 180_000
+            }
         );
         assert_eq!(
             ble.thresholds_for(Sensitivity::Loose),
-            Thresholds { stale_ms: 180_000, unavailable_ms: 240_000, offline_ms: 720_000 }
+            Thresholds {
+                stale_ms: 180_000,
+                unavailable_ms: 240_000,
+                offline_ms: 720_000
+            }
         );
     }
 
@@ -617,7 +759,11 @@ mod tests {
     fn scaling_keeps_chain_order_for_every_level() {
         // D3 的核心收益：无需 clamp、无特例分支。
         for p in [HID_NEARLINK_AJAZZ, BLE_BAS] {
-            for s in [Sensitivity::Sensitive, Sensitivity::Standard, Sensitivity::Loose] {
+            for s in [
+                Sensitivity::Sensitive,
+                Sensitivity::Standard,
+                Sensitivity::Loose,
+            ] {
                 let t = p.thresholds_for(s);
                 assert!(t.stale_ms < t.unavailable_ms, "{:?} {:?}", p.family_id, s);
                 assert!(t.unavailable_ms < t.offline_ms, "{:?} {:?}", p.family_id, s);
@@ -629,19 +775,29 @@ mod tests {
     fn cadence_matches_spec() {
         assert_eq!(
             HID_NEARLINK_AJAZZ.cadence,
-            Cadence::PushOnly { expected_interval_ms: 30_000 }
+            Cadence::PushOnly {
+                expected_interval_ms: 30_000
+            }
         );
         assert_eq!(
             BLE_BAS.cadence,
             Cadence::NotifyWithPoll {
-                poll: PollPolicy { min_ms: 60_000, max_ms: 300_000, default_ms: 60_000 }
+                poll: PollPolicy {
+                    min_ms: 60_000,
+                    max_ms: 300_000,
+                    default_ms: 60_000
+                }
             }
         );
     }
 
     #[test]
     fn sensitivity_strings_round_trip() {
-        for s in [Sensitivity::Sensitive, Sensitivity::Standard, Sensitivity::Loose] {
+        for s in [
+            Sensitivity::Sensitive,
+            Sensitivity::Standard,
+            Sensitivity::Loose,
+        ] {
             assert_eq!(Sensitivity::parse(s.as_str()), Some(s));
         }
         assert_eq!(Sensitivity::parse("Loose"), None);
@@ -662,15 +818,25 @@ mod tests {
             family_id: "ble-bas",
             transport: Transport::Ble,
             cadence: Cadence::NotifyWithPoll {
-                poll: PollPolicy { min_ms: 60_000, max_ms: 300_000, default_ms: 60_000 },
+                poll: PollPolicy {
+                    min_ms: 60_000,
+                    max_ms: 300_000,
+                    default_ms: 60_000,
+                },
             },
-            thresholds: Thresholds { stale_ms: 90_000, unavailable_ms: 120_000, offline_ms: 360_000 },
+            thresholds: Thresholds {
+                stale_ms: 90_000,
+                unavailable_ms: 120_000,
+                offline_ms: 360_000,
+            },
             charging: ChargingSupport::Unavailable,
             presence_poll_ms: None,
         };
         assert_eq!(
             validate_registry(&[&BLE_BAS, &DUP]),
-            Err(ProfileError::DuplicateFamilyId { family_id: "ble-bas" })
+            Err(ProfileError::DuplicateFamilyId {
+                family_id: "ble-bas"
+            })
         );
     }
 
@@ -679,14 +845,22 @@ mod tests {
         static DUP: ProviderProfile = ProviderProfile {
             family_id: "hid-nearlink-other",
             transport: Transport::Hid,
-            cadence: Cadence::PushOnly { expected_interval_ms: 30_000 },
-            thresholds: Thresholds { stale_ms: 45_000, unavailable_ms: 60_000, offline_ms: 180_000 },
+            cadence: Cadence::PushOnly {
+                expected_interval_ms: 30_000,
+            },
+            thresholds: Thresholds {
+                stale_ms: 45_000,
+                unavailable_ms: 60_000,
+                offline_ms: 180_000,
+            },
             charging: ChargingSupport::FromReading,
             presence_poll_ms: Some(5_000),
         };
         assert_eq!(
             validate_registry(&[&HID_NEARLINK_AJAZZ, &DUP]),
-            Err(ProfileError::DuplicateTransport { transport: Transport::Hid })
+            Err(ProfileError::DuplicateTransport {
+                transport: Transport::Hid
+            })
         );
     }
 
@@ -695,8 +869,14 @@ mod tests {
         static BROKEN: ProviderProfile = ProviderProfile {
             family_id: "hid-nearlink-broken",
             transport: Transport::Hid,
-            cadence: Cadence::PushOnly { expected_interval_ms: 30_000 },
-            thresholds: Thresholds { stale_ms: 10_000, unavailable_ms: 60_000, offline_ms: 180_000 },
+            cadence: Cadence::PushOnly {
+                expected_interval_ms: 30_000,
+            },
+            thresholds: Thresholds {
+                stale_ms: 10_000,
+                unavailable_ms: 60_000,
+                offline_ms: 180_000,
+            },
             charging: ChargingSupport::FromReading,
             presence_poll_ms: None,
         };

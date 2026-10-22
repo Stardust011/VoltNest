@@ -27,8 +27,8 @@ pub use error::ErrorCode;
 pub use event::{DeviceFact, ProviderEvent, RemovalReason, ValidReading};
 pub use ids::{Percent, StableId};
 pub use profile::{
-    BLE_BAS, Cadence, ChargingSupport, HID_NEARLINK_AJAZZ, PollPolicy, ProfileError, ProviderProfile,
-    Sensitivity, Thresholds, validate_registry,
+    BLE_BAS, Cadence, ChargingSupport, HID_NEARLINK_AJAZZ, PollPolicy, ProfileError,
+    ProviderProfile, Sensitivity, Thresholds, validate_registry,
 };
 pub use transport::Transport;
 

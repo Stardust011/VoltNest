@@ -1,0 +1,12 @@
+[package]
+name = "voltnest-storage"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "VoltNest 持久化：settings.json / state.json 的原子读写与损坏恢复"
+
+[dependencies]
+voltnest-provider.workspace = true
+serde.workspace = true
+serde_json.workspace = true
