@@ -233,6 +233,14 @@ impl Engine {
         self.notifications.entries()
     }
 
+    /// 回填一次通知的真实投递结果（AB-5）。
+    ///
+    /// `take_alerts()` 给出「应当发送」，宿主真正投递（或被模式关闭、被系统拒绝）后
+    /// 用本方法覆盖 `last_result`，诊断页才不会把「打算发」显示成「已发送」。
+    pub fn mark_notification_result(&mut self, stable_id: &str, threshold: u8, result: &str) {
+        self.notifications.mark_result(stable_id, threshold, result);
+    }
+
     // ---------- 事件 ----------
 
     /// 应用一个 Provider 事件。

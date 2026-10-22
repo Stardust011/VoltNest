@@ -213,6 +213,19 @@ impl NotificationBook {
         alert
     }
 
+    /// 覆盖某个 `(device, threshold)` 的最后结果（AB-5）。
+    ///
+    /// `observe()` 只能记录「策略判定为应当发送」，它不知道宿主最终有没有送出去：
+    /// Toast 可能被系统通知设置关掉、模式可能是「关闭」。宿主投递完再回填真实结果，
+    /// 这样诊断页显示的是事实而不是意图。
+    pub fn mark_result(&mut self, stable_id: &str, threshold: u8, result: &str) {
+        if let Some(device) = self.devices.get_mut(stable_id)
+            && let Some(entry) = device.entries.get_mut(&threshold)
+        {
+            entry.last_result = Some(result.to_string());
+        }
+    }
+
     /// 时钟后跳（系统时间被调早）：清除全部冷却，保留 `armed`（Z-9）。
     pub fn clear_cooldowns(&mut self) {
         for device in self.devices.values_mut() {
@@ -470,6 +483,29 @@ mod tests {
                 .iter()
                 .any(|e| e.armed && e.last_notified_at_ms.is_some()),
             "已通知的条目必须解除武装"
+        );
+    }
+
+    #[test]
+    fn host_can_overwrite_delivery_result() {
+        let mut b = book();
+        assert!(b.observe("a", "A", 15, Some(false), T0).is_some());
+        assert_eq!(
+            b.entries()[0].last_result.as_deref(),
+            Some("sent"),
+            "策略层先记下「应当发送」"
+        );
+        b.mark_result("a", 20, "suppressed_mode_off");
+        assert_eq!(
+            b.entries()[0].last_result.as_deref(),
+            Some("suppressed_mode_off")
+        );
+        // 未知设备 / 未知阈值是空操作，不能 panic。
+        b.mark_result("nope", 20, "failed");
+        b.mark_result("a", 7, "failed");
+        assert_eq!(
+            b.entries()[0].last_result.as_deref(),
+            Some("suppressed_mode_off")
         );
     }
 }
