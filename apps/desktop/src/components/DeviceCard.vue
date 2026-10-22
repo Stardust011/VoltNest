@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import {
   batteryColor,
-  batteryText,
+  displayedBattery,
   ringProgress,
   secondaryLine,
   stateLabel,
@@ -23,13 +23,22 @@ const props = defineProps<{
 }>();
 
 const tone = computed(() => toneFor(props.device.state));
-const progress = computed(() => ringProgress(props.device.battery));
-const color = computed(() => batteryColor(props.device.battery, props.device.isCharging === true, props.device.state));
+
+/**
+ * 展示用读数：启动瞬间还没有本次读数（`state === "unknown"`）时先用 state.json 的缓存值，
+ * 免得首屏出现「— + 空进度条」，数据一到就自动换成实时值（`displayedBattery`）。
+ */
+const shownBattery = computed(() => displayedBattery(props.device));
+
+const progress = computed(() => ringProgress(shownBattery.value));
+const color = computed(() =>
+  batteryColor(shownBattery.value, props.device.isCharging === true, props.device.state),
+);
 
 /**
  * 副行：
  * 1. 合并卡 → 非活跃链路说明（W-2，由 Rust 生成）；
- * 2. 无当前读数但有上次已知 → 「上次 X% · 时间」（§11 回填）；
+ * 2. 主数字是缓存值 → 补「上次读数 · 时间」，让「等待读数」有明确来源；
  * 3. 其余按充电状态。
  */
 const secondary = computed(() => {
@@ -37,7 +46,7 @@ const secondary = computed(() => {
   if (props.device.battery === null && props.device.lastKnownBattery !== null) {
     const at = props.device.lastKnownAtMs;
     const when = at === null ? "" : humanizeAgo(Math.max(0, props.nowMs - at));
-    return when ? `上次 ${props.device.lastKnownBattery}% · ${when}` : `上次 ${props.device.lastKnownBattery}%`;
+    return when ? `上次读数 · ${when}` : "上次读数";
   }
   return secondaryLine(props.device);
 });
@@ -49,14 +58,14 @@ const secondary = computed(() => {
       <!-- 电量读数：数值 + Progress，颜色沿用 batteryColor 的语义（充电 / 低电 / 状态）。 -->
       <div class="flex w-14 shrink-0 flex-col gap-1.5">
         <span class="text-lg leading-none font-semibold tabular-nums" :style="{ color }">
-          {{ device.battery === null ? "—" : device.battery
-          }}<span v-if="device.battery !== null" class="text-[0.6em] font-medium">%</span>
+          {{ shownBattery === null ? "—" : shownBattery
+          }}<span v-if="shownBattery !== null" class="text-[0.6em] font-medium">%</span>
         </span>
         <Progress
           :model-value="progress"
           class="h-1.5 [&>div]:bg-current"
           :style="{ color }"
-          :aria-label="`电量 ${batteryText(device)}`"
+          :aria-label="shownBattery === null ? '电量未知' : `电量 ${shownBattery}%`"
         />
       </div>
 

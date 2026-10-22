@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   batteryColor,
   batteryText,
+  displayedBattery,
   ringProgress,
   secondaryLine,
   stateLabel,
@@ -86,8 +87,8 @@ describe("secondaryLine", () => {
     expect(secondaryLine(device({ isCharging: null }))).toBe("充电状态未知");
   });
 
-  it("无当前读数但存在上次已知时显示上次值", () => {
-    expect(secondaryLine(device({ battery: null, lastKnownBattery: 42 }))).toBe("上次 42%");
+  it("无当前读数但存在上次已知时只说「上次读数」，数值已在主位", () => {
+    expect(secondaryLine(device({ battery: null, lastKnownBattery: 42 }))).toBe("上次读数");
   });
 
   it("从未有过读数时区分 unknown 与其它状态", () => {
@@ -97,6 +98,35 @@ describe("secondaryLine", () => {
     expect(secondaryLine(device({ battery: null, lastKnownBattery: null, state: "offline" }))).toBe(
       "无可用读数",
     );
+  });
+});
+
+describe("displayedBattery", () => {
+  it("启动回填（unknown + 缓存值）时用缓存值填主读数", () => {
+    expect(displayedBattery(device({ battery: null, state: "unknown", lastKnownBattery: 90 }))).toBe(
+      90,
+    );
+  });
+
+  it("实时读数优先于缓存", () => {
+    expect(displayedBattery(device({ battery: 42, state: "online", lastKnownBattery: 90 }))).toBe(
+      42,
+    );
+  });
+
+  it("确定读不到的退化状态不借用缓存", () => {
+    expect(displayedBattery(device({ battery: null, state: "offline", lastKnownBattery: 90 }))).toBe(
+      null,
+    );
+    expect(
+      displayedBattery(device({ battery: null, state: "unavailable", lastKnownBattery: 90 })),
+    ).toBe(null);
+  });
+
+  it("既无读数也无缓存时返回 null", () => {
+    expect(
+      displayedBattery(device({ battery: null, state: "unknown", lastKnownBattery: null })),
+    ).toBe(null);
   });
 });
 

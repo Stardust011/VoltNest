@@ -83,7 +83,7 @@ const deviceById = computed(() => {
 const statusText = computed(() => {
   if (!connected.value) return "正在连接…";
   const count = snapshot.value?.devices.length ?? 0;
-  return count === 0 ? "尚未发现设备" : `已跟踪 ${count} 台设备`;
+  return count === 0 ? "尚未发现设备" : `正在监控 ${count} 台设备`;
 });
 
 function fail(e: unknown) {
