@@ -62,13 +62,20 @@ export function toneFor(state: DeviceState): Tone {
 }
 
 /**
+ * 充电绿：与托盘 `tray.rs::EMERALD` 同一个色值，两侧并排看必须一致（规格 §12）。
+ *
+ * 充电时不按电量分档 —— 闪电已经把「在充电」说清楚了，弧长继续表达充到哪了。
+ */
+const CHARGING_GREEN = "#10b981";
+
+/**
  * 电量环颜色：与托盘图标的规则对齐（规格 §12）。
  *
- * 低于 20% 橙色、低于 10% 红色、充电青色；离线/过期沿用状态色。
+ * 低于 20% 橙色、低于 10% 红色、充电绿色；离线/过期沿用状态色。
  */
 export function batteryColor(battery: number | null, charging: boolean, state: DeviceState): string {
   if (state !== "online" && state !== "stale") return toneFor(state).ring;
-  if (charging) return "#06b6d4";
+  if (charging) return CHARGING_GREEN;
   if (battery === null) return toneFor(state).ring;
   if (battery < 10) return "#ef4444";
   if (battery < 20) return "#f97316";

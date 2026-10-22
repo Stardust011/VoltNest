@@ -46,8 +46,9 @@ describe("toneFor / stateLabel", () => {
 });
 
 describe("batteryColor", () => {
-  it("充电优先于电量档位", () => {
-    expect(batteryColor(5, true, "online")).toBe("#06b6d4");
+  it("充电优先于电量档位，且用托盘同款绿色", () => {
+    expect(batteryColor(5, true, "online")).toBe("#10b981");
+    expect(batteryColor(5, true, "online")).toBe(toneFor("online").ring);
   });
 
   it("低于 10% 红色、低于 20% 橙色、其余用主题色", () => {
