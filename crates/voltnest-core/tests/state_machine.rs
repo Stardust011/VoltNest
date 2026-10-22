@@ -541,7 +541,7 @@ fn tray_order_is_pruned_to_limit_keeping_recent() {
     let fact = ProviderEvent::Arrived(voltnest_provider::DeviceFact::new(
         fresh_id,
         Transport::Hid,
-        "hid-nearlink-ajazz",
+        "hid-vbas",
         "Fresh",
         "Fresh",
     ));

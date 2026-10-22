@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-description = "VoltNest HID Provider（hid-nearlink-ajazz）：枚举、读取、帧解析、型号表"
+description = "VoltNest HID Provider（hid-vbas）：通用 HID 私有协议电量采集（品牌描述 + 帧解析 + 型号表）"
 
 [dependencies]
 voltnest-provider.workspace = true

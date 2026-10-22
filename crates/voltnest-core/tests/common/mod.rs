@@ -5,20 +5,18 @@
 use voltnest_core::{Engine, EngineConfig};
 use voltnest_provider::Percent;
 use voltnest_provider::testing::{ble_fact, hid_fact};
-use voltnest_provider::{
-    BLE_BAS, HID_NEARLINK_AJAZZ, ProviderEvent, StableId, Transport, ValidReading,
-};
+use voltnest_provider::{BLE_BAS, HID_VBAS, ProviderEvent, StableId, Transport, ValidReading};
 
 /// 固定的「现在」：2027-01-15 08:00:00 UTC 左右，纯数字避免依赖真实时间。
 pub const T0: u64 = 1_800_000_000_000;
 
 pub fn engine() -> Engine {
-    Engine::new(&[&HID_NEARLINK_AJAZZ, &BLE_BAS], EngineConfig::default())
+    Engine::new(&[&HID_VBAS, &BLE_BAS], EngineConfig::default())
         .expect("v1 的 Profile 必须通过 PC-1..PC-7")
 }
 
 pub fn engine_with(config: EngineConfig) -> Engine {
-    Engine::new(&[&HID_NEARLINK_AJAZZ, &BLE_BAS], config).expect("profile 合法")
+    Engine::new(&[&HID_VBAS, &BLE_BAS], config).expect("profile 合法")
 }
 
 pub fn hid_id() -> StableId {

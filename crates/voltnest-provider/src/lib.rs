@@ -27,8 +27,8 @@ pub use error::ErrorCode;
 pub use event::{DeviceFact, ProviderEvent, RemovalReason, ValidReading};
 pub use ids::{Percent, StableId};
 pub use profile::{
-    BLE_BAS, Cadence, ChargingSupport, HID_NEARLINK_AJAZZ, PollPolicy, ProfileError,
-    ProviderProfile, Sensitivity, Thresholds, validate_registry,
+    BLE_BAS, Cadence, ChargingSupport, HID_VBAS, PollPolicy, ProfileError, ProviderProfile,
+    Sensitivity, Thresholds, validate_registry,
 };
 pub use transport::Transport;
 
@@ -36,8 +36,12 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::sync::mpsc::Sender;
 
-/// 协议家族 ID：`hid-nearlink-ajazz`。同时是日志前缀、诊断分组键与 `Snapshot.provider` 值。
-pub const FAMILY_HID_NEARLINK_AJAZZ: &str = "hid-nearlink-ajazz";
+/// 协议家族 ID：`hid-vbas`（HID Vendor Battery Access Spec）。
+///
+/// 同时是日志前缀、诊断分组键与 `Snapshot.provider` 值。家族层面**不含品牌**：
+/// 任何走 HID 私有协议报电量的设备都归入本家族，品牌差异由
+/// `voltnest-hid` 内的品牌描述（字段位置 + 解析规则）表达，见 ADR-0011。
+pub const FAMILY_HID_VBAS: &str = "hid-vbas";
 
 /// 协议家族 ID：`ble-bas`。
 pub const FAMILY_BLE_BAS: &str = "ble-bas";

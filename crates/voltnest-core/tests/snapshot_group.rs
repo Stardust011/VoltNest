@@ -44,14 +44,14 @@ fn devices_follow_tray_order_then_name() {
     let fact_a = ProviderEvent::Arrived(voltnest_provider::DeviceFact::new(
         a.clone(),
         Transport::Hid,
-        "hid-nearlink-ajazz",
+        "hid-vbas",
         "Zeta",
         "Zeta",
     ));
     let fact_b = ProviderEvent::Arrived(voltnest_provider::DeviceFact::new(
         b.clone(),
         Transport::Hid,
-        "hid-nearlink-ajazz",
+        "hid-vbas",
         "Alpha",
         "Alpha",
     ));
@@ -81,7 +81,7 @@ fn tray_respects_capacity_presence_and_hidden() {
         let fact = ProviderEvent::Arrived(voltnest_provider::DeviceFact::new(
             id.clone(),
             Transport::Hid,
-            "hid-nearlink-ajazz",
+            "hid-vbas",
             format!("Dev{i}"),
             format!("Dev{i}"),
         ));
@@ -231,7 +231,7 @@ fn no_group_with_three_members_or_same_transport() {
     let third_fact = ProviderEvent::Arrived(voltnest_provider::DeviceFact::new(
         third,
         Transport::Hid,
-        "hid-nearlink-ajazz",
+        "hid-vbas",
         "AJ159 NL",
         "AJ159 NL",
     ));

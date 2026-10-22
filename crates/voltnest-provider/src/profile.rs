@@ -148,10 +148,11 @@ impl ProviderProfile {
     pub fn validate(&self) -> Result<(), ProfileError> {
         // PC-4：家族 ID 必须 `<transport>-<protocol>`，且品牌名不得占据 transport 段。
         //
-        // 注意：ADR-0010 D1 允许家族 ID **包含**厂商标识（`hid-nearlink-ajazz` 的
-        // 最后一段就是厂商），因此 PC-4 不能简单黑名单整串 —— 否则与 D1 及
-        // 「两个 PROFILE 必须 validate().is_ok()」的验收条件直接冲突。
+        // 注意：ADR-0010 D1 允许家族 ID **包含**用于区分协议实现的厂商标识，因此
+        // PC-4 不能简单黑名单整串 —— 否则与 D1 及「两个 PROFILE 必须
+        // validate().is_ok()」的验收条件直接冲突。
         // 这里落地的语义是：品牌名不得作为 transport 段出现，也不得单独构成 ID。
+        // `hid-vbas` 把品牌从家族 ID 里彻底移除，进一步收敛为「协议 = 家族」。
         let prefix = self.transport.as_str();
         let mut segments = self.family_id.split('-');
         let first = segments.next().unwrap_or_default();
@@ -383,9 +384,12 @@ impl core::fmt::Display for ProfileError {
 
 impl std::error::Error for ProfileError {}
 
-/// `hid-nearlink-ajazz` 的能力声明。数值与规格 §3 / §5.3 逐字一致（有测试断言）。
-pub static HID_NEARLINK_AJAZZ: ProviderProfile = ProviderProfile {
-    family_id: crate::FAMILY_HID_NEARLINK_AJAZZ,
+/// `hid-vbas` 的能力声明。数值与规格 §3 / §5.3 逐字一致（有测试断言）。
+///
+/// 家族级能力声明只有一份：品牌再多也不新增家族（ADR-0011）。品牌各自的
+/// 上报节奏由 `voltnest-hid` 的品牌描述声明，并在启动期与本声明做兼容校验。
+pub static HID_VBAS: ProviderProfile = ProviderProfile {
+    family_id: crate::FAMILY_HID_VBAS,
     transport: Transport::Hid,
     cadence: Cadence::PushOnly {
         expected_interval_ms: 30_000,
@@ -452,7 +456,7 @@ mod tests {
     use super::*;
 
     fn base_hid() -> ProviderProfile {
-        HID_NEARLINK_AJAZZ
+        HID_VBAS
     }
 
     fn base_ble() -> ProviderProfile {
@@ -549,9 +553,10 @@ mod tests {
 
     #[test]
     fn pc4_allows_vendor_as_protocol_segment() {
-        // D1：crate 名与目录名不用品牌，但家族 ID 可带厂商标识以区分协议实现。
+        // D1：crate 名与目录名不用品牌，但家族 ID 的协议段允许带厂商标识以区分实现。
+        // `hid-vbas` 本身不需要它；这里验证「允许」而非「要求」。
         let mut p = base_hid();
-        p.family_id = "hid-nearlink-ajazz";
+        p.family_id = "hid-vbas-ajazz";
         assert!(p.validate().is_ok());
     }
 
@@ -690,7 +695,7 @@ mod tests {
     #[test]
     fn thresholds_match_spec_table_verbatim() {
         assert_eq!(
-            HID_NEARLINK_AJAZZ.thresholds,
+            HID_VBAS.thresholds,
             Thresholds {
                 stale_ms: 45_000,
                 unavailable_ms: 60_000,
@@ -710,7 +715,7 @@ mod tests {
     #[test]
     fn sensitivity_scales_whole_chain() {
         // 规格 §5.3 表：三值同比缩放，不能只改 staleAfter。
-        let hid = HID_NEARLINK_AJAZZ;
+        let hid = HID_VBAS;
         assert_eq!(
             hid.thresholds_for(Sensitivity::Sensitive),
             Thresholds {
@@ -758,7 +763,7 @@ mod tests {
     #[test]
     fn scaling_keeps_chain_order_for_every_level() {
         // D3 的核心收益：无需 clamp、无特例分支。
-        for p in [HID_NEARLINK_AJAZZ, BLE_BAS] {
+        for p in [HID_VBAS, BLE_BAS] {
             for s in [
                 Sensitivity::Sensitive,
                 Sensitivity::Standard,
@@ -774,7 +779,7 @@ mod tests {
     #[test]
     fn cadence_matches_spec() {
         assert_eq!(
-            HID_NEARLINK_AJAZZ.cadence,
+            HID_VBAS.cadence,
             Cadence::PushOnly {
                 expected_interval_ms: 30_000
             }
@@ -809,7 +814,7 @@ mod tests {
 
     #[test]
     fn registry_accepts_v1_providers() {
-        assert_eq!(validate_registry(&[&HID_NEARLINK_AJAZZ, &BLE_BAS]), Ok(()));
+        assert_eq!(validate_registry(&[&HID_VBAS, &BLE_BAS]), Ok(()));
     }
 
     #[test]
@@ -843,7 +848,7 @@ mod tests {
     #[test]
     fn registry_rejects_duplicate_transport() {
         static DUP: ProviderProfile = ProviderProfile {
-            family_id: "hid-nearlink-other",
+            family_id: "hid-vbas-other",
             transport: Transport::Hid,
             cadence: Cadence::PushOnly {
                 expected_interval_ms: 30_000,
@@ -857,7 +862,7 @@ mod tests {
             presence_poll_ms: Some(5_000),
         };
         assert_eq!(
-            validate_registry(&[&HID_NEARLINK_AJAZZ, &DUP]),
+            validate_registry(&[&HID_VBAS, &DUP]),
             Err(ProfileError::DuplicateTransport {
                 transport: Transport::Hid
             })
@@ -867,7 +872,7 @@ mod tests {
     #[test]
     fn registry_validates_members_first() {
         static BROKEN: ProviderProfile = ProviderProfile {
-            family_id: "hid-nearlink-broken",
+            family_id: "hid-vbas-broken",
             transport: Transport::Hid,
             cadence: Cadence::PushOnly {
                 expected_interval_ms: 30_000,

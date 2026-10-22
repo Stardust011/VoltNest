@@ -208,7 +208,7 @@ mod tests {
             ProviderEvent::Arrived(DeviceFact::new(
                 id.clone(),
                 Transport::Hid,
-                "hid-nearlink-ajazz",
+                "hid-vbas",
                 "AJ159 NL",
                 "AJ159 NL",
             )),
