@@ -1,19 +1,20 @@
 //! 托盘图标：每个可见设备一个环形电量图（§12）。
 //!
-//! 图标由本模块用 32×32 RGBA 手工光栅化，不引入任何图形渲染依赖（AA-4）。
+//! 设备图标由本模块用 32×32 RGBA 手工光栅化，不引入任何图形渲染依赖（AA-4）。
 //! 语义与前端 `batteryColor()` 一一对应：在线主题色、<20% 橙、<10% 红、充电绿弧
 //! 加环心闪电、等待读数蓝、数据过期琥珀、读取失败橙，离线但物理存在时为灰环加横线。
 //!
 //! 图标**存在性只由物理存在决定**：`snapshot.tray.visibleDeviceIds` 已经由核心
 //! 按 `present && !hidden` 且截断到 4 个算好，这里只负责跟随，不做二次判断。
 //!
-//! # 基础图标（蓝色等待环）什么时候在
+//! # 基础图标（应用图标）什么时候在
 //!
 //! 窗口关掉之后只剩托盘，**一张图标都没有就等于进程失联**：既打不开面板，也没
 //! 办法退出。所以托盘里必须始终至少有一张能用的图标。
 //!
-//! 这张占位图标与主界面「等待读数」同色（`#38bdf8`）：刚启动、还没发现设备时，
-//! 面板上是蓝环，托盘里也应当是蓝环，而不是一个看不出在干什么的空心灰圈。
+//! 这张占位图标就是**应用图标本身**（与任务栏、开始菜单同一个 PNG）：没有设备时
+//! 用户看到的是「这个应用在跑」，而不是一个需要解读的小图形。手绘的蓝环只留给
+//! 「设备已在列表里、但还没拿到读数」那一种状态 —— 那才是「等待读数」的意思。
 //!
 //! 它只在「一张设备图标都没有」时现身：有设备图标出现就让位（托盘里的电量环本身
 //! 就是入口，再挂一个只会让人误以为是第二台设备）；设备全部拔掉或全部被用户隐藏
@@ -81,10 +82,27 @@ const BOLT: [(f32, f32); 12] = [
 /// 还没拿到任何读数时，整环按这个透明度画：蓝得看得见，又明显不是一次真实读数。
 const PENDING_ALPHA: f32 = 0.7;
 
+/// 应用图标：`tauri.conf.json > bundle.icon` 里 32×32 那一张，与任务栏/开始菜单同源。
+///
+/// 没有设备时托盘显示它，而不是另画一个图形：用户认的是应用图标，托盘里出现
+/// 「和任务栏那个一样的小方块」能立刻说明「这只是应用本身」，不需要解读。
+const APP_ICON_PNG: &[u8] = include_bytes!("../icons/32x32.png");
+
 /// 每张图标「本该显示」的 tooltip：气泡提示只占用 6 秒，之后要原样还回去。
 static BASELINE_TOOLTIPS: Mutex<BTreeMap<String, String>> = Mutex::new(BTreeMap::new());
 /// 基础图标当前是否露在托盘里（隐身的图标不能当气泡的落点）。
 static BASE_VISIBLE: AtomicBool = AtomicBool::new(true);
+
+/// 解出打包进来的应用图标。
+///
+/// 解不开（图标文件坏掉）时退回蓝色等待环：难看总比托盘空着好，而且这只是
+/// 占位图，不影响任何设备图标。
+fn app_icon() -> Image<'static> {
+    Image::from_bytes(APP_ICON_PNG).unwrap_or_else(|err| {
+        log::warn!("解码应用图标失败，退回等待环: {err}");
+        ring_image(None, false, DeviceState::Unknown)
+    })
+}
 
 /// 安装托盘：菜单事件处理器 + 基础图标。
 pub fn install(app: &AppHandle) -> tauri::Result<()> {
@@ -96,12 +114,7 @@ pub fn install(app: &AppHandle) -> tauri::Result<()> {
         _ => {}
     });
 
-    build_tray(
-        app,
-        BASE_TRAY_ID,
-        ring_image(None, false, DeviceState::Unknown),
-        "VoltNest",
-    )
+    build_tray(app, BASE_TRAY_ID, app_icon(), "VoltNest")
 }
 
 /// 显示并聚焦主窗口（二次启动、托盘点击、菜单项都走这里）。
@@ -170,10 +183,10 @@ pub fn sync(app: &AppHandle, shared: &Arc<Shared>, snap: &Snapshot) {
     update_base(app, snap, has_device_icons);
 }
 
-/// 基础等待环的显隐：有设备图标就隐身让位，没有就出来占位。
+/// 基础图标的显隐：有设备图标就隐身让位，没有就出来占位。
 ///
 /// 只切可见性、不销毁重建：图标一旦重建就会跑到托盘末尾（甚至被折叠进溢出区），
-/// 用户眼前的东西自己跳位比多看一眼占位环更难受。
+/// 用户眼前的东西自己跳位比多看一眼占位图标更难受。
 fn update_base(app: &AppHandle, snap: &Snapshot, has_device_icons: bool) {
     let tooltip = summary_tooltip(snap);
     let visible = !has_device_icons;
@@ -196,12 +209,7 @@ fn base_tray(app: &AppHandle, tooltip: &str) -> Option<TrayIcon> {
     if let Some(base) = app.tray_by_id(&TrayIconId::new(BASE_TRAY_ID)) {
         return Some(base);
     }
-    if let Err(err) = build_tray(
-        app,
-        BASE_TRAY_ID,
-        ring_image(None, false, DeviceState::Unknown),
-        tooltip,
-    ) {
+    if let Err(err) = build_tray(app, BASE_TRAY_ID, app_icon(), tooltip) {
         log::warn!("创建基础托盘图标失败: {err}");
         return None;
     }
@@ -676,6 +684,25 @@ mod tests {
     fn tooltip_marks_offline_and_null_battery() {
         let d = device(None, DeviceState::Offline);
         assert_eq!(tooltip_for(&d, 0), "AJ159 NL · —（离线）");
+    }
+
+    #[test]
+    fn base_icon_is_the_app_icon() {
+        // 没有设备时托盘该显示应用图标本身（和任务栏同一个 PNG），不是手绘的电量环。
+        let img = app_icon();
+        assert_eq!((img.width(), img.height()), (ICON_SIZE, ICON_SIZE));
+        let rgba = img.rgba();
+        let opaque = rgba.chunks(4).filter(|p| p[3] > 200).count();
+        assert!(
+            opaque > 900,
+            "应用图标是实心圆角方块，覆盖面积远大于电量环：{opaque}"
+        );
+        // 顶端正中：电量环在这里是透明的（圆环上边缘落在 y≈2），应用图标的深色底是实心。
+        assert_eq!(
+            rgba[(16 * 4) + 3],
+            255,
+            "顶端实心说明用的是应用图标，而不是空心环"
+        );
     }
 
     #[test]
