@@ -1,8 +1,8 @@
 //! 托盘图标：每个可见设备一个环形电量图（§12）。
 //!
 //! 图标由本模块用 32×32 RGBA 手工光栅化，不引入任何图形渲染依赖（AA-4）。
-//! 语义与前端 `batteryColor()` 一一对应：在线主题色、<20% 橙、<10% 红、充电青、
-//! 等待读数蓝、数据过期琥珀、读取失败橙，离线但物理存在时为灰环加横线。
+//! 语义与前端 `batteryColor()` 一一对应：在线主题色、<20% 橙、<10% 红、充电绿弧
+//! 加环心闪电、等待读数蓝、数据过期琥珀、读取失败橙，离线但物理存在时为灰环加横线。
 //!
 //! 图标**存在性只由物理存在决定**：`snapshot.tray.visibleDeviceIds` 已经由核心
 //! 按 `present && !hidden` 且截断到 4 个算好，这里只负责跟随，不做二次判断。
@@ -49,13 +49,34 @@ const MENU_OPEN: &str = "tray:open";
 const MENU_QUIT: &str = "tray:quit";
 
 /// 与前端 `src/lib/format.ts` 的色值逐字对应：托盘与面板必须能并排看。
+///
+/// 唯一例外是充电：面板沿用青色 `#06b6d4` + 百分号旁的闪电，托盘用绿色
+/// （`#10b981` 在任务栏上比青色更跳），靠环心闪电表达「在充电」。
 const EMERALD: [u8; 3] = [16, 185, 129];
 const ORANGE: [u8; 3] = [249, 115, 22];
 const RED: [u8; 3] = [239, 68, 68];
-const CYAN: [u8; 3] = [6, 182, 212];
 const AMBER: [u8; 3] = [245, 158, 11];
 const SKY: [u8; 3] = [56, 189, 248];
 const GRAY: [u8; 3] = [148, 163, 184];
+
+/// 充电闪电：lucide `zap` 填色轮廓的折点近似（24×24 画布，形心在 12,12）。
+///
+/// 原图是带圆角的描边轮廓（半径 1.5 / 0.5 的小圆弧），这里把每段圆弧的端点
+/// 直接连起来 —— 在 32px 上差不到半个像素，却省掉一个贝塞尔光栅化器。
+const BOLT: [(f32, f32); 12] = [
+    (15.914, 4.0),
+    (13.44, 2.439),
+    (4.44, 11.439),
+    (5.5, 14.0),
+    (9.502, 14.0),
+    (9.973, 14.666),
+    (8.086, 20.0),
+    (10.561, 21.56),
+    (19.561, 12.56),
+    (18.5, 10.0),
+    (14.503, 10.0),
+    (14.031, 9.333),
+];
 
 /// 还没拿到任何读数时，整环按这个透明度画：蓝得看得见，又明显不是一次真实读数。
 const PENDING_ALPHA: f32 = 0.7;
@@ -384,10 +405,13 @@ fn displayed_battery(device: &DeviceDto) -> Option<Reading> {
     }
 }
 
-/// 环的颜色：与前端 `batteryColor()` 逐条对应（规格 §12）。
+/// 环的颜色：除充电外与前端 `batteryColor()` 逐条对应（规格 §12）。
 ///
 /// 只有 `Online` / `Stale` 才有「当前读数」可按阈值着色，其余状态直接沿用状态色 ——
 /// 这正是面板上「等待读数」显示蓝环、「读取失败」显示橙环的那套规则。
+///
+/// 充电不看电量高低，一律用绿色：闪电已经把「在充电」说清楚了，弧长继续表达
+/// 充到哪了，和面板青色 `#06b6d4` 的差异由闪电这个形状来补。
 fn ring_tone(battery: Option<u8>, charging: bool, state: DeviceState) -> [u8; 3] {
     let tone = match state {
         DeviceState::Online => EMERALD,
@@ -400,7 +424,7 @@ fn ring_tone(battery: Option<u8>, charging: bool, state: DeviceState) -> [u8; 3]
         return tone;
     }
     if charging {
-        return CYAN;
+        return EMERALD;
     }
     match battery {
         Some(v) if v < 10 => RED,
@@ -409,18 +433,28 @@ fn ring_tone(battery: Option<u8>, charging: bool, state: DeviceState) -> [u8; 3]
     }
 }
 
+/// 是否画「绿环 + 闪电」：充电只在有当前读数可言的两种状态下才算数。
+fn is_charging_glyph(charging: bool, state: DeviceState) -> bool {
+    charging && matches!(state, DeviceState::Online | DeviceState::Stale)
+}
+
 /// 生成一张 32×32 的环形电量图。
 ///
 /// - `battery == None`：等待环（一整圈状态色，透明度压低一档）；
 /// - `offline`：灰环 + 横线（物理存在但链路不在）；
 /// - `unknown`：蓝环（与面板「等待读数」同色，启动回填也走这条）；
-/// - `charging`：青色整环；
+/// - `charging`：绿弧 + 环心闪电，**弧长仍随电量走**，只把环收窄给闪电让位；
 /// - 其余按 20% / 10% 分档着色。
 pub fn ring_image(battery: Option<u8>, charging: bool, state: DeviceState) -> Image<'static> {
     let size = ICON_SIZE as f32;
     let center = size / 2.0;
     let outer = size * 0.44;
-    let inner = outer - size * 0.155;
+
+    let plug = is_charging_glyph(charging, state);
+    // 闪电要占环心，环太厚就会贴上去糊成一团；但也别细到看不出弧长，
+    // 32px 上 0.12×size ≈ 3.8px，仍是任务栏里一眼能读出的粗细。
+    let thickness = if plug { size * 0.12 } else { size * 0.155 };
+    let inner = outer - thickness;
 
     let rgb = ring_tone(battery, charging, state);
     let draw_line = state == DeviceState::Offline;
@@ -428,6 +462,8 @@ pub fn ring_image(battery: Option<u8>, charging: bool, state: DeviceState) -> Im
     // 这样托盘里始终是「一块看得懂的颜色」，而不是只剩灰轨道。
     let pending = battery.is_none() && !draw_line;
 
+    // 充电也照实画弧：闪电负责说「在充电」，弧长继续交代「充到哪了」。
+    // 只画满环会让 5% 和 95% 长得一模一样，进度就没了。
     let ratio = if state == DeviceState::Offline || pending {
         1.0
     } else {
@@ -436,6 +472,8 @@ pub fn ring_image(battery: Option<u8>, charging: bool, state: DeviceState) -> Im
             .unwrap_or(0.0)
     };
     let arc_alpha = if pending { PENDING_ALPHA } else { 1.0 };
+    // 24 单位的闪电画成 0.56×size 高，正好落在收窄后的环心里（尖角离内圈约 1.5px）。
+    let bolt_scale = size * 0.028;
 
     // 3×3 超采样：32px 上不做抗锯齿的环会明显锯齿。
     const SS: usize = 3;
@@ -447,6 +485,7 @@ pub fn ring_image(battery: Option<u8>, charging: bool, state: DeviceState) -> Im
             let mut arc_hits = 0u32;
             let mut track_hits = 0u32;
             let mut line_hits = 0u32;
+            let mut bolt_hits = 0u32;
             for sy in 0..SS {
                 for sx in 0..SS {
                     let x = px as f32 + (sx as f32 + 0.5) / SS as f32;
@@ -468,6 +507,9 @@ pub fn ring_image(battery: Option<u8>, charging: bool, state: DeviceState) -> Im
                             track_hits += 1;
                         }
                     }
+                    if plug && in_polygon(&BOLT, dx / bolt_scale + 12.0, dy / bolt_scale + 12.0) {
+                        bolt_hits += 1;
+                    }
                     if draw_line && (y - center).abs() <= 1.1 && (x - center).abs() <= outer * 0.72
                     {
                         line_hits += 1;
@@ -481,7 +523,9 @@ pub fn ring_image(battery: Option<u8>, charging: bool, state: DeviceState) -> Im
             let track_a = track_hits as f32 / total;
             let arc_a = arc_hits as f32 / total;
             let line_a = line_hits as f32 / total;
-            let (r, g, b, a) = blend(rgb, arc_a * arc_alpha, TRACK, track_a, line_a);
+            let bolt_a = bolt_hits as f32 / total;
+            // 闪电与环同色，直接并进电弧那一层；两者几何上不重叠。
+            let (r, g, b, a) = blend(rgb, arc_a * arc_alpha + bolt_a, TRACK, track_a, line_a);
             if a > 0.0 {
                 buf[idx] = r;
                 buf[idx + 1] = g;
@@ -492,6 +536,21 @@ pub fn ring_image(battery: Option<u8>, charging: bool, state: DeviceState) -> Im
     }
 
     Image::new_owned(buf, ICON_SIZE, ICON_SIZE)
+}
+
+/// 射线法判断点是否落在多边形内（闪电是凹多边形，奇偶规则正好够用）。
+fn in_polygon(poly: &[(f32, f32)], x: f32, y: f32) -> bool {
+    let mut inside = false;
+    let mut j = poly.len() - 1;
+    for i in 0..poly.len() {
+        let (xi, yi) = poly[i];
+        let (xj, yj) = poly[j];
+        if (yi > y) != (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi {
+            inside = !inside;
+        }
+        j = i;
+    }
+    inside
 }
 
 /// 合成「轨道 + 电量环 + 离线横线」三层。
@@ -666,8 +725,8 @@ mod tests {
         assert_eq!(ring_tone(Some(5), false, DeviceState::Online), RED);
         assert_eq!(
             ring_tone(Some(5), true, DeviceState::Online),
-            CYAN,
-            "充电色优先于低电量色"
+            EMERALD,
+            "充电不看电量分档，统一绿环 + 闪电（面板那侧仍用青色）"
         );
         assert_eq!(ring_tone(Some(96), false, DeviceState::Stale), AMBER);
         assert_eq!(
@@ -676,6 +735,51 @@ mod tests {
             "读取失败沿用状态色，不按电量分档"
         );
         assert_eq!(ring_tone(None, false, DeviceState::Offline), GRAY);
+    }
+
+    #[test]
+    fn charging_puts_a_bolt_in_the_hole() {
+        // 环心（半径 0.5×center 以内）在不充电时必须是空的。
+        let hole_pixels = |charging: bool| {
+            let img = ring_image(Some(50), charging, DeviceState::Online);
+            let c = ICON_SIZE as f32 / 2.0;
+            img.rgba()
+                .chunks(4)
+                .enumerate()
+                .filter(|(i, p)| {
+                    let x = (*i % ICON_SIZE as usize) as f32 + 0.5;
+                    let y = (*i / ICON_SIZE as usize) as f32 + 0.5;
+                    let dist = ((x - c).powi(2) + (y - c).powi(2)).sqrt();
+                    dist < c * 0.5 && p[3] > 200
+                })
+                .count()
+        };
+        assert_eq!(hole_pixels(false), 0, "不充电时环心是空的");
+        assert!(hole_pixels(true) > 20, "充电时环心要画出闪电");
+    }
+
+    #[test]
+    fn charging_keeps_the_progress_arc() {
+        // 只量环上的不透明像素（环内半径 0.6×中心距以内是闪电的地盘，排除掉）。
+        let arc = |battery: u8| {
+            let img = ring_image(Some(battery), true, DeviceState::Online);
+            let c = ICON_SIZE as f32 / 2.0;
+            img.rgba()
+                .chunks(4)
+                .enumerate()
+                .filter(|(i, p)| {
+                    let x = (*i % ICON_SIZE as usize) as f32 + 0.5;
+                    let y = (*i / ICON_SIZE as usize) as f32 + 0.5;
+                    let dist = ((x - c).powi(2) + (y - c).powi(2)).sqrt();
+                    dist > c * 0.6 && p[3] > 200
+                })
+                .count()
+        };
+        assert!(
+            arc(90) > arc(20),
+            "充电也要看得出充到哪了：20% 和 90% 不能画成同一个环"
+        );
+        assert!(arc(20) > 0, "低电量时弧仍然要在，不能只剩轨道");
     }
 
     #[test]

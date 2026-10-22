@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from "vue";
+import { Zap } from "@lucide/vue";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
@@ -57,9 +58,24 @@ const secondary = computed(() => {
     <CardContent class="flex items-center gap-3.5 px-4">
       <!-- 电量读数：数值 + Progress，颜色沿用 batteryColor 的语义（充电 / 低电 / 状态）。 -->
       <div class="flex w-14 shrink-0 flex-col gap-1.5">
-        <span class="text-lg leading-none font-semibold tabular-nums" :style="{ color }">
-          {{ shownBattery === null ? "—" : shownBattery
-          }}<span v-if="shownBattery !== null" class="text-[0.6em] font-medium">%</span>
+        <!-- 按基线对齐：数字坐在自身基线上，SVG 的基线就是它的下边缘，
+             所以闪电的底边与数字底边齐平 —— 用 items-center 反而会因为
+             数字没有下伸部而看起来高半格。尺寸取 0.8em，字形高度刚好接近大写高。 -->
+        <span
+          class="flex items-baseline gap-0.5 text-lg leading-none font-semibold tabular-nums"
+          :style="{ color }"
+        >
+          <span>
+            {{ shownBattery === null ? "—" : shownBattery
+            }}<span v-if="shownBattery !== null" class="text-[0.6em] font-medium">%</span>
+          </span>
+          <!-- 充电：电量旁的闪电（lucide zap），与托盘绿环里的闪电是同一个符号。 -->
+          <Zap
+            v-if="device.isCharging === true"
+            class="h-[0.8em] w-[0.8em] shrink-0"
+            aria-hidden="true"
+            data-testid="charging-bolt"
+          />
         </span>
         <Progress
           :model-value="progress"
