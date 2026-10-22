@@ -1,89 +1,110 @@
-//! 厂商通道帧解析与电量解码。
+//! 通用帧解析：**完全由 [`BrandSpec`] 驱动**的电量解码。
 //!
-//! 帧结构（`docs/ajazz-probe-report.md` §4，32/32 帧实测通过）：
-//!
-//! ```text
-//! [0]        报告 ID = 0x06
-//! [1]        cmd
-//! [2]        payload 长度 len
-//! [3:5]      seq（小端 u16）
-//! [5:5+len]  payload
-//! [5+len:]   填充 0x00
-//! ```
+//! 本模块不认识任何品牌：字段位置、命令字、子标签、充电标志取值全部来自
+//! 品牌描述。新增品牌不需要改这里（ADR-0011）。
 //!
 //! 所有失败必须映射为**结构化错误码**，不得静默丢帧、不得回落到 0%
-//! （规格 §5 / ADR-0010 D9）。
+//! （规格 §5 / ADR-0010 D9）。错误码与情形的对应关系是契约：
+//!
+//! | 情形 | 错误码 |
+//! |---|---|
+//! | 报告短于 `min_report_len`、报告 ID 不符、长度字段越界、payload 过短、子标签不符、命令字不符 | `malformed_frame` |
+//! | payload 全零 | `empty_payload` |
+//! | 电量字节 > 100 | `percent_out_of_range` |
 
+use crate::spec::BrandSpec;
 use voltnest_provider::{ErrorCode, Percent};
-
-/// 报告 ID。
-pub const REPORT_ID: u8 = 0x06;
-/// 电量状态帧的命令字。
-pub const CMD_STATUS: u8 = 0xFA;
-/// `cmd = 0xFA` 帧内表示「电量」的子标签。
-pub const SUBTAG_BATTERY: u8 = 0x03;
-/// 充电标志的取值：`0x01` 表示充电中。
-pub const CHARGING_FLAG: u8 = 0x01;
 
 /// 一次电量读数。
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct BatteryReading {
     /// 电量（已在构造期拒绝 > 100）。
     pub percent: Percent,
-    /// 充电状态。缺附加字节时为 `None`，**不得猜测**。
+    /// 充电状态。协议不提供、或缺附加字节时为 `None`，**不得猜测**。
     pub charging: Option<bool>,
 }
 
-/// 解析一帧，返回电量与充电标志。
-///
-/// 失败原因与错误码的对应关系是契约的一部分：
-///
-/// | 情形 | 错误码 |
-/// |---|---|
-/// | 报告不足 5 字节、报告 ID 不符、长度字段越界、payload 过短、子标签不符 | `malformed_frame` |
-/// | cmd 不是 `0xFA` | `malformed_frame` |
-/// | payload 全零 | `empty_payload` |
-/// | 电量字节 > 100 | `percent_out_of_range` |
-pub fn parse_battery(report: &[u8]) -> Result<BatteryReading, ErrorCode> {
-    if report.len() < 5 {
+/// 按品牌描述解析一帧，返回电量与充电标志。
+pub fn decode_battery(spec: &BrandSpec, report: &[u8]) -> Result<BatteryReading, ErrorCode> {
+    let layout = &spec.frame;
+
+    // 1) 头部完整 + 报告 ID。
+    if report.len() < spec.min_report_len() {
         return Err(ErrorCode::MalformedFrame);
     }
-    if report[0] != REPORT_ID {
+    if let Some(id) = layout.report_id
+        && report.first() != Some(&id)
+    {
         return Err(ErrorCode::MalformedFrame);
     }
-    if report[1] != CMD_STATUS {
+
+    // 2) 命令字。
+    if report.get(layout.cmd_index) != Some(&spec.battery.cmd) {
         return Err(ErrorCode::MalformedFrame);
     }
-    let len = report[2] as usize;
-    // 长度字段越界：缓冲区里没有这么多字节。
-    if len < 2 || 5 + len > report.len() {
+
+    // 3) payload 长度：字段声明 / 固定长度两种模式。
+    let payload_len = match layout.len_index {
+        Some(index) => {
+            let Some(&raw) = report.get(index) else {
+                return Err(ErrorCode::MalformedFrame);
+            };
+            raw as usize
+        }
+        None => layout.fixed_payload_len,
+    };
+    let end = layout.payload_offset.saturating_add(payload_len);
+    // 长度字段越界（声明比缓冲长）与 payload 过短（装不下必选字段）都算坏帧。
+    if payload_len < spec.min_payload_len() || end > report.len() {
         return Err(ErrorCode::MalformedFrame);
     }
-    let payload = &report[5..5 + len];
+    let payload = match report.get(layout.payload_offset..end) {
+        Some(p) => p,
+        None => return Err(ErrorCode::MalformedFrame),
+    };
+
+    // 4) 全零 payload 是「设备在场但没数据」，与坏帧分开上报。
     if payload.iter().all(|b| *b == 0) {
         return Err(ErrorCode::EmptyPayload);
     }
-    if payload[0] != SUBTAG_BATTERY {
+
+    // 5) 子标签（若协议有）。
+    if let Some((index, want)) = spec.battery.subtag
+        && payload.get(index) != Some(&want)
+    {
         return Err(ErrorCode::MalformedFrame);
     }
-    // Percent::new 的 None 必须在这里映射成错误码，不得 `?` 后 continue。
-    let percent = Percent::new(payload[1]).ok_or(ErrorCode::PercentOutOfRange)?;
-    Ok(BatteryReading {
-        percent,
-        charging: payload.get(2).map(|b| *b == CHARGING_FLAG),
-    })
+
+    // 6) 电量。Percent::new 的 None 必须在这里映射成错误码，不得 `?` 后 continue。
+    let raw = payload
+        .get(spec.battery.percent_index)
+        .copied()
+        .ok_or(ErrorCode::MalformedFrame)?;
+    let percent = Percent::new(raw).ok_or(ErrorCode::PercentOutOfRange)?;
+
+    // 7) 充电标志：协议不提供 → None；字节缺失 → None（不猜测）。
+    let charging = spec
+        .battery
+        .charging
+        .and_then(|field| payload.get(field.index).map(|b| *b == field.true_value));
+
+    Ok(BatteryReading { percent, charging })
 }
 
 /// 诊断用：报告尾部填充是否全零。
 ///
 /// 实测帧的填充恒为 0x00，但**不**作为拒绝条件 —— 把填充当校验会让一个
 /// 无害的固件小改动直接变成「设备不可读」。
-pub fn padding_all_zero(report: &[u8]) -> bool {
-    if report.len() < 5 {
-        return false;
-    }
-    let len = report[2] as usize;
-    let tail = 5usize.saturating_add(len);
+pub fn padding_all_zero(spec: &BrandSpec, report: &[u8]) -> bool {
+    let layout = &spec.frame;
+    let payload_len = match layout.len_index {
+        Some(index) => match report.get(index) {
+            Some(&raw) => raw as usize,
+            None => return false,
+        },
+        None => layout.fixed_payload_len,
+    };
+    let tail = layout.payload_offset.saturating_add(payload_len);
     report
         .get(tail..)
         .map(|rest| rest.iter().all(|b| *b == 0))
@@ -93,139 +114,83 @@ pub fn padding_all_zero(report: &[u8]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::spec::{BatteryFields, BrandSpec, ChargingField, FrameLayout};
 
-    /// 实测帧：`06 fa 03 00 00 | 03 5a 00`（AJ159 NL，90%）。
-    const REAL_FRAME: [u8; 8] = [0x06, 0xFA, 0x03, 0x00, 0x00, 0x03, 0x5A, 0x00];
+    /// 与任何真实品牌都不同的合成描述：验证解析器只吃字段、不含品牌分支。
+    ///
+    /// 布局：`[0] = 0x11`（无长度字段）→ `[1]=cmd 0x22` → `[2..4]` 填充
+    /// → `[4..]` payload：`[0]=电量`、`[1]=充电标志(0x02=充电中)`。
+    const SYNTHETIC: BrandSpec = BrandSpec {
+        id: "synthetic",
+        label: "合成品牌",
+        usage_page: 0xFFC0,
+        usage_page_write: None,
+        frame: FrameLayout {
+            report_id: Some(0x11),
+            cmd_index: 1,
+            len_index: None,
+            payload_offset: 4,
+            fixed_payload_len: 2,
+        },
+        battery: BatteryFields {
+            cmd: 0x22,
+            subtag: None,
+            percent_index: 0,
+            charging: Some(ChargingField {
+                index: 1,
+                true_value: 0x02,
+            }),
+        },
+        request: None,
+        expected_interval_ms: 20_000,
+        device_table_json: crate::brands::ajazz::SPEC.device_table_json,
+    };
 
-    fn buf_with(payload: &[u8]) -> Vec<u8> {
-        let mut v = vec![0u8; 65];
-        v[0] = REPORT_ID;
-        v[1] = CMD_STATUS;
-        v[2] = payload.len() as u8;
-        v[5..5 + payload.len()].copy_from_slice(payload);
-        v
+    #[test]
+    fn decodes_fixed_length_layout_without_subtag() {
+        let r = decode_battery(&SYNTHETIC, &[0x11, 0x22, 0x00, 0x00, 0x37, 0x02]).unwrap();
+        assert_eq!(r.percent.get(), 55);
+        assert_eq!(r.charging, Some(true));
     }
 
     #[test]
-    fn parses_real_push_frame() {
-        let r = parse_battery(&REAL_FRAME).expect("实测帧必须解析成功");
-        assert_eq!(r.percent.get(), 90);
-        assert_eq!(r.charging, Some(false));
-    }
-
-    #[test]
-    fn parses_64_byte_report_with_padding() {
-        let mut buf = [0u8; 65];
-        buf[..REAL_FRAME.len()].copy_from_slice(&REAL_FRAME);
-        assert!(padding_all_zero(&buf));
-        assert_eq!(parse_battery(&buf).unwrap().percent.get(), 90);
-    }
-
-    #[test]
-    fn real_charging_and_unplugged_frames() {
-        // 2026-10-22 实测：插线 90→100 且标志 0x01；拔线 100 且标志 0x00。
-        let charging = [0x06, 0xFA, 0x03, 0x00, 0x00, 0x03, 0x64, 0x01];
-        assert_eq!(parse_battery(&charging).unwrap().charging, Some(true));
-        let unplugged = [0x06, 0xFA, 0x03, 0x00, 0x00, 0x03, 0x64, 0x00];
-        assert_eq!(parse_battery(&unplugged).unwrap().charging, Some(false));
-    }
-
-    #[test]
-    fn truncated_reports_are_malformed() {
-        assert_eq!(parse_battery(&[]), Err(ErrorCode::MalformedFrame));
-        assert_eq!(parse_battery(&[0x06]), Err(ErrorCode::MalformedFrame));
+    fn fixed_length_payload_shorter_than_declared_is_malformed() {
         assert_eq!(
-            parse_battery(&[0x06, 0xFA, 0x03, 0x00]),
-            Err(ErrorCode::MalformedFrame),
-            "不足 5 字节头"
-        );
-        // 截掉 payload 尾部。
-        assert_eq!(
-            parse_battery(&REAL_FRAME[..6]),
+            decode_battery(&SYNTHETIC, &[0x11, 0x22, 0x00, 0x00, 0x37]),
             Err(ErrorCode::MalformedFrame)
         );
     }
 
     #[test]
-    fn length_out_of_bounds_is_malformed() {
-        let mut bad = REAL_FRAME;
-        bad[2] = 0x40; // 声明 64 字节 payload，但缓冲只有 8 字节
-        assert_eq!(parse_battery(&bad), Err(ErrorCode::MalformedFrame));
-
-        let mut zero_len = REAL_FRAME;
-        zero_len[2] = 0x00;
-        assert_eq!(parse_battery(&zero_len), Err(ErrorCode::MalformedFrame));
+    fn padding_detection_works_without_length_field() {
+        let mut buf = vec![0u8; 8];
+        buf[..6].copy_from_slice(&[0x11, 0x22, 0x00, 0x00, 0x37, 0x02]);
+        assert!(padding_all_zero(&SYNTHETIC, &buf));
+        buf[7] = 0x01;
+        assert!(!padding_all_zero(&SYNTHETIC, &buf));
     }
 
     #[test]
-    fn wrong_report_id_or_cmd_is_malformed() {
-        let mut bad = REAL_FRAME;
-        bad[0] = 0x07;
-        assert_eq!(parse_battery(&bad), Err(ErrorCode::MalformedFrame));
-
-        let mut bad = REAL_FRAME;
-        bad[1] = 0x5A; // 电量值被错放在 cmd 位
-        assert_eq!(parse_battery(&bad), Err(ErrorCode::MalformedFrame));
+    fn brand_without_charging_always_reports_unknown() {
+        let mut spec = SYNTHETIC;
+        spec.battery.charging = None;
+        let r = decode_battery(&spec, &[0x11, 0x22, 0x00, 0x00, 0x37, 0x02]).unwrap();
+        assert_eq!(r.charging, None, "协议不提供充电状态时不得猜测");
     }
 
     #[test]
-    fn all_zero_payload_is_empty_payload() {
+    fn wrong_cmd_is_malformed_for_every_brand() {
         assert_eq!(
-            parse_battery(&[0u8; 65]),
-            Err(ErrorCode::MalformedFrame),
-            "全零报告连 cmd 都不对"
+            decode_battery(&SYNTHETIC, &[0x11, 0x23, 0x00, 0x00, 0x37, 0x02]),
+            Err(ErrorCode::MalformedFrame)
         );
-        let frame = buf_with(&[0x00, 0x00, 0x00]);
-        assert_eq!(parse_battery(&frame), Err(ErrorCode::EmptyPayload));
     }
 
     #[test]
-    fn percent_over_100_is_out_of_range() {
-        // 101 = 0x65, 110 = 0x6E, 255 = 0xFF
-        for bad in [101u8, 110, 255] {
-            let frame = buf_with(&[SUBTAG_BATTERY, bad, 0x00]);
-            assert_eq!(
-                parse_battery(&frame),
-                Err(ErrorCode::PercentOutOfRange),
-                "bad={bad}"
-            );
-        }
-    }
-
-    #[test]
-    fn percent_boundaries_are_accepted() {
-        for good in [0u8, 1, 50, 99, 100] {
-            let frame = buf_with(&[SUBTAG_BATTERY, good, 0x00]);
-            assert_eq!(parse_battery(&frame).unwrap().percent.get(), good);
-        }
-    }
-
-    #[test]
-    fn wrong_subtag_is_malformed() {
-        let frame = buf_with(&[0x01, 0x64, 0x00]);
-        assert_eq!(parse_battery(&frame), Err(ErrorCode::MalformedFrame));
-    }
-
-    #[test]
-    fn missing_charging_byte_is_unknown_not_false() {
-        let frame = buf_with(&[SUBTAG_BATTERY, 0x5A]);
-        assert_eq!(parse_battery(&frame).unwrap().charging, None);
-    }
-
-    #[test]
-    fn unknown_charging_flag_values_are_not_charging() {
-        // 只有 0x01 表示充电；其它值一律按「未充电」处理，不猜测语义。
-        let frame = buf_with(&[SUBTAG_BATTERY, 0x5A, 0x02]);
-        assert_eq!(parse_battery(&frame).unwrap().charging, Some(false));
-    }
-
-    #[test]
-    fn padding_detection_is_diagnostic_only() {
-        let mut noisy = [0u8; 65];
-        noisy[..REAL_FRAME.len()].copy_from_slice(&REAL_FRAME);
-        noisy[63] = 0xAA;
-        assert!(!padding_all_zero(&noisy));
-        // 填充脏了，但电量仍然可用。
-        assert_eq!(parse_battery(&noisy).unwrap().percent.get(), 90);
+    fn percent_out_of_range_is_structural() {
+        assert_eq!(
+            decode_battery(&SYNTHETIC, &[0x11, 0x22, 0x00, 0x00, 0x65, 0x02]),
+            Err(ErrorCode::PercentOutOfRange)
+        );
     }
 }

@@ -101,10 +101,7 @@ impl Shared {
         tx: Sender<HostEvent>,
     ) -> Arc<Self> {
         let engine = Engine::new(
-            &[
-                &voltnest_provider::HID_NEARLINK_AJAZZ,
-                &voltnest_provider::BLE_BAS,
-            ],
+            &[&voltnest_provider::HID_VBAS, &voltnest_provider::BLE_BAS],
             engine_config(&settings),
         )
         .expect("D5 自检失败：Provider 注册表非法，这是编译期就该发现的问题");

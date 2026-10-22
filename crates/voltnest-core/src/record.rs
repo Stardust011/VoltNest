@@ -104,7 +104,7 @@ mod tests {
         Record::new(
             StableId::hid(0x7768, 0x6426),
             Transport::Hid,
-            "hid-nearlink-ajazz",
+            "hid-vbas",
             "AJ159 NL",
             "AJ159 NL\0",
             1_000,
