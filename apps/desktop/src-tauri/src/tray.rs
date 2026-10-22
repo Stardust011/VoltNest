@@ -112,7 +112,7 @@ pub fn sync(app: &AppHandle, shared: &Arc<Shared>, snap: &Snapshot) {
         };
         let tray_id = tray_id_for(stable_id);
         let icon = ring_image(
-            displayed_battery(device),
+            displayed_battery(device).map(|r| r.percent),
             device.is_charging == Some(true),
             device.state,
         );
@@ -310,16 +310,24 @@ fn tray_id_for(stable_id: &str) -> String {
     format!("tray:{stable_id}")
 }
 
-/// tooltip 文案：`型号 · 92%` / `型号 · —（离线）`。
+/// tooltip 文案：`型号 · 92%` / `型号 · —（离线）` / `型号 · 87%（上次读数）`。
+///
+/// 读数与图标用的是**同一个** `displayed_battery()`：图标画了 87% 的蓝弧，悬停
+/// 文字就不能还写着「—」，否则用户会以为这个百分比是凭空来的。
 ///
 /// `extra > 0` 表示还有设备没放进托盘（§12「还有 N 台」），挂在最后一张图标上；
 /// 整串（含后缀）始终不超过 128 字符。
 fn tooltip_for(device: &DeviceDto, extra: usize) -> String {
-    let battery = match device.battery {
-        Some(v) => format!("{v}%"),
+    let reading = displayed_battery(device);
+    let battery = match reading {
+        Some(r) => format!("{}%", r.percent),
         None => "—".to_string(),
     };
     let mut body = format!("{} · {battery}", device.display_name);
+    // 缓存值必须标明来源，不能和实时读数看起来一样。
+    if reading.is_some_and(|r| r.from_cache) {
+        body.push_str("（上次读数）");
+    }
     if device.state == DeviceState::Offline {
         body.push_str("（离线）");
     }
@@ -346,16 +354,32 @@ fn clamp_chars(text: String, limit: usize) -> String {
     out
 }
 
+/// 托盘用的一次读数。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Reading {
+    /// 百分比。
+    percent: u8,
+    /// 本次会话是否还没拿到实时读数（来自 `state.json` 缓存）。
+    from_cache: bool,
+}
+
 /// 与前端 `displayedBattery()` 同一条规则：首次读数还没到（`state == Unknown`）时
-/// 用 `lastKnownBattery` 撑住图标，免得启动瞬间托盘变成一个没有比例的空环。
+/// 用 `lastKnownBattery` 撑住图标与 tooltip，免得启动瞬间托盘变成一个没有比例、
+/// 也报不出电量的空环。
 ///
 /// `Unavailable` / `Offline` 不算 —— 那是「确定读不到」，不能假装还有实时读数。
-fn displayed_battery(device: &DeviceDto) -> Option<u8> {
-    if device.battery.is_some() {
-        return device.battery;
+fn displayed_battery(device: &DeviceDto) -> Option<Reading> {
+    if let Some(percent) = device.battery {
+        return Some(Reading {
+            percent,
+            from_cache: false,
+        });
     }
     match device.state {
-        DeviceState::Unknown => device.last_known_battery,
+        DeviceState::Unknown => device.last_known_battery.map(|percent| Reading {
+            percent,
+            from_cache: true,
+        }),
         _ => None,
     }
 }
@@ -658,13 +682,32 @@ mod tests {
     fn waiting_uses_cached_battery_but_not_after_failure() {
         let mut d = device(None, DeviceState::Unknown);
         d.last_known_battery = Some(87);
-        assert_eq!(displayed_battery(&d), Some(87), "启动回填要撑住首屏");
+        assert_eq!(
+            displayed_battery(&d),
+            Some(Reading {
+                percent: 87,
+                from_cache: true
+            }),
+            "启动回填要撑住首屏"
+        );
         d.state = DeviceState::Unavailable;
         assert_eq!(
             displayed_battery(&d),
             None,
             "读取失败是「确定读不到」，不能假装还有读数"
         );
+    }
+
+    #[test]
+    fn tooltip_reports_the_battery_the_ring_is_drawing() {
+        // 环上画了 87% 的蓝弧，悬停文字就不能还写着「—」。
+        let mut waiting = device(None, DeviceState::Unknown);
+        waiting.last_known_battery = Some(87);
+        assert_eq!(tooltip_for(&waiting, 0), "AJ159 NL · 87%（上次读数）");
+
+        // 有实时读数时不该多出「上次读数」的尾巴。
+        let online = device(Some(87), DeviceState::Online);
+        assert_eq!(tooltip_for(&online, 0), "AJ159 NL · 87%");
     }
 
     #[test]
