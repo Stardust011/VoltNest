@@ -1,0 +1,14 @@
+[package]
+name = "voltnest-platform"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "VoltNest Windows 平台适配：自启、单实例、AUMID"
+
+[dependencies]
+voltnest-provider.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Threading", "Win32_Security"] }
+winreg = "0.55"
