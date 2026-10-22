@@ -20,8 +20,11 @@
         "minHeight": 480,
         "center": true,
         "resizable": true,
+        "maximizable": false,
         "visible": false,
         "skipTaskbar": false,
+        "decorations": false,
+        "shadow": true,
         "theme": null
       }
     ],
