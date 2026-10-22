@@ -6,7 +6,9 @@ Windows 上的 HID / BLE 设备电量监控应用。单进程 Rust（Tauri 2）+
 - 实现基线：[`docs/VoltNest-v1-开发规格.md`](docs/VoltNest-v1-开发规格.md)
 - 架构决策：[ADR-0008](docs/adr/0008-plugin-partitioning.md) ·
   [ADR-0009](docs/adr/0009-modular-single-process.md) ·
-  [ADR-0010](docs/adr/0010-provider-contract.md)
+  [ADR-0010](docs/adr/0010-provider-contract.md) ·
+  [ADR-0011](docs/adr/0011-hid-vbas-brand-model.md)
+- 新增品牌接入：[`docs/hid-vbas-brands.md`](docs/hid-vbas-brands.md)
 - 规则到测试的映射：[`docs/test-matrix.md`](docs/test-matrix.md)
 
 ## 目录
@@ -15,12 +17,23 @@ Windows 上的 HID / BLE 设备电量监控应用。单进程 Rust（Tauri 2）+
 crates/
   voltnest-provider/   Provider 契约（纯类型，无 I/O）
   voltnest-core/       状态机、归一化、分组、通知策略、Snapshot（纯逻辑，无时钟无线程）
-  voltnest-hid/        hid-nearlink-ajazz：枚举、读取、帧解析、型号表
+  voltnest-hid/        hid-vbas：枚举、读取、通用帧解析、品牌描述（brands/）与型号表
   voltnest-ble/        ble-bas：发现、连接、通知、轮询、解析
   voltnest-platform/   Windows 适配（自启、单实例、AUMID）
   voltnest-storage/    settings.json / state.json 原子读写
 apps/desktop/          Tauri 宿主（src-tauri）+ Vue 前端（src）
 tools/                 取证探针（hid-probe-rs / ble-probe-rs），不被产品 crate 依赖
+```
+
+`hid-vbas` 家族对品牌是开放的：只要设备走 HID 私有通道、用定长报告报电量，
+就只补一份「字段定义 + 型号表」，不新增 crate、不改解析器与宿主：
+
+```text
+crates/voltnest-hid/
+  src/spec.rs         BrandSpec / FrameLayout / BatteryFields / RequestTemplate（品牌无关）
+  src/frame.rs        通用解码器：按 BrandSpec 取字段，唯一解析入口
+  src/brands/ajazz.rs 已验证品牌：UsagePage 0xFFB2 / cmd 0xFA / payload[1] 为电量
+  data/vbas/ajazz.json VID:PID → 型号（编译期嵌入）
 ```
 
 依赖方向只能向下：`core → provider`、`hid/ble → provider`、`src-tauri → 全部`。
