@@ -80,20 +80,34 @@ enum RunOutcome {
 
 /// 启动一个 transport 的监管线程，返回用于发送指令的通道。
 pub fn start(shared: Arc<Shared>, spec: Spec) -> Sender<SupervisorCmd> {
+    start_with(shared, spec, &BACKOFF_MS).0
+}
+
+/// 同上，但可指定退避表并拿到线程句柄（测试用毫秒级表，产品用 [`BACKOFF_MS`]）。
+pub fn start_with(
+    shared: Arc<Shared>,
+    spec: Spec,
+    backoff: &'static [u64],
+) -> (Sender<SupervisorCmd>, std::thread::JoinHandle<()>) {
     let (cmd_tx, cmd_rx) = std::sync::mpsc::channel();
     let name = format!("voltnest-{}-supervisor", spec.transport.as_str());
     {
         let mut statuses = lock(&shared.transports);
         upsert(&mut statuses, &spec, TransportState::Running, 0, 0, None);
     }
-    std::thread::Builder::new()
+    let handle = std::thread::Builder::new()
         .name(name)
-        .spawn(move || supervise(shared, spec, cmd_rx))
+        .spawn(move || supervise(shared, spec, cmd_rx, backoff))
         .expect("创建 Provider 监管线程失败");
-    cmd_tx
+    (cmd_tx, handle)
 }
 
-fn supervise(shared: Arc<Shared>, spec: Spec, cmd_rx: Receiver<SupervisorCmd>) {
+fn supervise(
+    shared: Arc<Shared>,
+    spec: Spec,
+    cmd_rx: Receiver<SupervisorCmd>,
+    backoff: &'static [u64],
+) {
     let mut failures = 0u32;
     let mut restarts = 0u32;
 
@@ -137,55 +151,66 @@ fn supervise(shared: Arc<Shared>, spec: Spec, cmd_rx: Receiver<SupervisorCmd>) {
             Some(detail.clone()),
         );
 
-        if failures >= MAX_CONSECUTIVE_FAILURES {
-            set_status(
-                &shared,
-                &spec,
-                TransportState::Unavailable,
-                failures,
-                restarts,
-                Some(detail.clone()),
-            );
-            {
-                let mut engine = lock(&shared.engine);
-                engine.push_diag(
-                    voltnest_provider::clock::now_utc_ms(),
-                    voltnest_core::DiagLevel::Error,
-                    "transport_unavailable",
-                    None,
-                    format!(
-                        "{} 连续 {failures} 次失败，已停止自动重启：{detail}",
-                        spec.transport.display_label()
-                    ),
+        match backoff_for(failures, backoff) {
+            None => {
+                set_status(
+                    &shared,
+                    &spec,
+                    TransportState::Unavailable,
+                    failures,
+                    restarts,
+                    Some(detail.clone()),
                 );
-            }
-            // 只等手动重启：期间每 500ms 检查一次退出标志。
-            loop {
-                if shared.shutting_down.load(Ordering::Relaxed) {
-                    return;
+                {
+                    let mut engine = lock(&shared.engine);
+                    engine.push_diag(
+                        voltnest_provider::clock::now_utc_ms(),
+                        voltnest_core::DiagLevel::Error,
+                        "transport_unavailable",
+                        None,
+                        format!(
+                            "{} 连续 {failures} 次失败，已停止自动重启：{detail}",
+                            spec.transport.display_label()
+                        ),
+                    );
                 }
-                match cmd_rx.recv_timeout(Duration::from_millis(500)) {
-                    Ok(SupervisorCmd::Restart) => {
-                        failures = 0;
-                        restarts = restarts.saturating_add(1);
-                        continue 'outer;
-                    }
-                    Ok(SupervisorCmd::Stop)
-                    | Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                // 只等手动重启：期间每 500ms 检查一次退出标志。
+                loop {
+                    if shared.shutting_down.load(Ordering::Relaxed) {
                         return;
                     }
-                    Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+                    match cmd_rx.recv_timeout(Duration::from_millis(500)) {
+                        Ok(SupervisorCmd::Restart) => {
+                            failures = 0;
+                            restarts = restarts.saturating_add(1);
+                            continue 'outer;
+                        }
+                        Ok(SupervisorCmd::Stop)
+                        | Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                            return;
+                        }
+                        Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+                    }
                 }
             }
-        }
-
-        let delay = BACKOFF_MS[(failures.saturating_sub(1) as usize).min(BACKOFF_MS.len() - 1)];
-        match wait_cmd(&cmd_rx, delay, &shared) {
-            Wait::Command(SupervisorCmd::Restart) => failures = 0,
-            Wait::Command(SupervisorCmd::Stop) | Wait::Exit => return,
-            Wait::Elapsed => {}
+            Some(delay) => match wait_cmd(&cmd_rx, delay, &shared) {
+                Wait::Command(SupervisorCmd::Restart) => failures = 0,
+                Wait::Command(SupervisorCmd::Stop) | Wait::Exit => return,
+                Wait::Elapsed => {}
+            },
         }
     }
+}
+
+/// 第 `failures` 次连续失败后的退避时长；达到上限返回 `None`（转人工重启）。
+///
+/// 抽成纯函数是为了能在毫秒级退避表下测完整序列，而不必真的等 60 秒。
+pub fn backoff_for(failures: u32, table: &[u64]) -> Option<u64> {
+    if failures == 0 || failures >= MAX_CONSECUTIVE_FAILURES || table.is_empty() {
+        return None;
+    }
+    let last = table.len() - 1;
+    Some(table[(failures.saturating_sub(1) as usize).min(last)])
 }
 
 /// 退避等待的结果。
@@ -342,4 +367,99 @@ fn set_status(
 ) {
     let mut statuses = lock(&shared.transports);
     upsert(&mut statuses, spec, status, failures, restarts, last_error);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::AtomicU32;
+    use voltnest_provider::Transport;
+    use voltnest_provider::testing::PanicProvider;
+    use voltnest_storage::{DataPaths, Settings, SettingsStore, StateStore};
+
+    static SEQ: AtomicU32 = AtomicU32::new(0);
+
+    fn temp_shared() -> (Arc<Shared>, Receiver<HostEvent>) {
+        let root = std::env::temp_dir().join(format!(
+            "voltnest-supervisor-{}-{}",
+            std::process::id(),
+            SEQ.fetch_add(1, Ordering::Relaxed)
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        let paths = DataPaths::with_root(&root);
+        let (tx, rx) = std::sync::mpsc::channel();
+        let shared = Shared::new(
+            paths.clone(),
+            Settings::default(),
+            SettingsStore::new(paths.clone()),
+            StateStore::new(paths),
+            tx,
+        );
+        (shared, rx)
+    }
+
+    fn hid_spec(make: fn() -> Box<dyn Provider>) -> Spec {
+        Spec {
+            transport: Transport::Hid,
+            family: voltnest_provider::FAMILY_HID_NEARLINK_AJAZZ,
+            make,
+        }
+    }
+
+    #[test]
+    fn backoff_follows_five_fifteen_sixty_then_gives_up() {
+        assert_eq!(backoff_for(1, &BACKOFF_MS), Some(5_000));
+        assert_eq!(backoff_for(2, &BACKOFF_MS), Some(15_000));
+        assert_eq!(backoff_for(3, &BACKOFF_MS), Some(60_000));
+        assert_eq!(
+            backoff_for(4, &BACKOFF_MS),
+            Some(60_000),
+            "最后一级一直用它"
+        );
+        assert_eq!(
+            backoff_for(5, &BACKOFF_MS),
+            None,
+            "第 5 次失败后不再自动重启"
+        );
+        assert_eq!(backoff_for(0, &BACKOFF_MS), None);
+        assert_eq!(backoff_for(1, &[]), None);
+    }
+
+    #[test]
+    fn panic_becomes_transport_down_then_unavailable() {
+        let (shared, rx) = temp_shared();
+        let (cmd, handle) = start_with(
+            Arc::clone(&shared),
+            hid_spec(|| Box::new(PanicProvider::new())),
+            &[1, 1, 1, 1],
+        );
+
+        // 1. panic 必须转成 TransportDown，而不是静默消失。
+        let mut down = 0;
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while down == 0 && std::time::Instant::now() < deadline {
+            if let Ok(HostEvent::Provider { event, .. }) =
+                rx.recv_timeout(Duration::from_millis(200))
+                && matches!(event, ProviderEvent::TransportDown { .. })
+            {
+                down += 1;
+            }
+        }
+        assert!(down >= 1, "panic 必须上报 TransportDown");
+
+        // 2. 连续失败达到上限后转「不可用」，停止自动重启。
+        let mut unavailable = false;
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while !unavailable && std::time::Instant::now() < deadline {
+            unavailable = lock(&shared.transports)
+                .iter()
+                .any(|s| s.status == TransportState::Unavailable);
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        assert!(unavailable, "连续失败达到上限后必须转人工重启");
+
+        // 3. Stop 能让监管线程干净退出（不遗留采集线程）。
+        cmd.send(SupervisorCmd::Stop).expect("监管线程仍在");
+        handle.join().expect("监管线程应能正常退出");
+    }
 }
