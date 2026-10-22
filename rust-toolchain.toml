@@ -1,0 +1,7 @@
+[toolchain]
+# 本机实测：stable = rustc 1.98.1 (48a229cea 2026-09-01)，target x86_64-pc-windows-msvc。
+# 固定到 stable 通道而非精确版本号：镜像站未提供 1.98.1 的独立工具链包（404），
+# 精确版本锁由 Cargo.lock 与 CI 的 rustc 版本断言共同保证。
+channel = "stable"
+components = ["rustfmt", "clippy"]
+profile = "minimal"

@@ -1,0 +1,3 @@
+# Z-6 / D10：全仓唯一时间源是 voltnest_provider::clock::now_utc_ms()。
+# 其它位置使用 SystemTime 会在 CI 的 clippy 门禁中失败。
+disallowed-types = ["std::time::SystemTime"]

@@ -1,0 +1,33 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+# tools/ 是取证探针，不属于产品代码，不得被产品 crate 依赖（ADR-0010 D1）。
+exclude = ["tools/hid-probe-rs", "tools/ble-probe-rs"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.98"
+license = "MIT"
+authors = ["VoltNest contributors"]
+repository = "https://example.invalid/voltnest"
+
+[workspace.dependencies]
+voltnest-provider = { path = "crates/voltnest-provider" }
+voltnest-core = { path = "crates/voltnest-core" }
+voltnest-hid = { path = "crates/voltnest-hid" }
+voltnest-ble = { path = "crates/voltnest-ble" }
+voltnest-platform = { path = "crates/voltnest-platform" }
+voltnest-storage = { path = "crates/voltnest-storage" }
+
+serde = { version = "1.0", features = ["derive"] }
+serde_json = { version = "1.0", features = ["preserve_order"] }
+log = "0.4"
+
+[profile.release]
+codegen-units = 1
+lto = "thin"
+opt-level = "s"
+strip = "symbols"
+# 注意：不得设置 panic = "abort"。Provider 线程依赖 catch_unwind 做故障隔离（RT-2 / ADR-0010 D7）。
+
