@@ -1,5 +1,23 @@
 <script setup lang="ts">
 import { computed } from "vue";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import type { NotificationMode, Sensitivity, SettingsDto } from "../lib/types";
 
 const props = defineProps<{ settings: SettingsDto; busy: boolean }>();
@@ -32,12 +50,14 @@ function setSensitivity(value: Sensitivity) {
   patch({ sensitivity: value });
 }
 
-function setMode(mode: NotificationMode) {
-  patch({ notifications: { ...props.settings.notifications, mode } });
+/** Select 回调的取值类型：reka-ui 允许任意可接受值，这里只认字符串项。 */
+function setMode(mode: unknown) {
+  if (typeof mode !== "string") return;
+  patch({ notifications: { ...props.settings.notifications, mode: mode as NotificationMode } });
 }
 
-function setThreshold(index: 0 | 1, raw: string) {
-  const value = Number.parseInt(raw, 10);
+function setThreshold(index: 0 | 1, raw: string | number) {
+  const value = Number.parseInt(String(raw), 10);
   if (Number.isNaN(value)) return;
   const clamped = Math.min(95, Math.max(5, value));
   const next: [number, number] = [thresholds.value[0], thresholds.value[1]];
@@ -49,129 +69,161 @@ function setThreshold(index: 0 | 1, raw: string) {
   }
   patch({ notifications: { ...props.settings.notifications, lowThresholds: next } });
 }
+
+/** Checkbox 的 modelValue 还可能是 "indeterminate"，这里只认布尔。 */
+function onCheckbox(value: boolean | "indeterminate", apply: (checked: boolean) => void) {
+  apply(value === true);
+}
 </script>
 
 <template>
   <div class="flex flex-col gap-4 pb-4">
-    <section class="rounded-2xl border border-black/5 bg-white/90 p-4 dark:border-white/10 dark:bg-white/[0.04]">
-      <h3 class="text-[13px] font-semibold">过期灵敏度</h3>
-      <p class="mt-1 text-[12px] text-neutral-500 dark:text-neutral-400">
-        作用于整条过期链（变黄 → 读取失败 → 离线），三个阈值同比缩放。
-      </p>
-      <div class="mt-3 grid grid-cols-3 gap-2">
-        <button
-          v-for="opt in sensitivityOptions"
-          :key="opt.value"
-          type="button"
-          class="rounded-xl border px-2 py-2 text-left transition"
-          :class="settings.sensitivity === opt.value
-            ? 'border-transparent bg-neutral-900 text-white dark:bg-white dark:text-neutral-900'
-            : 'border-black/10 bg-transparent hover:bg-black/[0.03] dark:border-white/15 dark:hover:bg-white/[0.06]'"
-          @click="setSensitivity(opt.value)"
-        >
-          <span class="block text-[13px] font-medium">{{ opt.label }}</span>
-          <span class="mt-0.5 block text-[10.5px] opacity-70">{{ opt.hint }}</span>
-        </button>
-      </div>
-    </section>
-
-    <section class="rounded-2xl border border-black/5 bg-white/90 p-4 dark:border-white/10 dark:bg-white/[0.04]">
-      <h3 class="text-[13px] font-semibold">低电量通知</h3>
-      <div class="mt-3 flex items-center justify-between gap-3">
-        <span class="text-[12.5px] text-neutral-600 dark:text-neutral-300">通知方式</span>
-        <select
-          class="rounded-lg border border-black/10 bg-white px-2 py-1 text-[12.5px] dark:border-white/15 dark:bg-neutral-900"
-          :value="settings.notifications.mode"
-          @change="setMode(($event.target as HTMLSelectElement).value as NotificationMode)"
-        >
-          <option v-for="opt in modeOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
-        </select>
-      </div>
-      <div class="mt-3 flex items-center justify-between gap-3">
-        <span class="text-[12.5px] text-neutral-600 dark:text-neutral-300">提醒阈值</span>
-        <div class="flex items-center gap-1.5">
-          <input
-            type="number"
-            min="5"
-            max="95"
-            class="w-16 rounded-lg border border-black/10 bg-white px-2 py-1 text-center text-[12.5px] tabular-nums dark:border-white/15 dark:bg-neutral-900"
-            :value="thresholds[0]"
-            @change="setThreshold(0, ($event.target as HTMLInputElement).value)"
-          />
-          <span class="text-neutral-400">/</span>
-          <input
-            type="number"
-            min="5"
-            max="95"
-            class="w-16 rounded-lg border border-black/10 bg-white px-2 py-1 text-center text-[12.5px] tabular-nums dark:border-white/15 dark:bg-neutral-900"
-            :value="thresholds[1]"
-            @change="setThreshold(1, ($event.target as HTMLInputElement).value)"
-          />
-          <span class="text-[12.5px] text-neutral-400">%</span>
+    <Card class="gap-3 py-4">
+      <CardHeader class="gap-1 px-4">
+        <CardTitle class="text-sm">过期灵敏度</CardTitle>
+        <CardDescription class="text-xs">
+          作用于整条过期链（变黄 → 读取失败 → 离线），三个阈值同比缩放。
+        </CardDescription>
+      </CardHeader>
+      <CardContent class="px-4">
+        <div class="grid grid-cols-3 gap-2" role="group" aria-label="过期灵敏度">
+          <Button
+            v-for="opt in sensitivityOptions"
+            :key="opt.value"
+            type="button"
+            :variant="settings.sensitivity === opt.value ? 'default' : 'outline'"
+            :aria-pressed="settings.sensitivity === opt.value"
+            class="h-auto flex-col items-start gap-0.5 px-2 py-2 text-left"
+            @click="setSensitivity(opt.value)"
+          >
+            <span class="text-sm font-medium">{{ opt.label }}</span>
+            <span class="text-[11px] font-normal opacity-70">{{ opt.hint }}</span>
+          </Button>
         </div>
-      </div>
-      <p class="mt-2 text-[11.5px] text-neutral-400">
-        跌破阈值才提醒；回升到「阈值 + 5%」才重新武装；同一档 30 分钟内最多一次。
-      </p>
-      <button
-        type="button"
-        class="mt-3 w-full rounded-xl border border-black/10 py-1.5 text-[12.5px] font-medium transition hover:bg-black/[0.04] disabled:opacity-50 dark:border-white/15 dark:hover:bg-white/[0.06]"
-        :disabled="busy"
-        @click="emit('test-notification')"
-      >
-        发送测试通知
-      </button>
-    </section>
+      </CardContent>
+    </Card>
 
-    <section class="rounded-2xl border border-black/5 bg-white/90 p-4 dark:border-white/10 dark:bg-white/[0.04]">
-      <h3 class="text-[13px] font-semibold">启动</h3>
-      <label class="mt-3 flex cursor-pointer items-start justify-between gap-3">
-        <span>
-          <span class="block text-[12.5px]">开机时自动启动</span>
-          <span class="mt-0.5 block text-[11px] text-neutral-400">写入 HKCU 的 Run 项，可随时在此关闭</span>
-        </span>
-        <input
-          type="checkbox"
-          class="mt-1 h-4 w-4 accent-neutral-900 dark:accent-white"
-          :checked="settings.autostart"
-          @change="emit('autostart', ($event.target as HTMLInputElement).checked)"
-        />
-      </label>
-      <label class="mt-3 flex cursor-pointer items-start justify-between gap-3">
-        <span>
-          <span class="block text-[12.5px]">启动时最小化到托盘</span>
-          <span class="mt-0.5 block text-[11px] text-neutral-400">仅影响手动启动；自启路径始终静默</span>
-        </span>
-        <input
-          type="checkbox"
-          class="mt-1 h-4 w-4 accent-neutral-900 dark:accent-white"
-          :checked="settings.startMinimized"
-          @change="patch({ startMinimized: ($event.target as HTMLInputElement).checked })"
-        />
-      </label>
-    </section>
+    <Card class="gap-3 py-4">
+      <CardHeader class="px-4">
+        <CardTitle class="text-sm">低电量通知</CardTitle>
+      </CardHeader>
+      <CardContent class="px-4">
+        <div class="flex items-center justify-between gap-3">
+          <Label for="notification-mode" class="text-muted-foreground text-xs font-normal">
+            通知方式
+          </Label>
+          <Select :model-value="settings.notifications.mode" @update:model-value="setMode">
+            <SelectTrigger id="notification-mode" size="sm" class="w-[8.5rem]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem v-for="opt in modeOptions" :key="opt.value" :value="opt.value">
+                {{ opt.label }}
+              </SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
 
-    <section class="rounded-2xl border border-black/5 bg-white/90 p-4 dark:border-white/10 dark:bg-white/[0.04]">
-      <h3 class="text-[13px] font-semibold">设备采集</h3>
-      <p class="mt-1 text-[11.5px] text-neutral-400">
-        采集线程异常退出后可手动重启；重启不会丢失设备状态。
-      </p>
-      <div class="mt-3 grid grid-cols-2 gap-2">
-        <button
+        <div class="mt-3 flex items-center justify-between gap-3">
+          <Label for="threshold-low" class="text-muted-foreground text-xs font-normal">提醒阈值</Label>
+          <div class="flex items-center gap-1.5">
+            <Input
+              id="threshold-low"
+              type="number"
+              min="5"
+              max="95"
+              class="h-8 w-16 text-center text-xs tabular-nums"
+              :model-value="thresholds[0]"
+              @change="setThreshold(0, ($event.target as HTMLInputElement).value)"
+            />
+            <span class="text-muted-foreground text-xs">/</span>
+            <Input
+              type="number"
+              min="5"
+              max="95"
+              aria-label="高提醒阈值"
+              class="h-8 w-16 text-center text-xs tabular-nums"
+              :model-value="thresholds[1]"
+              @change="setThreshold(1, ($event.target as HTMLInputElement).value)"
+            />
+            <span class="text-muted-foreground text-xs">%</span>
+          </div>
+        </div>
+
+        <p class="text-muted-foreground mt-2 text-xs">
+          跌破阈值才提醒；回升到「阈值 + 5%」才重新武装；同一档 30 分钟内最多一次。
+        </p>
+        <Button
           type="button"
-          class="rounded-xl border border-black/10 py-1.5 text-[12.5px] transition hover:bg-black/[0.04] dark:border-white/15 dark:hover:bg-white/[0.06]"
-          @click="emit('restart', 'hid')"
+          variant="outline"
+          class="mt-3 w-full"
+          :disabled="busy"
+          @click="emit('test-notification')"
         >
-          重启 2.4G 采集
-        </button>
-        <button
-          type="button"
-          class="rounded-xl border border-black/10 py-1.5 text-[12.5px] transition hover:bg-black/[0.04] dark:border-white/15 dark:hover:bg-white/[0.06]"
-          @click="emit('restart', 'ble')"
-        >
-          重启蓝牙采集
-        </button>
-      </div>
-    </section>
+          发送测试通知
+        </Button>
+      </CardContent>
+    </Card>
+
+    <Card class="gap-3 py-4">
+      <CardHeader class="px-4">
+        <CardTitle class="text-sm">启动</CardTitle>
+      </CardHeader>
+      <CardContent class="flex flex-col gap-3 px-4">
+        <div class="flex items-start justify-between gap-3">
+          <Label for="autostart" class="flex flex-1 cursor-pointer flex-col items-start gap-0.5 font-normal">
+            <span class="text-sm">开机时自动启动</span>
+            <span class="text-muted-foreground text-xs font-normal">
+              写入 HKCU 的 Run 项，可随时在此关闭
+            </span>
+          </Label>
+          <Checkbox
+            id="autostart"
+            class="mt-0.5"
+            :model-value="settings.autostart"
+            @update:model-value="(value) => onCheckbox(value, (checked) => emit('autostart', checked))"
+          />
+        </div>
+
+        <div class="flex items-start justify-between gap-3">
+          <Label
+            for="start-minimized"
+            class="flex flex-1 cursor-pointer flex-col items-start gap-0.5 font-normal"
+          >
+            <span class="text-sm">启动时最小化到托盘</span>
+            <span class="text-muted-foreground text-xs font-normal">
+              仅影响手动启动；自启路径始终静默
+            </span>
+          </Label>
+          <Checkbox
+            id="start-minimized"
+            class="mt-0.5"
+            :model-value="settings.startMinimized"
+            @update:model-value="
+              (value) => onCheckbox(value, (checked) => patch({ startMinimized: checked }))
+            "
+          />
+        </div>
+      </CardContent>
+    </Card>
+
+    <Card class="gap-3 py-4">
+      <CardHeader class="gap-1 px-4">
+        <CardTitle class="text-sm">设备采集</CardTitle>
+        <CardDescription class="text-xs">
+          采集线程异常退出后可手动重启；重启不会丢失设备状态。
+        </CardDescription>
+      </CardHeader>
+      <CardContent class="px-4">
+        <div class="grid grid-cols-2 gap-2">
+          <Button type="button" variant="outline" @click="emit('restart', 'hid')">
+            重启 2.4G 采集
+          </Button>
+          <Button type="button" variant="outline" @click="emit('restart', 'ble')">
+            重启蓝牙采集
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
   </div>
 </template>

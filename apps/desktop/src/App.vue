@@ -1,9 +1,14 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, onMounted, ref, watch, type Component } from "vue";
+import { Activity, BatteryMedium, CircleAlert, Settings } from "@lucide/vue";
 import DeviceCard from "./components/DeviceCard.vue";
 import DiagnosticsPanel from "./components/DiagnosticsPanel.vue";
 import OnboardingFlow from "./components/OnboardingFlow.vue";
 import SettingsPanel from "./components/SettingsPanel.vue";
+import TitleBar from "./components/TitleBar.vue";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { useSnapshot } from "./composables/useSnapshot";
 import {
   completeOnboarding,
@@ -26,10 +31,10 @@ const diagnostics = ref<DiagnosticsDto | null>(null);
 const busy = ref(false);
 const error = ref<string | null>(null);
 
-const navItems: Array<{ id: View; label: string }> = [
-  { id: "devices", label: "设备" },
-  { id: "settings", label: "设置" },
-  { id: "diagnostics", label: "诊断" },
+const navItems: Array<{ id: View; label: string; icon: Component }> = [
+  { id: "devices", label: "设备", icon: BatteryMedium },
+  { id: "settings", label: "设置", icon: Settings },
+  { id: "diagnostics", label: "诊断", icon: Activity },
 ];
 
 /**
@@ -178,31 +183,27 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="flex h-full flex-col">
-    <header
-      class="flex items-center justify-between border-b border-black/5 px-5 py-3 dark:border-white/[0.07]"
-    >
-      <div class="flex items-baseline gap-2.5">
-        <span class="text-[15px] font-semibold tracking-tight">VoltNest</span>
-        <span class="text-[11.5px] text-neutral-400">{{ statusText }}</span>
-      </div>
-      <nav class="flex items-center gap-1">
-        <button
-          v-for="item in navItems"
-          :key="item.id"
-          type="button"
-          class="rounded-lg px-3 py-1.5 text-[12.5px] transition"
-          :class="view === item.id
-            ? 'bg-black/[0.06] font-medium text-neutral-900 dark:bg-white/[0.1] dark:text-white'
-            : 'text-neutral-500 hover:bg-black/[0.03] dark:text-neutral-400 dark:hover:bg-white/[0.06]'"
-          @click="view = item.id"
-        >
-          {{ item.label }}
-        </button>
-      </nav>
-    </header>
+  <div class="bg-muted/40 dark:bg-background flex h-screen flex-col overflow-hidden select-none">
+    <TitleBar />
 
-    <main class="min-h-0 flex-1 overflow-y-auto px-5 pt-4">
+    <nav class="flex shrink-0 items-center gap-1 border-b px-3 py-1.5">
+      <Button
+        v-for="item in navItems"
+        :key="item.id"
+        :variant="view === item.id ? 'secondary' : 'ghost'"
+        size="sm"
+        type="button"
+        @click="view = item.id"
+      >
+        <component :is="item.icon" aria-hidden="true" />
+        {{ item.label }}
+      </Button>
+      <Badge variant="outline" class="ml-auto max-w-[55%] truncate font-normal">
+        {{ statusText }}
+      </Badge>
+    </nav>
+
+    <main class="mx-auto min-h-0 w-full max-w-[560px] flex-1 overflow-y-auto px-5 pt-4">
       <template v-if="view === 'devices'">
         <div v-if="rows.length > 0" class="flex flex-col gap-2.5 pb-5">
           <DeviceCard
@@ -213,14 +214,19 @@ onMounted(() => {
             :inactive-text="row.inactiveText"
           />
         </div>
-        <div v-else-if="connected" class="flex flex-col items-center justify-center gap-2 py-16 text-center">
-          <div class="h-3 w-3 rounded-full border-2 border-neutral-300 dark:border-neutral-600" />
-          <p class="text-[13px] font-medium">还没有发现设备</p>
-          <p class="max-w-[280px] text-[11.5px] leading-relaxed text-neutral-400">
+        <div
+          v-else-if="connected"
+          class="flex flex-col items-center justify-center gap-2 py-16 text-center"
+        >
+          <div class="border-muted-foreground/40 size-3 rounded-full border-2" />
+          <p class="text-sm font-medium">还没有发现设备</p>
+          <p class="text-muted-foreground max-w-[280px] text-xs leading-relaxed">
             插上 2.4G 接收器，或在系统设置里把蓝牙耳机连接一次，设备会自己出现在这里。
           </p>
         </div>
-        <div v-else class="py-16 text-center text-[12.5px] text-neutral-400">正在连接宿主进程…</div>
+        <div v-else class="text-muted-foreground py-16 text-center text-sm">
+          正在连接宿主进程…
+        </div>
       </template>
 
       <SettingsPanel
@@ -240,7 +246,7 @@ onMounted(() => {
         @restart="doRestart"
       />
 
-      <div v-else class="py-16 text-center text-[12.5px] text-neutral-400">正在读取…</div>
+      <div v-else class="text-muted-foreground py-16 text-center text-sm">正在读取…</div>
     </main>
 
     <OnboardingFlow
@@ -249,12 +255,26 @@ onMounted(() => {
       @done="finishOnboarding"
     />
 
-    <div
+    <Alert
       v-if="error"
-      class="fixed bottom-4 left-1/2 flex max-w-[420px] -translate-x-1/2 items-start gap-2 rounded-xl border border-red-500/20 bg-red-50 px-3.5 py-2.5 text-[12px] text-red-700 shadow-lg dark:border-red-400/25 dark:bg-red-950/70 dark:text-red-200"
+      variant="destructive"
+      class="bg-popover fixed bottom-4 left-1/2 z-50 w-[calc(100%-2rem)] max-w-[420px] -translate-x-1/2 shadow-lg"
     >
-      <span class="selectable flex-1">{{ error }}</span>
-      <button type="button" class="shrink-0 text-red-500 hover:text-red-700" @click="error = null">关闭</button>
-    </div>
+      <CircleAlert />
+      <AlertDescription>
+        <div class="flex w-full items-start gap-3">
+          <span class="min-w-0 flex-1 break-all select-text">{{ error }}</span>
+          <Button
+            variant="ghost"
+            size="sm"
+            class="text-destructive -my-1 h-7 shrink-0 px-2"
+            type="button"
+            @click="error = null"
+          >
+            关闭
+          </Button>
+        </div>
+      </AlertDescription>
+    </Alert>
   </div>
 </template>
