@@ -21,9 +21,7 @@ static CACHE: OnceLock<Option<PathBuf>> = OnceLock::new();
 
 /// 幂等落盘并缓存路径；返回 `None` 表示写不进去（调用方继续走无图标路径）。
 pub fn init(root: &Path) -> Option<PathBuf> {
-    CACHE
-        .get_or_init(|| write(root).ok())
-        .clone()
+    CACHE.get_or_init(|| write(root).ok()).clone()
 }
 
 /// 已落盘的图标路径（`init` 之前调用得到 `None`）。
@@ -47,7 +45,10 @@ mod tests {
 
     #[test]
     fn the_embedded_icon_is_a_png() {
-        assert_eq!(ICON_PNG[..8], [0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a]);
+        assert_eq!(
+            ICON_PNG[..8],
+            [0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a]
+        );
     }
 
     #[test]

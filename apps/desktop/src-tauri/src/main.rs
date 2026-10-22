@@ -156,11 +156,11 @@ fn main() {
             }
 
             // 5.6 首屏显隐：自启与手动启动一致，统一由「启动时最小化到托盘」管控。
-            if let Some(window) = app.get_webview_window("main") {
-                if !start_minimized {
-                    let _ = window.show();
-                    let _ = window.set_focus();
-                }
+            if let Some(window) = app.get_webview_window("main")
+                && !start_minimized
+            {
+                let _ = window.show();
+                let _ = window.set_focus();
             }
 
             Ok(())
