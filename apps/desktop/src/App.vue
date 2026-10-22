@@ -16,7 +16,6 @@ import {
   getSettings,
   restartTransport,
   setAutostart,
-  testNotification,
   updateSettings,
 } from "./lib/ipc";
 import type { CardDto, DiagnosticsDto, OnboardingChoice, SettingsDto } from "./lib/types";
@@ -149,18 +148,6 @@ async function doRestart(transport: "hid" | "ble") {
   }
 }
 
-async function doTestNotification() {
-  busy.value = true;
-  try {
-    await testNotification();
-    if (view.value === "diagnostics") await loadDiagnostics();
-  } catch (e) {
-    fail(e);
-  } finally {
-    busy.value = false;
-  }
-}
-
 async function finishOnboarding(choice: OnboardingChoice) {
   busy.value = true;
   try {
@@ -232,11 +219,8 @@ onMounted(() => {
       <SettingsPanel
         v-else-if="view === 'settings' && settings"
         :settings="settings"
-        :busy="busy"
         @change="applySettings"
         @autostart="applyAutostart"
-        @test-notification="doTestNotification"
-        @restart="doRestart"
       />
 
       <DiagnosticsPanel
