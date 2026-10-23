@@ -42,6 +42,16 @@ export function completeOnboarding(choice: OnboardingChoice): Promise<SettingsDt
   return invoke<SettingsDto>("complete_onboarding", { choice });
 }
 
+/** 收进托盘：宿主隐藏窗口并强制落盘，进程继续跑。 */
+export function hideToTray(): Promise<void> {
+  return invoke<void>("hide_to_tray");
+}
+
+/** 退出程序：宿主 `app.exit(0)`，由 Exit 事件统一停采集线程、落盘。 */
+export function quitApp(): Promise<void> {
+  return invoke<void>("quit_app");
+}
+
 export function subscribeSnapshot(handler: (snap: Snapshot) => void) {
   return listen<Snapshot>(SNAPSHOT_EVENT, (event) => handler(event.payload));
 }
