@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch, type Component } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch, type Component } from "vue";
 import { Activity, BatteryMedium, CircleAlert, Settings } from "@lucide/vue";
 import DeviceCard from "./components/DeviceCard.vue";
 import DiagnosticsPanel from "./components/DiagnosticsPanel.vue";
@@ -16,6 +16,7 @@ import {
   getSettings,
   restartTransport,
   setAutostart,
+  subscribeDiagnostics,
   updateSettings,
 } from "./lib/ipc";
 import type { CardDto, DiagnosticsDto, OnboardingChoice, SettingsDto } from "./lib/types";
@@ -29,6 +30,18 @@ const settings = ref<SettingsDto | null>(null);
 const diagnostics = ref<DiagnosticsDto | null>(null);
 const busy = ref(false);
 const error = ref<string | null>(null);
+
+/** 诊断刷新的合并窗口：一串线程组状态变化只拉一次。 */
+const DIAGNOSTICS_REFRESH_MS = 120;
+
+/**
+ * 诊断拉取序号。`get_diagnostics` 是异步往返，先发的请求可能后返回；
+ * 只有最后一次请求的响应允许落到界面上，避免旧数据把新数据盖回去。
+ */
+let diagnosticsSeq = 0;
+let diagnosticsTimer: number | undefined;
+let unlistenDiagnostics: (() => void) | undefined;
+let disposed = false;
 
 const navItems: Array<{ id: View; label: string; icon: Component }> = [
   { id: "devices", label: "设备", icon: BatteryMedium },
@@ -99,11 +112,48 @@ async function loadSettings() {
 }
 
 async function loadDiagnostics() {
+  const seq = ++diagnosticsSeq;
   try {
-    diagnostics.value = await getDiagnostics();
+    const next = await getDiagnostics();
+    if (seq === diagnosticsSeq) diagnostics.value = next;
   } catch (e) {
     fail(e);
   }
+}
+
+/**
+ * 收到宿主的「诊断数据已变」信号后重新拉取。
+ *
+ * 重启次数由监管线程异步推进（后台退避重启、手动重启都在那边完成），
+ * 以前只有切到诊断页时才拉一次，所以数值变化在界面上是看不见的。
+ * 同一串变化合并成一次请求，且只在诊断页可见时拉，不为看不见的页面做无谓 IPC。
+ */
+function scheduleDiagnosticsRefresh() {
+  if (view.value !== "diagnostics" || diagnosticsTimer !== undefined) return;
+  diagnosticsTimer = window.setTimeout(() => {
+    diagnosticsTimer = undefined;
+    void loadDiagnostics();
+  }, DIAGNOSTICS_REFRESH_MS);
+}
+
+/**
+ * 建立诊断订阅并拉取首帧。
+ *
+ * 顺序与快照一致（W-6）：**先订阅 → 再拉全量**。反过来写会漏掉
+ * 「拉取已返回、订阅尚未建立」这段时间内发生的线程组变化。
+ */
+async function startDiagnosticsFeed() {
+  try {
+    const off = await subscribeDiagnostics(scheduleDiagnosticsRefresh);
+    if (disposed) {
+      off();
+      return;
+    }
+    unlistenDiagnostics = off;
+  } catch (e) {
+    fail(e);
+  }
+  await loadDiagnostics();
 }
 
 async function applySettings(next: SettingsDto) {
@@ -160,12 +210,24 @@ async function finishOnboarding(choice: OnboardingChoice) {
 }
 
 watch(view, (next) => {
-  if (next === "diagnostics") void loadDiagnostics();
+  if (next !== "diagnostics") return;
+  // 进页时立即拉一次全量，同时取消已排队的合并刷新，避免接连两次请求。
+  if (diagnosticsTimer !== undefined) {
+    window.clearTimeout(diagnosticsTimer);
+    diagnosticsTimer = undefined;
+  }
+  void loadDiagnostics();
 });
 
 onMounted(() => {
   void loadSettings();
-  void loadDiagnostics();
+  void startDiagnosticsFeed();
+});
+
+onBeforeUnmount(() => {
+  disposed = true;
+  unlistenDiagnostics?.();
+  if (diagnosticsTimer !== undefined) window.clearTimeout(diagnosticsTimer);
 });
 </script>
 

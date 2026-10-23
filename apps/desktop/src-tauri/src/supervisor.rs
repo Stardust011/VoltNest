@@ -365,8 +365,12 @@ fn set_status(
     restarts: u32,
     last_error: Option<String>,
 ) {
-    let mut statuses = lock(&shared.transports);
-    upsert(&mut statuses, spec, status, failures, restarts, last_error);
+    {
+        let mut statuses = lock(&shared.transports);
+        upsert(&mut statuses, spec, status, failures, restarts, last_error);
+    }
+    // 重启次数只在这里推进，而 transports 不在快照里：不主动通知，诊断页就永远是旧的。
+    let _ = shared.tx.send(HostEvent::Diagnostics);
 }
 
 #[cfg(test)]
@@ -423,6 +427,30 @@ mod tests {
         );
         assert_eq!(backoff_for(0, &BACKOFF_MS), None);
         assert_eq!(backoff_for(1, &[]), None);
+    }
+
+    #[test]
+    fn status_change_notifies_diagnostics_channel() {
+        let (shared, rx) = temp_shared();
+        let (cmd, handle) = start_with(
+            Arc::clone(&shared),
+            hid_spec(|| Box::new(PanicProvider::new())),
+            &[1, 1, 1, 1],
+        );
+
+        // 线程组每次改状态（含重启次数 +1）都必须推一条信号，
+        // 否则诊断页只能等切页时重新拉取，界面上永远是旧数值。
+        let mut notified = false;
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while !notified && std::time::Instant::now() < deadline {
+            if let Ok(HostEvent::Diagnostics) = rx.recv_timeout(Duration::from_millis(200)) {
+                notified = true;
+            }
+        }
+        assert!(notified, "线程组状态变化必须通知诊断页");
+
+        let _ = cmd.send(SupervisorCmd::Stop);
+        handle.join().expect("监管线程应能正常退出");
     }
 
     #[test]
