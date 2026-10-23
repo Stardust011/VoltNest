@@ -25,6 +25,7 @@
         "skipTaskbar": false,
         "decorations": false,
         "shadow": true,
+        "devtools": false,
         "theme": null
       }
     ],
