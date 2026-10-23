@@ -1,10 +1,12 @@
 
 <script setup lang="ts">
 import { RotateCcw } from "@lucide/vue";
+import { computed, ref } from "vue";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { humanizeAgo } from "../lib/time";
+import { visibleDiagEvents } from "../lib/format";
 import type { DiagnosticsDto } from "../lib/types";
 
 const props = defineProps<{
@@ -22,13 +24,22 @@ const levelClass: Record<string, string> = {
   error: "text-destructive font-medium",
   warn: "text-amber-600 dark:text-amber-400 font-medium",
   info: "text-muted-foreground",
+  debug: "text-muted-foreground/70",
 };
 
 const levelLabel: Record<string, string> = {
   error: "错误",
   warn: "警告",
   info: "信息",
+  debug: "调试",
 };
+
+/** `debug` 默认折叠：逐条枚举细节，展开才看。 */
+const showDebug = ref(false);
+const visibleEvents = computed(() =>
+  visibleDiagEvents(props.diagnostics.events, showDebug.value),
+);
+const debugCount = computed(() => props.diagnostics.events.length - visibleEvents.value.length);
 
 const statusLabel: Record<string, string> = {
   running: "运行中",
@@ -56,6 +67,14 @@ function statusClass(status: string) {
   return status === "running"
     ? "font-normal"
     : "border-destructive/40 text-destructive font-normal";
+}
+
+/**
+ * 坏帧诊断的 detail 是「成因 + 原始字节」（`cmd_mismatch(...) · 6B: 06 FA …`），
+ * 属于机器数据：按等宽字体渲染，字节间距才对得齐、好逐位核对。
+ */
+function detailClass(code: string) {
+  return code === "reading_unreadable" ? "font-mono text-[11px]" : "";
 }
 </script>
 
@@ -251,15 +270,26 @@ function statusClass(status: string) {
       <CardHeader class="px-4 pb-0">
         <div class="flex items-center justify-between gap-3">
           <CardTitle class="text-sm font-semibold">诊断事件</CardTitle>
-          <span class="text-muted-foreground text-xs">
-            {{ diagnostics.events.length }} 条事件
-          </span>
+          <div class="flex items-center gap-2">
+            <span class="text-muted-foreground text-xs">
+              {{ visibleEvents.length }} 条事件
+            </span>
+            <Button
+              v-if="debugCount > 0"
+              variant="ghost"
+              size="sm"
+              class="h-6 px-2 text-xs font-normal"
+              @click="showDebug = !showDebug"
+            >
+              {{ showDebug ? "隐藏调试" : `显示调试（${debugCount}）` }}
+            </Button>
+          </div>
         </div>
       </CardHeader>
 
       <CardContent class="px-4">
         <div
-          v-if="diagnostics.events.length === 0"
+          v-if="visibleEvents.length === 0"
           class="text-muted-foreground rounded-lg border border-dashed px-3 py-6 text-center text-xs"
         >
           暂无诊断事件
@@ -267,7 +297,7 @@ function statusClass(status: string) {
 
         <ul v-else class="flex flex-col">
           <li
-            v-for="(event, index) in diagnostics.events"
+            v-for="(event, index) in visibleEvents"
             :key="`${event.atMs}-${index}`"
             class="min-w-0 border-b border-border/50 py-3 first:pt-0 last:border-b-0 last:pb-0"
           >
@@ -290,6 +320,7 @@ function statusClass(status: string) {
 
             <p
               class="mt-2 min-w-0 text-xs leading-5 text-foreground/90 break-all whitespace-pre-wrap select-text"
+              :class="detailClass(event.code)"
             >
               <span v-if="event.deviceId" class="text-muted-foreground font-mono">
                 {{ event.deviceId }} ·

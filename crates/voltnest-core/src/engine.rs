@@ -10,13 +10,14 @@
 use crate::diagnostics::{DiagLevel, Diagnostics};
 use crate::humanize::humanize_ago;
 use crate::notify::{LowBatteryAlert, NotificationBook, NotificationConfig, NotificationEntry};
-use crate::record::Record;
+use crate::record::{Record, UNREADABLE_KINDS_MAX};
 use crate::snapshot::{CardDto, DeviceDto, Snapshot, TrayDto};
 use crate::state::DeviceState;
 use std::collections::BTreeMap;
 use voltnest_provider::{
-    DeviceFact, ErrorCode, Percent, ProfileError, ProviderEvent, ProviderProfile, RemovalReason,
-    Sensitivity, StableId, Thresholds, Transport, ValidReading, validate_registry,
+    ClassificationMethod, DeviceFact, DeviceType, ErrorCode, Percent, ProfileError, ProviderEvent,
+    ProviderProfile, RemovalReason, Sensitivity, StableId, Thresholds, Transport, ValidReading,
+    validate_registry,
 };
 
 /// 引擎配置。阈值不在其中：它只能来自 Provider 与档位（Z-1）。
@@ -257,9 +258,11 @@ impl Engine {
         match event {
             ProviderEvent::Arrived(fact) => self.apply_arrived(fact, now_ms),
             ProviderEvent::Reading(reading) => self.apply_reading(reading, now_ms),
-            ProviderEvent::Unreadable { stable_id, code } => {
-                self.apply_unreadable(stable_id, *code, now_ms)
-            }
+            ProviderEvent::Unreadable {
+                stable_id,
+                code,
+                detail,
+            } => self.apply_unreadable(stable_id, *code, detail.as_deref(), now_ms),
             ProviderEvent::LinkLost { stable_id, code } => {
                 self.apply_link_lost(stable_id, *code, now_ms)
             }
@@ -277,12 +280,17 @@ impl Engine {
 
     fn apply_arrived(&mut self, fact: &DeviceFact, now_ms: u64) -> Transition {
         if let Some(idx) = self.index_of(&fact.stable_id) {
-            let (renamed, from) = {
+            let (renamed, reclassified, from) = {
                 let rec = &mut self.records[idx];
                 let from = rec.state;
                 // D8：Provider 是名称唯一真值，快照只做对照。
                 let renamed = (rec.display_name != fact.display_name)
                     .then(|| (rec.display_name.clone(), fact.display_name.clone()));
+                // 类型识别同样以 Provider 上报为唯一真值；只在真的变了时留痕，
+                // 避免每次重枚举都刷一条诊断。
+                let reclassified = (rec.classification != fact.classification)
+                    .then(|| (rec.classification.device_type, fact.classification.clone()));
+                rec.classification.clone_from(&fact.classification);
                 rec.model_name_raw.clone_from(&fact.model_name_raw);
                 rec.model_key = crate::normalize::normalize(&fact.model_name_raw);
                 if fact.path.is_some() {
@@ -298,8 +306,9 @@ impl Engine {
                     rec.battery = None;
                     rec.charging = None;
                     rec.last_error = None;
+                    rec.unreadable_kinds.clear();
                 }
-                (renamed, from)
+                (renamed, reclassified, from)
             };
             if let Some((old, new)) = renamed {
                 self.records[idx].display_name = new.clone();
@@ -310,6 +319,9 @@ impl Engine {
                     Some(fact.stable_id.as_str().to_string()),
                     format!("{old} -> {new}"),
                 );
+            }
+            if let Some((old, _)) = reclassified {
+                self.push_classification(now_ms, fact, Some(old));
             }
             let to = self.records[idx].state;
             if from == to {
@@ -327,6 +339,7 @@ impl Engine {
                 now_ms,
             );
             rec.path = fact.path.clone();
+            rec.classification.clone_from(&fact.classification);
             self.records.push(rec);
             self.diagnostics.push(
                 now_ms,
@@ -335,7 +348,49 @@ impl Engine {
                 Some(fact.stable_id.as_str().to_string()),
                 format!("{} via {}", fact.display_name, fact.provider),
             );
+            self.push_classification(now_ms, fact, None);
             Transition::Created
+        }
+    }
+
+    /// 把一次「设备类型识别」写进诊断：**成功与失败都记**。
+    ///
+    /// 分两级写，边界是「结论需不需要它」：
+    ///
+    /// - `info`（`device_classified`）：**只有结论**，形如
+    ///   `mouse via verified_device_mapping` / `unknown -> mouse via …`。
+    ///   设备是谁由诊断行的 `deviceId` 给出，不在正文里重复。
+    /// - `debug`（`device_classification_evidence`）：逐条证据、冲突说明与
+    ///   「未支持组合」清单。一台复合 HID 能报 7 个集合，这些细节只该在
+    ///   排查时看，不该占结论行的位置。
+    fn push_classification(&mut self, now_ms: u64, fact: &DeviceFact, from: Option<DeviceType>) {
+        let c = &fact.classification;
+        let mut detail = match from {
+            Some(old) => format!("{old} -> {}", c.device_type),
+            None => c.device_type.to_string(),
+        };
+        if c.method != ClassificationMethod::Unknown {
+            detail.push_str(" via ");
+            detail.push_str(c.method.as_str());
+        }
+        let device_id = Some(fact.stable_id.as_str().to_string());
+        self.diagnostics.push(
+            now_ms,
+            DiagLevel::Info,
+            "device_classified",
+            device_id.clone(),
+            detail,
+        );
+
+        let evidence = c.debug_text();
+        if !evidence.is_empty() {
+            self.diagnostics.push(
+                now_ms,
+                DiagLevel::Debug,
+                "device_classification_evidence",
+                device_id,
+                evidence,
+            );
         }
     }
 
@@ -375,6 +430,8 @@ impl Engine {
             rec.last_known_battery = Some(reading.battery);
             rec.last_known_at_ms = Some(now_ms);
             rec.last_error = None;
+            // 故意**不**清空 `unreadable_kinds`：好坏帧交替上报时，每帧都清空会让
+            // 同一条坏帧重新刷屏。种类只在设备重新出现时重置。
             rec.present = true;
             rec.last_seen_at_ms = now_ms;
             // Z-3：任何有效读数直接 Online，不经过中间态。
@@ -405,27 +462,43 @@ impl Engine {
         &mut self,
         stable_id: &StableId,
         code: ErrorCode,
+        detail: Option<&str>,
         now_ms: u64,
     ) -> Transition {
         let idx = self.ensure_record(stable_id, now_ms);
-        let (from, to) = {
+        let text = unreadable_detail(code, detail);
+        let (from, to, log_line) = {
             let rec = &mut self.records[idx];
             rec.last_error = Some(code);
+            // 同一台设备反复上报**同一种**坏帧时只留一条诊断：坏帧可能以 20ms 的
+            // 节奏刷屏，200 条环形缓冲会在几秒内被同样的内容冲掉，把「为什么坏」
+            // 之外的所有线索（到达、识别、链路）一并挤出去。
+            //
+            // 按「本次出现以来见过的种类」去重，而不是只比上一条：设备常轮流发出
+            // 几种非电量报文（命令字各不相同），交替刷屏时相邻两条永远不同，
+            // 比上一条挡不住。种类上限见 `UNREADABLE_KINDS_MAX`。
+            let log_line = !rec.unreadable_kinds.iter().any(|k| k == &text)
+                && rec.unreadable_kinds.len() < UNREADABLE_KINDS_MAX;
+            if log_line {
+                rec.unreadable_kinds.push(text.clone());
+            }
             let from = rec.state;
             // 坏帧只记录结构化错误。曾有有效读数 → Unavailable；从未有过 → 保持 Unknown
             // （E：Unknown 与 Unavailable 在 UI 上必须可区分）。
             if rec.last_valid_at_ms.is_some() && from != DeviceState::Offline {
                 rec.state = DeviceState::Unavailable;
             }
-            (from, rec.state)
+            (from, rec.state, log_line)
         };
-        self.diagnostics.push(
-            now_ms,
-            DiagLevel::Warn,
-            "reading_unreadable",
-            Some(stable_id.as_str().to_string()),
-            code.as_str(),
-        );
+        if log_line {
+            self.diagnostics.push(
+                now_ms,
+                DiagLevel::Warn,
+                "reading_unreadable",
+                Some(stable_id.as_str().to_string()),
+                text,
+            );
+        }
         if from == to {
             Transition::None
         } else {
@@ -688,6 +761,8 @@ impl Engine {
             provider: r.provider.to_string(),
             display_name: r.display_name.clone(),
             model_key: r.model_key.clone(),
+            device_type: r.classification.device_type.as_str().to_string(),
+            classification_method: r.classification.method.as_str().to_string(),
             battery: r.battery.map(Percent::get),
             last_known_battery: r.last_known_battery.map(Percent::get),
             last_known_at_ms: r.last_known_at_ms,
@@ -871,6 +946,17 @@ impl Engine {
 
 /// 时钟前跳的诊断阈值：超过 10 分钟算一次「跳变」（含休眠唤醒）。
 const CLOCK_FORWARD_WARN_MS: u64 = 10 * 60_000;
+
+/// 诊断行文本：`malformed_frame · cmd_mismatch(want=0x03 got=0x23) · 6B: 06 FA …`。
+///
+/// 错误码放最前，诊断页按关键词筛选时仍能命中；细节缺省时退化成只有错误码，
+/// 与加字段之前的行为逐字一致。
+fn unreadable_detail(code: ErrorCode, detail: Option<&str>) -> String {
+    match detail.map(str::trim).filter(|d| !d.is_empty()) {
+        Some(d) => format!("{code} · {d}"),
+        None => code.as_str().to_string(),
+    }
+}
 
 /// 状态「退化深度」。只允许沿 0→4 方向前进。
 const fn rank(state: DeviceState) -> u8 {

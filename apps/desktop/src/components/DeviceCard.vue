@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import {
   batteryColor,
+  deviceTypeLabel,
   displayedBattery,
   ringProgress,
   secondaryLine,
@@ -35,6 +36,12 @@ const progress = computed(() => ringProgress(shownBattery.value));
 const color = computed(() =>
   batteryColor(shownBattery.value, props.device.isCharging === true, props.device.state),
 );
+
+/**
+ * 类型标签：只有 Rust 判定出具体类型时才显示（`unknown` → `null` → 不渲染）。
+ * 判定来源见诊断页的 `device_classified` 记录，界面不重复解释。
+ */
+const typeLabel = computed(() => deviceTypeLabel(props.device.deviceType));
 
 /**
  * 副行：
@@ -97,6 +104,15 @@ const secondary = computed(() => {
           class="shrink-0 px-1.5 py-0 text-[10px] font-normal"
         >
           {{ transportLabel(device.transport) }}
+        </Badge>
+
+        <Badge
+          v-if="typeLabel"
+          variant="outline"
+          class="shrink-0 px-1.5 py-0 text-[10px] font-normal"
+          data-testid="device-type"
+        >
+          {{ typeLabel }}
         </Badge>
       </div>
 

@@ -10,6 +10,7 @@
 
 use serde::Deserialize;
 use std::collections::HashMap;
+use voltnest_provider::DeviceType;
 
 /// 一个 VID:PID 对应的型号信息。
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
@@ -34,6 +35,28 @@ impl Entry {
     pub fn interface_index(&self) -> Option<u8> {
         let tail = self.hid_interface.rsplit("MI_").next()?;
         u8::from_str_radix(tail, 16).ok()
+    }
+
+    /// 厂商在官方驱动配置里声明的设备类型词 → [`DeviceType`]。
+    ///
+    /// `device_attr` 是**厂商自定义字段，不是标准**：同一份 AJAZZ W1 配置里
+    /// `AJ159` 写 `mouse`，而 `AJ179` / `AJ139` 写的是型号族名（`aj179` / `aj139`）。
+    /// 所以只有**恰好等于规范类型词**时才映射，其余一律 `None`，交给 Usage 规则
+    /// 或返回 `Unknown`——把族名当类型猜，正是规范禁止的「厂商自定义数据当标准」。
+    ///
+    /// 另外 `device_type`（101..108）是驱动内部的**型号编号**，不是类型，禁止映射。
+    pub fn declared_device_type(&self) -> Option<DeviceType> {
+        let attr = self.device_attr.trim().to_ascii_lowercase();
+        match attr.as_str() {
+            "mouse" => Some(DeviceType::Mouse),
+            "keyboard" => Some(DeviceType::Keyboard),
+            "gamepad" => Some(DeviceType::Gamepad),
+            "headset" => Some(DeviceType::Headset),
+            "headphone" | "headphones" => Some(DeviceType::Headphones),
+            "speaker" => Some(DeviceType::Speaker),
+            "controller" => Some(DeviceType::Controller),
+            _ => None,
+        }
     }
 }
 
@@ -191,5 +214,43 @@ mod tests {
         };
         // rsplit 找不到 MI_ 时返回整串，hex 解析失败 → None。
         assert_eq!(e.interface_index(), None);
+    }
+
+    #[test]
+    fn declared_device_type_accepts_canonical_words_only() {
+        let mut e = Entry {
+            name: "X".into(),
+            device_type: 101,
+            mode: "2.4G".into(),
+            hid_interface: "VID_7768&PID_6426&MI_01".into(),
+            device_attr: " Mouse ".into(),
+        };
+        assert_eq!(e.declared_device_type(), Some(DeviceType::Mouse));
+
+        // 实测的 AJAZZ 配置里 AJ179 / AJ139 的 device_attr 是型号族名，不是类型。
+        for attr in [
+            "aj179",
+            "aj179v2",
+            "aj139",
+            "",
+            "mx-master",
+            "mouse+keyboard",
+        ] {
+            e.device_attr = attr.to_string();
+            assert_eq!(e.declared_device_type(), None, "attr={attr} 不得猜成类型");
+        }
+    }
+
+    #[test]
+    fn driver_device_type_number_is_not_a_type() {
+        // 101..108 是驱动内部型号编号；即便有人把它当类型，这里也不映射。
+        let e = Entry {
+            name: "AJ159 NL".into(),
+            device_type: 102,
+            mode: "2.4G".into(),
+            hid_interface: "VID_7768&PID_6426&MI_01".into(),
+            device_attr: "aj179".into(),
+        };
+        assert_eq!(e.declared_device_type(), None);
     }
 }

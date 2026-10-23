@@ -119,6 +119,49 @@ export function transportLabel(transport: "hid" | "ble"): string {
   return transport === "hid" ? "2.4G" : "蓝牙";
 }
 
+/**
+ * 诊断列表默认折叠 `debug` 级事件。
+ *
+ * 级别只决定「默认是否展示」，不决定「是否记录」：分类的逐条证据、
+ * 未支持组合清单（一台复合 HID 能报 5~7 条）都在 debug 里，一条不少地留在
+ * 环形缓冲，展开就能核对，但不会把结论行挤出视野。过滤是纯展示，不改数据（W-2）。
+ */
+export function visibleDiagEvents<T extends { level: string }>(
+  events: readonly T[],
+  showDebug: boolean,
+): T[] {
+  return showDebug ? [...events] : events.filter((e) => e.level !== "debug");
+}
+
+/**
+ * 设备类型 → 中文短标签。
+ *
+ * `unknown` 与未知字符串都返回 `null`：识别不出来就**什么都不显示**，
+ * 不用「未知设备」占位，更不能由前端猜一个类型（W-2）。
+ */
+export function deviceTypeLabel(deviceType: string): string | null {
+  switch (deviceType) {
+    case "keyboard":
+      return "键盘";
+    case "mouse":
+      return "鼠标";
+    case "gamepad":
+      return "手柄";
+    case "headset":
+      return "头戴耳机";
+    case "headphones":
+      return "耳机";
+    case "speaker":
+      return "音箱";
+    case "controller":
+      return "控制器";
+    case "other":
+      return "其他";
+    default:
+      return null;
+  }
+}
+
 export function batteryText(device: DeviceDto): string {
   return device.battery === null ? "—" : `${device.battery}%`;
 }

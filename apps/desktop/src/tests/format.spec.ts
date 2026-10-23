@@ -2,12 +2,14 @@ import { describe, expect, it } from "vitest";
 import {
   batteryColor,
   batteryText,
+  deviceTypeLabel,
   displayedBattery,
   ringProgress,
   secondaryLine,
   stateLabel,
   toneFor,
   transportLabel,
+  visibleDiagEvents,
 } from "../lib/format";
 import type { DeviceDto, DeviceState } from "../lib/types";
 
@@ -18,6 +20,8 @@ function device(overrides: Partial<DeviceDto> = {}): DeviceDto {
     provider: "hid-vbas",
     displayName: "AJ159 NL",
     modelKey: "aj159 nl",
+    deviceType: "mouse",
+    classificationMethod: "verified_device_mapping",
     battery: 90,
     lastKnownBattery: 90,
     lastKnownAtMs: 1_000,
@@ -29,6 +33,22 @@ function device(overrides: Partial<DeviceDto> = {}): DeviceDto {
     ...overrides,
   };
 }
+
+describe("deviceTypeLabel", () => {
+  it("已知类型给出短标签", () => {
+    expect(deviceTypeLabel("mouse")).toBe("鼠标");
+    expect(deviceTypeLabel("keyboard")).toBe("键盘");
+    expect(deviceTypeLabel("headset")).toBe("头戴耳机");
+    expect(deviceTypeLabel("headphones")).toBe("耳机");
+    expect(deviceTypeLabel("speaker")).toBe("音箱");
+  });
+
+  it("unknown 与未知字符串都返回 null（前端不得自己猜类型）", () => {
+    for (const value of ["unknown", "", "MX-Master", "some_future_type"]) {
+      expect(deviceTypeLabel(value)).toBeNull();
+    }
+  });
+});
 
 describe("toneFor / stateLabel", () => {
   it("五种状态各有独立文案", () => {
@@ -128,6 +148,28 @@ describe("displayedBattery", () => {
     expect(
       displayedBattery(device({ battery: null, state: "unknown", lastKnownBattery: null })),
     ).toBe(null);
+  });
+});
+
+describe("visibleDiagEvents", () => {
+  const events = [
+    { level: "info", code: "device_classified" },
+    { level: "debug", code: "device_classification_evidence" },
+    { level: "warn", code: "backfill_dropped" },
+    { level: "debug", code: "device_classification_evidence" },
+  ];
+
+  it("默认折叠 debug，其余级别原序保留", () => {
+    expect(visibleDiagEvents(events, false).map((e) => e.code)).toEqual([
+      "device_classified",
+      "backfill_dropped",
+    ]);
+  });
+
+  it("展开后一条不少，且不改动原数组", () => {
+    const all = visibleDiagEvents(events, true);
+    expect(all).toHaveLength(events.length);
+    expect(events).toHaveLength(4);
   });
 });
 
