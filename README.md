@@ -3,27 +3,20 @@
 Windows 上的 HID / BLE 设备电量监控应用。单进程 Rust（Tauri 2）+ Vue 3，托盘常驻，
 聚合 2.4G 接收器与 BLE Battery Service 的电量、在线与充电状态。
 
-- 实现基线：[`docs/VoltNest-v1-开发规格.md`](docs/VoltNest-v1-开发规格.md)
-- 架构决策：[ADR-0008](docs/adr/0008-plugin-partitioning.md) ·
-  [ADR-0009](docs/adr/0009-modular-single-process.md) ·
-  [ADR-0010](docs/adr/0010-provider-contract.md) ·
-  [ADR-0011](docs/adr/0011-hid-vbas-brand-model.md)
-- 新增品牌接入：[`docs/hid-vbas-brands.md`](docs/hid-vbas-brands.md)
-- 设备类型识别（规则、证据来源与验证状态）：[`docs/device-classification.md`](docs/device-classification.md)
-- 规则到测试的映射：[`docs/test-matrix.md`](docs/test-matrix.md)
+架构上只有一条数据流：Provider 采集原始事实（设备出现、读数、结构化错误、链路状态），
+核心状态机据此推导设备状态与快照，前端只渲染 Rust 给出的结论。
 
 ## 目录
 
 ```text
 crates/
-  voltnest-provider/   Provider 契约（纯类型，无 I/O）
+  voltnest-provider/   Provider 抽象层（纯类型，无 I/O）
   voltnest-core/       状态机、归一化、分组、通知策略、Snapshot（纯逻辑，无时钟无线程）
   voltnest-hid/        hid-vbas：枚举、读取、通用帧解析、品牌描述（brands/）与型号表
   voltnest-ble/        ble-bas：发现、连接、通知、轮询、解析
   voltnest-platform/   Windows 适配（自启、单实例、AUMID）
   voltnest-storage/    settings.json / state.json 原子读写
 apps/desktop/          Tauri 宿主（src-tauri）+ Vue 前端（src）
-tools/                 取证探针（hid-probe-rs / ble-probe-rs），不被产品 crate 依赖
 ```
 
 `hid-vbas` 家族对品牌是开放的：只要设备走 HID 私有通道、用定长报告报电量，
@@ -58,13 +51,7 @@ npm run tauri build             # 出 NSIS 安装包
 ```
 
 `cargo clippy` 是**门禁**而不只是建议：`clippy.toml` 把 `std::time::SystemTime`
-列为禁用类型（Z-6），全仓只有 `voltnest_provider::clock::now_utc_ms()` 能读时钟。
-
-测试矩阵与代码的一致性由脚本校验（CI 同款）：
-
-```powershell
-pwsh scripts/check-test-matrix.ps1
-```
+列为禁用类型，全仓只有 `voltnest_provider::clock::now_utc_ms()` 能读时钟。
 
 ## 运行时行为要点
 
@@ -84,7 +71,7 @@ pwsh scripts/check-test-matrix.ps1
 - **采集异常隔离**：每个 transport 独立监管线程，`catch_unwind` 兜住 panic 后按
   5s / 15s / 60s 退避重启，连续 5 次失败转「不可用」，由诊断页手动重启。
 
-## v1 指标（§14.4）
+## v1 指标
 
 | 指标 | 目标 | 现状 |
 |---|---|---|
@@ -96,10 +83,10 @@ pwsh scripts/check-test-matrix.ps1
 
 ## 已知限制（v1 有意接受）
 
-1. 两只同型号 HID 接收器会被视为同一台设备（`stableId` 为 `hid:vid:pid`，Y-2/Y-3 会告警但只显示一台）。
-2. 同一只鼠标切换 2.4G / 蓝牙时是两条独立 L1 记录，只在满足条件时于呈现层（L2）分组。
+1. 两只同型号 HID 接收器会被视为同一台设备（`stableId` 为 `hid:vid:pid`，会记冲突告警但只显示一台）。
+2. 同一只鼠标切换 2.4G / 蓝牙时是两条独立记录，只在型号与在线状态满足条件时于呈现层合并为一张卡片。
 3. BLE 若使用可解析私有地址（RPA）的设备，重配对后设置会重置；本机设备为静态随机地址。
-4. 仅跟踪 Windows 当前**已连接**的 BLE 设备；仅配对未连接的设备不主动拉起（O-1）。
+4. 仅跟踪 Windows 当前**已连接**的 BLE 设备；仅配对未连接的设备不主动拉起。
 5. v1 不做代码签名，Windows SmartScreen 可能显示「未知发布者」。v1 不做自动更新。
 6. BLE 充电状态协议层不可得，界面显示 `Unknown`，不会显示「未充电」。
 7. **托盘气泡模式**以「对应托盘的 tooltip 提示 6 秒」实现：Tauri 2 未暴露
