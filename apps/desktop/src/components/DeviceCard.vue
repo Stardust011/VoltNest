@@ -27,10 +27,7 @@ const props = defineProps<{
 
 const tone = computed(() => toneFor(props.device.state));
 
-/**
- * 展示用读数：启动瞬间还没有本次读数（`state === "unknown"`）时先用 state.json 的缓存值，
- * 免得首屏出现「— + 空进度条」，数据一到就自动换成实时值（`displayedBattery`）。
- */
+/** 无本次读数的首屏先用 state.json 缓存值，避免空白进度条，数据到达即换实时值（`displayedBattery`）。 */
 const shownBattery = computed(() => displayedBattery(props.device));
 
 const progress = computed(() => ringProgress(shownBattery.value));
@@ -38,31 +35,16 @@ const color = computed(() =>
   batteryColor(shownBattery.value, props.device.isCharging === true, props.device.state),
 );
 
-/**
- * 类型文案：只有 Rust 判定出具体类型时才存在（`unknown` → `null`）。
- *
- * 卡片上不再显示这段文字（已换成图标），只留下给图标的无障碍标签用；
- * 判定来源见诊断页的 `device_classified` 记录，界面不重复解释。
- */
+/** 仅 Rust 判出具体类型时存在（`unknown`→`null`）；卡片已改图标，文案仅供无障碍标签，判定细节见诊断页。 */
 const typeLabel = computed(() => deviceTypeLabel(props.device.deviceType));
 
-/**
- * 类型图标：取代原来的「键盘 / 鼠标 / 耳机」文字标签。
- *
- * 类型不可知时按链路兜底（2.4G → `Link`、蓝牙 → `BluetoothConnected`），
- * 规则集中在 `lib/device-icon.ts`，这里只做渲染。
- */
+/** 取代「键盘/鼠标/耳机」文字标签；类型不可知按链路兜底（见 `lib/device-icon.ts`），此组件只渲染。 */
 const typeIcon = computed(() => deviceTypeIcon(props.device.deviceType, props.device.transport));
 
-/** 图标没有可见文字，用无障碍标签补回语义（类型已知说类型，否则说链路）。 */
+/** 图标无文字，用无障碍标签补语义（类型优先，否则链路）。 */
 const typeIconLabel = computed(() => typeLabel.value ?? transportLabel(props.device.transport));
 
-/**
- * 副行：
- * 1. 合并卡 → 非活跃链路说明（W-2，由 Rust 生成）；
- * 2. 主数字是缓存值 → 补「上次读数 · 时间」，让「等待读数」有明确来源；
- * 3. 其余按充电状态。
- */
+/** 副行：合并卡用非活跃链路说明（W-2，Rust 生成）；主数字为缓存值时补「上次读数 · 时间」；其余按充电状态。 */
 const secondary = computed(() => {
   if (props.inactiveText) return props.inactiveText;
   if (props.device.battery === null && props.device.lastKnownBattery !== null) {

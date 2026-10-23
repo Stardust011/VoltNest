@@ -1,13 +1,12 @@
 //! 原子写入：`.tmp` → `fsync` → `rename`（X-2）。
 //!
-//! 禁止「试写文件探测权限」式写法：那会被杀软当成可疑行为，而且它只在写入时
-//! 才发现失败，等于把问题推迟到用户已经改了设置之后。
+//! 禁止「试写文件探测权限」：会被杀软当成可疑行为，且只在写入时才发现失败，等于把问题推迟到用户已改完设置之后。
 
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
-/// 写 `.tmp` 文件：与目标同目录（保证 `rename` 不跨卷），先 `truncate` 再写。
+/// 写 `.tmp` 文件：与目标同目录以保证 `rename` 不跨卷，先 `truncate` 再写。
 fn tmp_path(path: &Path) -> PathBuf {
     let mut name = path
         .file_name()
@@ -17,9 +16,7 @@ fn tmp_path(path: &Path) -> PathBuf {
     path.with_file_name(name)
 }
 
-/// 原子写入。
-///
-/// 半写状态只会出现在 `.tmp` 里，`rename` 之后目标文件要么是旧内容、要么是新内容。
+/// 原子写入：半写状态只会出现在 `.tmp`，`rename` 后目标文件要么旧内容、要么新内容。
 pub fn write_atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
@@ -40,7 +37,7 @@ pub fn write_atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
     fs::rename(&tmp, path)
 }
 
-/// 原子写入 JSON（缩进 2 空格，方便用户排查与手工修复）。
+/// 原子写入 JSON：缩进 2 空格，便于用户排查与手工修复。
 pub fn write_json_atomic<T: serde::Serialize>(path: &Path, value: &T) -> io::Result<()> {
     let text = serde_json::to_vec_pretty(value)
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;

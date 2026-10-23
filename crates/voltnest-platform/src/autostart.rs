@@ -1,12 +1,7 @@
 //! 开机自启：`HKCU\Software\Microsoft\Windows\CurrentVersion\Run`。
 //!
-//! 硬性规则（AC-1 / AC-5 / AC-6 / AC-7）：
-//!
-//! - **永不默认开启**，只有用户在引导或设置页显式勾选才写注册项；
-//! - 命令固定带 `--autostart`（仅用于日志与诊断定位，不改变首屏行为）；
-//!   首屏显隐与手动启动一致，统一由「启动时最小化到托盘」决定；
-//! - 卸载必须清除该项；
-//! - 设置页改动立即生效，不做「重启后生效」。
+//! 永不默认开启，仅用户在引导页或设置页显式勾选才写注册项；卸载须清除；改动立即生效（AC-1/AC-5/AC-6/AC-7）。
+//! 命令恒带 `--autostart`，但首屏显隐与手动启动一致，统一由「启动时最小化到托盘」决定。
 
 use std::path::Path;
 
@@ -15,10 +10,9 @@ pub const RUN_KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Run";
 /// 值名。
 pub const VALUE_NAME: &str = "VoltNest";
 
-/// 把可执行路径转成注册表命令：`"C:\...\VoltNest.exe" --autostart`。
+/// 生成注册表命令 `"路径" --autostart`。
 ///
-/// 引号是必须的：Program Files 之外的路径也可能含空格（用户可改安装目录）。
-/// 多个反斜杠结尾时只保留一个，避免 `"C:\dir\\"` 把引号转义掉。
+/// 路径可能含空格（用户可改安装目录）故按需加引号；结尾多余反斜杠会转义引号，先削掉。
 pub fn run_command(exe: &Path) -> String {
     let mut path = exe.display().to_string();
     if !path.contains(' ') && !path.contains('\t') {
@@ -30,7 +24,7 @@ pub fn run_command(exe: &Path) -> String {
     format!("\"{path}\" {}", crate::AUTOSTART_FLAG)
 }
 
-/// 读取当前自启命令。注册项不存在返回 `None`。
+/// 当前自启命令；注册项不存在返回 `None`。
 #[cfg(windows)]
 pub fn current() -> Option<String> {
     use winreg::RegKey;
@@ -40,7 +34,7 @@ pub fn current() -> Option<String> {
     run.get_value::<String, _>(VALUE_NAME).ok()
 }
 
-/// 读取当前自启命令（非 Windows 恒为 `None`）。
+/// 非 Windows 恒为 `None`。
 #[cfg(not(windows))]
 pub fn current() -> Option<String> {
     None
@@ -61,16 +55,16 @@ pub fn enable(exe: &Path) -> std::io::Result<()> {
     run.set_value(VALUE_NAME, &run_command(exe))
 }
 
-/// 写入自启项（非 Windows 直接报错，避免静默假装成功）。
+/// 非 Windows 报错，不静默假装成功。
 #[cfg(not(windows))]
 pub fn enable(_exe: &Path) -> std::io::Result<()> {
     Err(std::io::Error::new(
         std::io::ErrorKind::Unsupported,
-        "自启仅在 Windows 上实现",
+        "自启仅支持 Windows",
     ))
 }
 
-/// 清除自启项。项不存在视为成功（幂等，AC-7 卸载清理要能重复执行）。
+/// 清除自启项；不存在视为成功，卸载清理可重复执行（AC-7）。
 #[cfg(windows)]
 pub fn disable() -> std::io::Result<()> {
     use winreg::RegKey;
@@ -87,13 +81,13 @@ pub fn disable() -> std::io::Result<()> {
     }
 }
 
-/// 清除自启项（非 Windows 空操作）。
+/// 非 Windows 空操作。
 #[cfg(not(windows))]
 pub fn disable() -> std::io::Result<()> {
     Ok(())
 }
 
-/// 让实际状态与期望状态一致（AC-5 双向同步的实现点）。
+/// 把实际状态同步到期望状态（AC-5 双向同步的唯一入口）。
 pub fn set_enabled(exe: &Path, enabled: bool) -> std::io::Result<()> {
     if enabled { enable(exe) } else { disable() }
 }
@@ -120,7 +114,7 @@ mod tests {
 
     #[test]
     fn command_always_carries_autostart_flag() {
-        // AC-6：命令恒定带 --autostart 标记（首屏显隐另由「启动时最小化」决定）。
+        // AC-6：命令恒带 --autostart，首屏显隐另由「启动时最小化」决定。
         for p in [r"C:\a b\VoltNest.exe", r"C:\a\VoltNest.exe"] {
             assert!(run_command(&PathBuf::from(p)).ends_with("--autostart"));
         }
@@ -129,7 +123,7 @@ mod tests {
     #[test]
     fn trailing_backslash_does_not_escape_quote() {
         let cmd = run_command(&PathBuf::from("C:\\My Dir\\"));
-        assert!(!cmd.contains("\\\\\""), "结尾反斜杠会把引号转义掉：{cmd}");
+        assert!(!cmd.contains("\\\\\""), "反斜杠转义了引号：{cmd}");
         assert!(cmd.starts_with('"'));
     }
 

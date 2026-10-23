@@ -1,22 +1,7 @@
-//! 低电量通知投递（§12「通知」）。
+//! 低电量通知投递（§12）。策略判定在 `NotificationBook` 里完成；这里只把「应当发送」变成「真的送出」并把真实结果回填状态机 —— 诊断页区分「系统吞了」与「我们没发」靠的就是这层返回值。不做自动降级：`system` 发不出就记 `failed`，不偷偷改托盘气泡。
 //!
-//! 策略判定在 `voltnest_core::NotificationBook` 里完成，这里只负责把
-//! 「应当发送」变成「真的送出去了」，并把真实结果回填给状态机 ——
-//! 诊断页要区分「系统吞了」和「我们没发」，靠的就是这一层返回值。
-//!
-//! 不做自动降级：`system` 发不出就记 `failed`，不会偷偷改成托盘气泡。
-//!
-//! # 为什么 Windows 上不用 `tauri_plugin_notification`
-//!
-//! Toast 的应用名和图标由**发送方传入的 AUMID** 决定。插件在 Windows 上只在
-//! 「看起来已安装」时才设置 AUMID —— 它把位于 `target\debug` / `target\release`
-//! 的进程一律当成开发运行，直接不设（`tauri-plugin-notification` 的 `desktop.rs`），
-//! 于是 `notify-rust` 回落到 `Toast::POWERSHELL_APP_ID`。结果就是：开发运行时
-//! 通知顶上是 PowerShell 的蓝色图标和「Windows PowerShell」标题，跟我们的
-//! `HKCU\Software\Classes\AppUserModelId\VoltNest.Desktop` 注册毫无关系。
-//!
-//! 这里改用同一套 WinRT Toast API（`tauri-winrt-notification`），AUMID 恒定、
-//! 图标显式给，开发运行和安装版看到的是同一个「VoltNest」。
+//! # 为什么 Windows 不用 `tauri_plugin_notification`
+//! 发送方传入的 AUMID 决定 Toast 的应用名与图标；该插件在 Windows 上仅「看起来已安装」才设 AUMID，把 `target\debug|release` 下的进程一律当开发运行、直接不设，于是 `notify-rust` 回落 `Toast::POWERSHELL_APP_ID`：开发时通知顶上是 PowerShell 蓝图标与「Windows PowerShell」标题，与我们的 `HKCU\...\VoltNest.Desktop` 注册无关。这里改用 `tauri-winrt-notification`，AUMID 恒定、图标显式给，开发与安装版看到同一个「VoltNest」。
 
 use std::sync::Arc;
 
@@ -81,10 +66,7 @@ pub fn dispatch(
     }
 }
 
-/// 发送一条 Windows Toast。
-///
-/// 标题是设备 + 现象，正文是读数与阈值：Windows 自己会把 AUMID 解析出的
-/// 「VoltNest」渲染在标题上方，标题本身不该重复应用名。
+/// 发送一条 Windows Toast。标题是设备+现象、正文是读数与阈值；Windows 会把 AUMID 解析的「VoltNest」渲染在标题上方，标题本身不重复应用名。
 #[cfg(windows)]
 fn send_toast(_app: &AppHandle, alert: &LowBatteryAlert) -> Result<(), String> {
     toast(
@@ -120,8 +102,7 @@ fn toast(title: &str, body: &str) -> Result<(), String> {
         .text1(body)
         .duration(Duration::Short);
 
-    // `appLogoOverride`：头图直接指定文件，不依赖 AUMID 的 IconUri 能否解析，
-    // 用户把数据目录挪走 / 图标被清理工具删掉时也只是少一张图，不影响发送。
+    // `appLogoOverride` 直接指定文件，不依赖 AUMID 的 IconUri 能否解析：数据目录被挪走/图标被清理也只是少张图，不影响发送。
     if let Some(icon) = crate::toast_icon::path() {
         toast = toast.icon(icon, IconCrop::Square, "VoltNest");
     }

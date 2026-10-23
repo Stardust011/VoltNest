@@ -1,11 +1,6 @@
 
 <script setup lang="ts">
-/**
- * 开关（shadcn-vue 的 `switch`，底层 reka-ui `SwitchRoot`）。
- *
- * 与 `ui/checkbox` 的区别在语义：这里是「立即生效的开关」，不是「待提交的勾选」，
- * 所以不带指示器，只有滑块位移动画。
- */
+/** 开关（shadcn-vue `switch`，底层 reka-ui `SwitchRoot`）。语义上是「立即生效的开关」而非「待提交的勾选」，故无指示器，仅滑块位移动画。 */
 import type { HTMLAttributes } from "vue";
 import { reactiveOmit } from "@vueuse/core";
 import {

@@ -6,47 +6,19 @@ import { Minus, X, Zap } from "@lucide/vue";
 import { Button } from "@/components/ui/button";
 
 /**
- * 应用自绘标题栏（窗口侧 `decorations: false`，系统边框整体不画）。
- *
- * 四条约束值得写下来：
- *
- * 1. **拖拽靠 `data-tauri-drag-region`**：宿主只认「命中的那个元素」上的属性，
- *    所以品牌区的子元素统一 `pointer-events-none`，让点击落回 `<header>`。
- * 2. **窗口按钮必须落在拖拽区之外**：它们是 `<header>` 内 `ml-auto` 那一组，
- *    自身不带 drag 属性，否则会变成「点了没反应」。
- * 3. **关闭 = 收进托盘**：真正把窗口藏起来的是宿主 `on_window_event` 里的
- *    `prevent_close` + `hide`，前端只发出关闭请求，不自己调 `hide()`
- *    ——那样会绕开退出前的落盘。
- * 4. **指针状态要能作废**：见下面的 `POINTER_STALE`。
- *
- * 不做最大化 / 还原：配置里 `maximizable: false`，因此宿主内置的
- * 「双击标题栏最大化」也一并失效，这里只剩最小化与关闭两个按钮。
- * 图标全部来自 lucide（https://lucide.dev/icons/）：`Minus` / `X`，
- * 徽标用 `Zap`（电量）。
+ * 自绘标题栏（`decorations:false`，系统边框不画）。约束：
+ * 1. 拖拽靠 `data-tauri-drag-region`：宿主只认命中元素上的属性，故品牌区子元素 `pointer-events-none` 让点击落回 `<header>`。
+ * 2. 窗口按钮须落在拖拽区外（`<header>` 内 `ml-auto` 一组），否则「点了没反应」。
+ * 3. 关闭=收托盘：真正隐藏由宿主 `prevent_close`+`hide` 完成，前端只发请求，不自己调 `hide()`（会绕开落盘）。
+ * 4. 指针状态需主动作废（见 `POINTER_STALE`）。
+ * 无最大化（配置 `maximizable:false`，双击标题栏最大化亦失效），仅最小化与关闭。图标用 lucide 的 `Minus`/`X`，徽标 `Zap`。
  */
 
 /**
- * 「按钮底色卡住」的根因与解法。
- *
- * WebView2（Chromium）的 `:hover` / `:active` 不是每次重绘都重算的：它由
- * **最后一次真实指针事件**算出来，缓存在渲染进程里。窗口被隐藏到托盘或
- * 最小化时，窗口不再参与命中测试，浏览器收不到 `mouseleave`（也没有
- * `mouseup` 兜底），缓存里那个「悬停/按下」的结论就留在了元素上。窗口再
- * 出现时没有新的指针输入 → 没有任何东西让它失效，于是底色一直停在按下的
- * 那一版；鼠标一进窗口，真实 `pointermove` 到达，才被重算回正常。
- *
- * 结论：**不能指望浏览器自己把这份缓存擦掉**，只能在窗口重新获得焦点时
- * 主动作废。做法是给 `<html>` 挂 `.pointer-stale`：两个按钮的悬停 / 按下
- * 背景都写成 Tailwind 任意变体 `[html:not(.pointer-stale)_&]:hover:…`
- * ——挂上类，这组工具类立刻失配（底色回到透明常态），等真正的
- * `pointerdown` / `pointermove` 到达（说明指针位置重新可信）再摘掉。
- *
- * 注意：Button 的 ghost 变体自带 `hover:bg-accent`，所以每个按钮还要显式
- * 写 `hover:bg-transparent` 把它抵消（`cn` 里的 tailwind-merge 会去重）；
- * 带守卫的那份工具类特异性更高，守卫成立时压过它。
- *
- * 这里刻意用「真实的指针事件」而不是合成的 `dispatchEvent`：合成事件不会
- * 更新浏览器内部的 hover 状态，只有真输入才算数。
+ * 「按钮底色卡住」根因与解法。
+ * WebView2（Chromium）`:hover`/`:active` 由**最后一次真实指针事件**算并缓存；窗口隐藏/最小化时不参与命中测试，浏览器收不到 `mouseleave`/`mouseup`，缓存的「悬停/按下」留着。窗口再现时无新指针输入→不失效，底色停在按下版；真实 `pointermove` 到达才重算。故不能指望浏览器自清，须在窗口重获焦点时主动作废：给 `<html>` 挂 `.pointer-stale`，按钮悬停/按下背景写成 `[html:not(.pointer-stale)_&]:hover:…`，挂类即失配回透明，真实 `pointerdown`/`pointermove` 到达（指针可信）再摘。
+ * 注：Button ghost 变体自带 `hover:bg-accent`，须显式 `hover:bg-transparent` 抵消（tailwind-merge 去重），带守卫的工具类特异性更高压过它。
+ * 用真实指针事件而非合成 `dispatchEvent`：合成事件不更新浏览器内部 hover 状态。
  */
 const POINTER_STALE = "pointer-stale";
 
@@ -78,19 +50,18 @@ function closeToTray() {
 }
 
 onMounted(async () => {
-  // 首帧同样不可信：光标位置未知，先按「没有悬停」画。
+  // 首帧光标未知，先按无悬停画。
   markPointerStale();
 
-  // 真实指针输入到达 = 光标位置重新可信，把状态交还给 CSS。
-  // 捕获阶段监听，避免被子元素的 stopPropagation 截断。
+  // 真实指针输入到达即光标可信，交还 CSS；捕获阶段监听避免被子元素 stopPropagation 截断。
   window.addEventListener("pointerdown", clearPointerStale, true);
   window.addEventListener("pointermove", clearPointerStale, true);
-  // 窗口重新获得焦点（任务栏还原 / 托盘唤起）时，屏幕上的状态已经过期。
+  // 窗口重获焦点（任务栏还原/托盘唤起）时状态已过期。
   window.addEventListener("focus", markPointerStale);
 
   if (!appWindow) return;
   try {
-    // 宿主侧焦点事件兜底：隐藏窗口期间浏览器未必会派发 `window.focus`。
+    // 宿主侧焦点兜底：隐藏期间浏览器未必派发 `window.focus`。
     unlisten = await appWindow.onFocusChanged(({ payload: focused }) => {
       if (focused) markPointerStale();
     });

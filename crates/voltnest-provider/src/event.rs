@@ -1,13 +1,9 @@
-//! Provider → 宿主的事件分类（ADR-0010 D9）。
+//! Provider → 宿主的事件分类（ADR-0010 D9）：Provider 对事件做分类，宿主不做数据校验。
 //!
-//! Provider 对事件做**分类**，宿主不做数据校验。三个关键设计：
-//!
-//! 1. [`ValidReading::battery`] 是 `Percent`，越界值在类型上不可能出现。
-//! 2. [`ProviderEvent::Unreadable`] 与 [`ProviderEvent::LinkLost`] 必须分开：
-//!    前者「设备还在，数据不可信」→ `Unavailable`；后者「链路没了」→ `Offline`。
-//!    合并会让 P-1（≤120ms 判 Offline）与 E（解析失败判 Unavailable）互相打架。
-//! 3. 事件**不带时间戳**。宿主在收到事件时每批取一次 `now_utc_ms()` 并向下透传，
-//!    因此 Provider 完全不参与状态判定的时间基准。
+//! 三点关键设计：① [`ValidReading::battery`] 是 `Percent`，越界值在类型上不可能出现。
+//! ② [`ProviderEvent::Unreadable`] 与 [`ProviderEvent::LinkLost`] 必须分开：前者「设备还在、数据不可信」→
+//! `Unavailable`，后者「链路没了」→ `Offline`；合并会让 P-1（≤120ms 判 Offline）与 E（解析失败判 Unavailable）互相打架。
+//! ③ 事件不带时间戳；宿主收到时每批取一次 `now_utc_ms()` 向下透传，Provider 完全不参与状态判定的时间基准。
 
 use crate::classify::DeviceClassification;
 use crate::error::ErrorCode;
@@ -23,17 +19,15 @@ pub struct DeviceFact {
     pub transport: Transport,
     /// 协议家族 ID（`ProviderProfile::family_id`）。
     pub provider: &'static str,
-    /// 表查得的型号名（HID）/ GAP `0x2A00` 原文（BLE）。**必须**是可读型号名，
+    /// 表查得的型号名（HID）/ GAP `0x2A00` 原文（BLE）。必须是可读型号名；
     /// HID 不得直接回填 ProductString（8 型号全同，无法区分）。
     pub display_name: String,
     /// 未经归一化的型号原文。宿主用 `normalize()` 算 `modelKey`（D4）。
     pub model_name_raw: String,
     /// 诊断用的设备路径（HID `open_path` 目标 / BLE 地址），不参与身份判定（Y-6）。
     pub path: Option<String>,
-    /// 设备类型识别结果（含证据）。默认 [`DeviceClassification::unknown`]：
-    /// 证据不足就是 `Unknown`，**不得**为了好看填一个类型。
-    ///
-    /// 与电量采集完全解耦：本字段只影响展示与诊断，不参与任何状态判定。
+    /// 设备类型识别结果（含证据）。默认 [`DeviceClassification::unknown`]：证据不足即 Unknown，
+    /// 不得为好看填类型。与电量采集完全解耦：本字段只影响展示与诊断，不参与状态判定。
     pub classification: DeviceClassification,
 }
 
@@ -135,10 +129,10 @@ pub enum ProviderEvent {
         stable_id: StableId,
         /// 错误码。
         code: ErrorCode,
-        /// **诊断细节**：哪一条校验失败 + 被拒的原始字节（HID 坏帧）或失败上下文。
+        /// **诊断细节**：哪条校验失败 + 被拒的原始字节（HID 坏帧）或失败上下文。
         ///
-        /// 只写诊断页与日志，**不参与任何状态判定**：状态机看到的仍然只有 `code`。
-        /// `None` = 该情形没有可复核的数据（例如打开句柄失败且无可用报文）。
+        /// 只写诊断页与日志，不参与任何状态判定——状态机看到的仍只有 `code`。
+        /// `None` = 该情形无可用报文（例如打开句柄失败）。
         detail: Option<String>,
     },
     /// 链路没了 → 立即 `Offline`（P-1 / O-8）。

@@ -1,26 +1,9 @@
 //! 托盘图标：每个可见设备一个环形电量图（§12）。
 //!
-//! 设备图标由本模块用 32×32 RGBA 手工光栅化，不引入任何图形渲染依赖（AA-4）。
-//! 语义与前端 `batteryColor()` 一一对应：在线主题色、<20% 橙、<10% 红、充电绿弧
-//! 加环心闪电、等待读数蓝、数据过期琥珀、读取失败橙，离线但物理存在时为灰环加横线。
+//! 设备图标用 32×32 RGBA 手工光栅化，不引入图形渲染依赖（AA-4）；语义与前端 `batteryColor()` 一一对应：在线主题色、<20% 橙、<10% 红、充电绿弧加环心闪电、等待读数蓝、过期琥珀、读取失败橙，离线但物理存在时为灰环加横线。图标**存在性只由物理存在决定**：`visibleDeviceIds` 已由核心按 `present && !hidden` 截断到 4 个算好，这里只跟随、不二次判断。
 //!
-//! 图标**存在性只由物理存在决定**：`snapshot.tray.visibleDeviceIds` 已经由核心
-//! 按 `present && !hidden` 且截断到 4 个算好，这里只负责跟随，不做二次判断。
-//!
-//! # 基础图标（应用图标）什么时候在
-//!
-//! 窗口关掉之后只剩托盘，**一张图标都没有就等于进程失联**：既打不开面板，也没
-//! 办法退出。所以托盘里必须始终至少有一张能用的图标。
-//!
-//! 这张占位图标就是**应用图标本身**（与任务栏、开始菜单同一个 PNG）：没有设备时
-//! 用户看到的是「这个应用在跑」，而不是一个需要解读的小图形。手绘的蓝环只留给
-//! 「设备已在列表里、但还没拿到读数」那一种状态 —— 那才是「等待读数」的意思。
-//!
-//! 它只在「一张设备图标都没有」时现身：有设备图标出现就让位（托盘里的电量环本身
-//! 就是入口，再挂一个只会让人误以为是第二台设备）；设备全部拔掉或全部被用户隐藏
-//! 时它再回来。
-//!
-//! 每张图标的右键菜单完全一致（打开面板 / 退出 VoltNest），任意一张都能退出软件。
+//! # 基础图标（应用图标）何时显现
+//! 窗口关掉只剩托盘时，**一张图标都没有等于进程失联**（打不开面板也无法退出），故托盘必须始终至少有一张可用图标。占位图标即**应用图标本身**（与任务栏/开始菜单同 PNG）：无设备时用户看到「应用在跑」而非需解读的小图形；手绘蓝环只留给「设备已在列表、还没拿到读数」那一种状态。它仅在「没有设备图标」时现身：有设备图标就让位（电量环本身就是入口，再挂一个会像第二台设备）；设备全拔或全被隐藏时再回来。每张图标右键菜单一致（打开面板 / 退出 VoltNest），任意一张都能退出。
 
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -49,10 +32,7 @@ const BUBBLE_MS: u64 = 6_000;
 const MENU_OPEN: &str = "tray:open";
 const MENU_QUIT: &str = "tray:quit";
 
-/// 与前端 `src/lib/format.ts` 的色值逐字对应：托盘与面板必须能并排看。
-///
-/// 充电时两侧都用这里的 `EMERALD`（面板 `batteryColor()` 的 `CHARGING_GREEN`
-/// 就是同一个值），靠闪电这一形状表达「在充电」，颜色不再区分两侧。
+/// 与前端 `lib/format.ts` 色值逐字对应（托盘与面板须能并排看）。充电时两侧都用 `EMERALD`（即面板 `CHARGING_GREEN`），靠闪电形状而非颜色表达「在充电」。
 const EMERALD: [u8; 3] = [16, 185, 129];
 const ORANGE: [u8; 3] = [249, 115, 22];
 const RED: [u8; 3] = [239, 68, 68];
@@ -60,10 +40,7 @@ const AMBER: [u8; 3] = [245, 158, 11];
 const SKY: [u8; 3] = [56, 189, 248];
 const GRAY: [u8; 3] = [148, 163, 184];
 
-/// 充电闪电：lucide `zap` 填色轮廓的折点近似（24×24 画布，形心在 12,12）。
-///
-/// 原图是带圆角的描边轮廓（半径 1.5 / 0.5 的小圆弧），这里把每段圆弧的端点
-/// 直接连起来 —— 在 32px 上差不到半个像素，却省掉一个贝塞尔光栅化器。
+/// 充电闪电：lucide `zap` 折点近似（24×24，形心 12,12）。原图带圆角描边，这里直接连圆弧端点 —— 32px 上差不到半像素，却省掉贝塞尔光栅化器。
 const BOLT: [(f32, f32); 12] = [
     (15.914, 4.0),
     (13.44, 2.439),
@@ -82,10 +59,7 @@ const BOLT: [(f32, f32); 12] = [
 /// 还没拿到任何读数时，整环按这个透明度画：蓝得看得见，又明显不是一次真实读数。
 const PENDING_ALPHA: f32 = 0.7;
 
-/// 应用图标：`tauri.conf.json > bundle.icon` 里 32×32 那一张，与任务栏/开始菜单同源。
-///
-/// 没有设备时托盘显示它，而不是另画一个图形：用户认的是应用图标，托盘里出现
-/// 「和任务栏那个一样的小方块」能立刻说明「这只是应用本身」，不需要解读。
+/// 应用图标：`bundle.icon` 里 32×32 那张，与任务栏/开始菜单同源。无设备时显示它而非另画图形：用户认的是应用图标，托盘里出现同款方块即说明「这只是应用本身」。
 const APP_ICON_PNG: &[u8] = include_bytes!("../icons/32x32.png");
 
 /// 每张图标「本该显示」的 tooltip：气泡提示只占用 6 秒，之后要原样还回去。
@@ -93,10 +67,7 @@ static BASELINE_TOOLTIPS: Mutex<BTreeMap<String, String>> = Mutex::new(BTreeMap:
 /// 基础图标当前是否露在托盘里（隐身的图标不能当气泡的落点）。
 static BASE_VISIBLE: AtomicBool = AtomicBool::new(true);
 
-/// 解出打包进来的应用图标。
-///
-/// 解不开（图标文件坏掉）时退回蓝色等待环：难看总比托盘空着好，而且这只是
-/// 占位图，不影响任何设备图标。
+/// 解出打包的应用图标。解不开（文件坏掉）时退回蓝色等待环：难看总比托盘空着好，且只是占位图、不影响任何设备图标。
 fn app_icon() -> Image<'static> {
     Image::from_bytes(APP_ICON_PNG).unwrap_or_else(|err| {
         log::warn!("解码应用图标失败，退回等待环: {err}");
@@ -106,8 +77,7 @@ fn app_icon() -> Image<'static> {
 
 /// 安装托盘：菜单事件处理器 + 基础图标。
 pub fn install(app: &AppHandle) -> tauri::Result<()> {
-    // 菜单事件是**全局**分发的（任何一张图标的菜单都会走同一个监听器列表）。
-    // 所以只注册一次：若每张图标各自注册，点一次「退出」会被调用 N 次。
+    // 菜单事件全局分发（任何图标的菜单走同一监听器列表），故只注册一次：各图标各自注册会让一次「退出」被调用 N 次。
     app.on_menu_event(|app, event| match event.id.as_ref() {
         MENU_OPEN => show_main(app),
         MENU_QUIT => quit(app),
@@ -183,10 +153,7 @@ pub fn sync(app: &AppHandle, shared: &Arc<Shared>, snap: &Snapshot) {
     update_base(app, snap, has_device_icons);
 }
 
-/// 基础图标的显隐：有设备图标就隐身让位，没有就出来占位。
-///
-/// 只切可见性、不销毁重建：图标一旦重建就会跑到托盘末尾（甚至被折叠进溢出区），
-/// 用户眼前的东西自己跳位比多看一眼占位图标更难受。
+/// 基础图标显隐：有设备图标就隐身让位，没有就出来占位。只切可见性不重建：重建会让图标跳到托盘末尾甚至溢出区，比多看一眼占位图标更难受。
 fn update_base(app: &AppHandle, snap: &Snapshot, has_device_icons: bool) {
     let tooltip = summary_tooltip(snap);
     let visible = !has_device_icons;
@@ -216,11 +183,7 @@ fn base_tray(app: &AppHandle, tooltip: &str) -> Option<TrayIcon> {
     app.tray_by_id(&TrayIconId::new(BASE_TRAY_ID))
 }
 
-/// 建一张托盘图标：统一菜单 + 左键开面板。
-///
-/// 菜单和图标都是主线程资源（Tauri 的 `Menu` 在 Drop 里也要回主线程），所以
-/// 「建菜单 + 建图标」整段搬到主线程做：`sync` 跑在宿主线程上，而
-/// `run_on_main_thread` 在主线程上会就地执行，不会自锁。
+/// 建一张托盘图标：统一菜单 + 左键开面板。菜单与图标均为主线程资源（Tauri `Menu` Drop 也要回主线程），故整段搬到主线程做：`sync` 跑在宿主线程，而 `run_on_main_thread` 在主线程就地执行、不会自锁。
 fn build_tray(
     app: &AppHandle,
     tray_id: &str,
@@ -288,9 +251,7 @@ fn current_tooltip(tray_id: &str) -> Option<String> {
     lock(&BASELINE_TOOLTIPS).get(tray_id).cloned()
 }
 
-/// 托盘气泡模式：把提示写进对应图标的 tooltip，6 秒后恢复原样。
-///
-/// 返回是否真的挂上了 —— 没有可用图标时不要假装发出去（诊断页要能分辨）。
+/// 托盘气泡模式：把提示写进对应图标 tooltip，6 秒后恢复原样。返回是否真的挂上 —— 没有可用图标时不假装发出去（诊断页要能分辨）。
 pub fn bubble(app: &AppHandle, stable_id: &str, text: &str) -> bool {
     let Some(tray) = alert_tray(app, stable_id) else {
         return false;
@@ -339,13 +300,7 @@ fn tray_id_for(stable_id: &str) -> String {
     format!("tray:{stable_id}")
 }
 
-/// tooltip 文案：`型号 · 92%` / `型号 · —（离线）` / `型号 · 87%（上次读数）`。
-///
-/// 读数与图标用的是**同一个** `displayed_battery()`：图标画了 87% 的蓝弧，悬停
-/// 文字就不能还写着「—」，否则用户会以为这个百分比是凭空来的。
-///
-/// `extra > 0` 表示还有设备没放进托盘（§12「还有 N 台」），挂在最后一张图标上；
-/// 整串（含后缀）始终不超过 128 字符。
+/// tooltip 文案：`型号 · 92%` / `型号 · —（离线）` / `型号 · 87%（上次读数）`。读数与图标共用同一个 `displayed_battery()`：图标画了 87% 蓝弧，悬停文字就不能还写「—」，否则用户以为百分比凭空来的。`extra > 0` 表示还有设备没进托盘（§12「还有 N 台」），挂最后一张图标上；整串（含后缀）≤128 字符。
 fn tooltip_for(device: &DeviceDto, extra: usize) -> String {
     let reading = displayed_battery(device);
     let battery = match reading {
@@ -392,11 +347,7 @@ struct Reading {
     from_cache: bool,
 }
 
-/// 与前端 `displayedBattery()` 同一条规则：首次读数还没到（`state == Unknown`）时
-/// 用 `lastKnownBattery` 撑住图标与 tooltip，免得启动瞬间托盘变成一个没有比例、
-/// 也报不出电量的空环。
-///
-/// `Unavailable` / `Offline` 不算 —— 那是「确定读不到」，不能假装还有实时读数。
+/// 与前端 `displayedBattery()` 同规则：首读未到（`state == Unknown`）时用 `lastKnownBattery` 撑住图标与 tooltip，免得启动瞬间托盘变成无比例、无读数的空环。`Unavailable`/`Offline` 不算 —— 那是「确定读不到」，不能假装还有实时读数。
 fn displayed_battery(device: &DeviceDto) -> Option<Reading> {
     if let Some(percent) = device.battery {
         return Some(Reading {
@@ -413,13 +364,7 @@ fn displayed_battery(device: &DeviceDto) -> Option<Reading> {
     }
 }
 
-/// 环的颜色：除充电外与前端 `batteryColor()` 逐条对应（规格 §12）。
-///
-/// 只有 `Online` / `Stale` 才有「当前读数」可按阈值着色，其余状态直接沿用状态色 ——
-/// 这正是面板上「等待读数」显示蓝环、「读取失败」显示橙环的那套规则。
-///
-/// 充电不看电量高低，一律用绿色：闪电已经把「在充电」说清楚了，弧长继续表达
-/// 充到哪了；面板那一侧同样是这个绿色（`CHARGING_GREEN`），两侧完全一致。
+/// 环的颜色：除充电外与前端 `batteryColor()` 逐条对应（§12）。只有 `Online`/`Stale` 有「当前读数」可按阈值着色，其余状态沿用状态色（即面板「等待读数」蓝环、「读取失败」橙环那套）。充电不看电量高低一律绿：闪电已说清「在充电」、弧长继续表达充到哪了；面板同色（`CHARGING_GREEN`），两侧一致。
 fn ring_tone(battery: Option<u8>, charging: bool, state: DeviceState) -> [u8; 3] {
     let tone = match state {
         DeviceState::Online => EMERALD,
@@ -446,13 +391,7 @@ fn is_charging_glyph(charging: bool, state: DeviceState) -> bool {
     charging && matches!(state, DeviceState::Online | DeviceState::Stale)
 }
 
-/// 生成一张 32×32 的环形电量图。
-///
-/// - `battery == None`：等待环（一整圈状态色，透明度压低一档）；
-/// - `offline`：灰环 + 横线（物理存在但链路不在）；
-/// - `unknown`：蓝环（与面板「等待读数」同色，启动回填也走这条）；
-/// - `charging`：绿弧 + 环心闪电，**弧长仍随电量走**，只把环收窄给闪电让位；
-/// - 其余按 20% / 10% 分档着色。
+/// 生成一张 32×32 环形电量图：`battery == None` 等待环（整圈状态色、透明度压低一档）；`offline` 灰环+横线（物理存在链路不在）；`unknown` 蓝环（与面板「等待读数」同色，启动回填也走这条）；`charging` 绿弧+环心闪电，**弧长仍随电量走**、只把环收窄给闪电让位；其余按 20%/10% 分档着色。
 pub fn ring_image(battery: Option<u8>, charging: bool, state: DeviceState) -> Image<'static> {
     let size = ICON_SIZE as f32;
     let center = size / 2.0;

@@ -38,12 +38,7 @@ const modeOptions: Array<{ value: NotificationMode; label: string }> = [
   { value: "off", label: "关闭" },
 ];
 
-/**
- * 两档提醒的展示信息。
- *
- * `id` / `errorId` 必须是稳定且唯一的：输入框靠 `id` 与 Label 的 `for` 配对，
- * 错误文本靠 `errorId` 被 `aria-describedby` 引用。
- */
+/** 两档提醒展示信息；`id`/`errorId` 须稳定唯一：输入框凭 `id` 配 Label 的 `for`，错误文本凭 `errorId` 被 `aria-describedby` 引用。 */
 interface ThresholdRow {
   index: ThresholdIndex;
   id: string;
@@ -74,29 +69,18 @@ const thresholdRows: readonly ThresholdRow[] = [
 
 const thresholds = computed(() => props.settings.notifications.lowThresholds);
 
-/**
- * 输入框的临时文本。
- *
- * 不能直接把 `thresholds` 喂给输入框：正式值是数字，空串和小数没法表达，
- * 一旦把非法输入写回设置，宿主回传的旧值会把用户正在输的内容顶掉。
- * 所以这里保留一份字符串缓冲，合法且失焦时才通过 `setThreshold` 落到正式值。
- */
+/** 输入框的文本缓冲：正式值为数字，空串/小数无法表达；直接写回会让宿主回传的旧值顶掉用户正在输的内容，故合法且失焦才经 `setThreshold` 落正式值。 */
 const thresholdInputs = ref<[string, string]>([
   String(thresholds.value[0]),
   String(thresholds.value[1]),
 ]);
 
-/** 实时校验结果：输入过程中就能变红，不用等失焦。 */
+/** 实时校验：输入即变红，不等失焦。 */
 const thresholdErrors = computed<[string | null, string | null]>(() =>
   validateThresholdPair(thresholdInputs.value),
 );
 
-/**
- * 宿主回传的正式值变化时校准缓冲。
- *
- * 只同步「没被用户改过」的镜像值：用户输入过又没提交的内容一律不动，
- * 免得宿主回传把红框里的半成品悄悄替换掉（那也是一种自动调整）。
- */
+/** 宿主回传正式值变化时同步缓冲：只更新「未改过」的镜像，避免回传把红框里的半成品悄悄替换（也算自动调整）。 */
 watch(
   thresholds,
   (next, previous) => {
@@ -126,10 +110,7 @@ function setMode(mode: unknown) {
   patch({ notifications: { ...props.settings.notifications, mode: mode as NotificationMode } });
 }
 
-/**
- * 写正式阈值。越界 / 顺序兜底在 `applyThresholdEdit` 里（0 / 95 边界会挪另一档），
- * 非整数直接放弃，正式值保持原样。
- */
+/** 写正式阈值；越界/顺序兜底在 `applyThresholdEdit`（0/95 边界会挪另一档），非整数直接放弃，正式值不变。 */
 function setThreshold(index: ThresholdIndex, raw: string | number) {
   const next = applyThresholdEdit(thresholds.value, index, raw);
   if (!next) return;
@@ -142,13 +123,7 @@ function onThresholdInput(index: ThresholdIndex, value: string) {
   else thresholdInputs.value = [thresholdInputs.value[0], value];
 }
 
-/**
- * 失焦提交：**不做任何自动调整**。
- *
- * 值非法（空 / 非整数 / 越界 / 两档顺序不成立）时既不写正式值，
- * 也不改写用户输入、不回退成旧值 —— 红框继续留着，等用户自己改。
- * 只有整对值合法且与正式值不同才走 `setThreshold(index, raw)`。
- */
+/** 失焦提交，不做任何自动调整：非法值既不写正式值也不改用户输入/回退旧值，红框保留等用户改；仅整对合法且与正式值不同才走 `setThreshold`。 */
 function commitThreshold(index: ThresholdIndex) {
   if (thresholdErrors.value[index] !== null) return;
   const value = parseThresholdInput(thresholdInputs.value[index]);
@@ -165,10 +140,7 @@ function onThresholdEnter(event: KeyboardEvent) {
   (event.target as HTMLInputElement | null)?.blur();
 }
 
-/**
- * 数字框仍允许键入 `e` / `+` / `-` / `.`，这里直接挡掉：只要整数百分比。
- * 不拦组合键，Ctrl+A / Ctrl+V 之类照常。
- */
+/** 数字框仍会接收 `e`/`+`/`-`/`.`，直接挡掉：只取整百分比；不拦 Ctrl/Alt/Meta 组合键。 */
 function onThresholdKeydown(event: KeyboardEvent) {
   if (event.ctrlKey || event.metaKey || event.altKey) return;
   if (["e", "E", "+", "-", ".", ","].includes(event.key)) event.preventDefault();

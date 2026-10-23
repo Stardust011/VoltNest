@@ -1,7 +1,5 @@
-//! Provider 能力声明（ADR-0010 D2 / D3 / D5）。
-//!
-//! 能力与节奏是**编译期常量**，不是 Profile 数据文件、不是 `settings.json`：
-//! 型号表加一行不会改这里，而阈值链与状态机不变量强耦合，写坏即「永不过期」。
+//! Provider 能力声明（ADR-0010 D2 / D3 / D5）：能力与节奏是编译期常量，不是 Profile 数据文件、不是 `settings.json`。
+//! 型号表加一行不改这里，而阈值链与状态机不变量强耦合，写坏即「永不过期」。
 
 use crate::transport::Transport;
 
@@ -28,11 +26,9 @@ pub struct Thresholds {
 }
 
 impl Thresholds {
-    /// 档位乘数作用于**整条链**（D3 修规格缺陷 F1）。
-    ///
-    /// 用整数 `(num, den)` 实现：`(2,1)` / `(1,1)` / `(1,2)`。
-    /// 项目全部阈值都是 500ms 的整数倍，`/2` 无损；若将来引入奇数毫秒值，
-    /// 必须先把分母改为 1000 并向下取整，**不得**引入浮点（会让边界测试出现 ±1ms 抖动）。
+    /// 档位乘数作用于整条链（D3 修规格缺陷 F1），用整数 `(num, den)`：`(2,1)`/`(1,1)`/`(1,2)`。
+    /// 全部阈值都是 500ms 的整数倍，`/2` 无损；若将来引入奇数毫秒值，须先把分母改为 1000 并向下取整，
+    /// 不得引入浮点（会让边界测试出现 ±1ms 抖动）。
     pub fn scaled(self, sensitivity: Sensitivity) -> Self {
         let (num, den) = sensitivity.ratio();
         Self {
@@ -135,8 +131,7 @@ impl ProviderProfile {
     }
 
     /// PC-5 的唯一实现点：充电不可得时把任何 `Some(bool)` 压成 `None`。
-    ///
-    /// 宿主在把读数写进状态机之前必须经过这里，否则 BLE 会被渲染成「未充电」。
+    /// 宿主在把读数写进状态机前必须经过这里，否则 BLE 会被渲染成未充电。
     pub fn sanitize_charging(&self, raw: Option<bool>) -> Option<bool> {
         match self.charging {
             ChargingSupport::FromReading => raw,
@@ -146,13 +141,8 @@ impl ProviderProfile {
 
     /// 构造期不变量 PC-1..PC-7，进程启动时跑一次（[`validate_registry`] 内部调用）。
     pub fn validate(&self) -> Result<(), ProfileError> {
-        // PC-4：家族 ID 必须 `<transport>-<protocol>`，且品牌名不得占据 transport 段。
-        //
-        // 注意：ADR-0010 D1 允许家族 ID **包含**用于区分协议实现的厂商标识，因此
-        // PC-4 不能简单黑名单整串 —— 否则与 D1 及「两个 PROFILE 必须
-        // validate().is_ok()」的验收条件直接冲突。
-        // 这里落地的语义是：品牌名不得作为 transport 段出现，也不得单独构成 ID。
-        // `hid-vbas` 把品牌从家族 ID 里彻底移除，进一步收敛为「协议 = 家族」。
+        // PC-4：家族 ID 必须 `<transport>-<protocol>`，品牌名不得占据 transport 段或单独构成 ID。
+        // ADR-0010 D1 允许协议段带厂商标识，故不能简单黑名单整串；`hid-vbas` 已把品牌从 ID 移除，收敛为「协议 = 家族」。
         let prefix = self.transport.as_str();
         let mut segments = self.family_id.split('-');
         let first = segments.next().unwrap_or_default();
@@ -384,10 +374,9 @@ impl core::fmt::Display for ProfileError {
 
 impl std::error::Error for ProfileError {}
 
-/// `hid-vbas` 的能力声明。数值与规格 §3 / §5.3 逐字一致（有测试断言）。
-///
-/// 家族级能力声明只有一份：品牌再多也不新增家族（ADR-0011）。品牌各自的
-/// 上报节奏由 `voltnest-hid` 的品牌描述声明，并在启动期与本声明做兼容校验。
+/// `hid-vbas` 的能力声明，数值与规格 §3 / §5.3 逐字一致（有测试断言）。
+/// 家族级能力声明只有一份：品牌再多也不新增家族（ADR-0011）；品牌各自的上报节奏由
+/// `voltnest-hid` 的品牌描述声明，并在启动期与本声明做兼容校验。
 pub static HID_VBAS: ProviderProfile = ProviderProfile {
     family_id: crate::FAMILY_HID_VBAS,
     transport: Transport::Hid,
@@ -426,10 +415,8 @@ pub static BLE_BAS: ProviderProfile = ProviderProfile {
     presence_poll_ms: None,
 };
 
-/// D5：启动期自检。断言 `(family_id, transport)` 唯一。
-///
-/// 违反时宿主**不启动该 Provider**，诊断页红条 + 稳定错误码 `PROFILE_CONFLICT`，
-/// 宿主照常运行。v1 不做运行期优先级仲裁。
+/// D5：启动期自检，断言 `(family_id, transport)` 唯一。违反时宿主不启动该 Provider，
+/// 诊断页红条 + 稳定错误码 `PROFILE_CONFLICT`，宿主照常运行；v1 不做运行期优先级仲裁。
 pub fn validate_registry(profiles: &[&'static ProviderProfile]) -> Result<(), ProfileError> {
     for p in profiles {
         p.validate()?;

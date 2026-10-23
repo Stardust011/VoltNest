@@ -1,10 +1,8 @@
 //! 前端契约 DTO（规格 §10 / W-1..W-10）。
 //!
-//! - 全量快照，**不含**任何 UI 状态（选中项、滚动位置、弹窗开关）。
-//! - 命名、分组、排序全部由 Rust 决定，前端不重复推导（W-2 / W-3）。
-//! - 时间统一 UTC 毫秒整数；`serverNowMs` 供前端对齐本地单调计时器（W-4）。
-//! - `battery == null` 表示当前无有效读数，**绝不**用 0 代替。
-//! - `rev` 只在进程内单调递增，重启归零，不持久化（W-6）。
+//! 全量快照，不含 UI 状态（选中项、滚动位置、弹窗开关）；命名、分组、排序全由 Rust 决定，前端不重复推导（W-2 / W-3）。
+//! 时间统一 UTC 毫秒整数，`serverNowMs` 供前端对齐本地单调计时器（W-4）；`battery == null` 表示无有效读数，绝不用 0 代替。
+//! `rev` 仅在进程内单调递增，重启归零，不持久化（W-6）。
 
 use crate::state::DeviceState;
 use serde::{Deserialize, Serialize};
@@ -19,8 +17,8 @@ pub struct Snapshot {
     pub server_now_ms: u64,
     /// L1 设备记录（已按 `settings.tray.order` 排序）。
     pub devices: Vec<DeviceDto>,
-    /// L2 呈现分组卡片。只有满足分组谓词的两条记录才会出现；未分组的设备
-    /// 由前端直接渲染 `devices` 中未被任何卡片引用的成员（不做二次归一化）。
+    /// L2 呈现分组卡片：仅满足分组谓词的两条记录才出现。未分组设备由前端直接渲染
+    /// `devices` 中未被任何卡片引用的成员，不做二次归一化。
     pub cards: Vec<CardDto>,
     /// 托盘可见集合。
     pub tray: TrayDto,
@@ -40,12 +38,11 @@ pub struct DeviceDto {
     pub display_name: String,
     /// 归一化型号键，参与 L2 分组。`null` = 未命中型号表。
     pub model_key: Option<String>,
-    /// 设备类型（应用层枚举的小写形式，如 `mouse` / `keyboard`）。
+    /// 设备类型（应用层枚举小写，如 `mouse` / `keyboard`）。
     ///
-    /// `unknown` = 当前证据不足，前端**不得**用型号名或链路推断类型（W-2）。
+    /// `unknown` 表示证据不足，前端不得用型号名或链路推断类型（W-2）。
     pub device_type: String,
-    /// 得出 `deviceType` 的方法（`hid_usage` / `ble_appearance` /
-    /// `verified_device_mapping` / `unknown`），仅用于诊断与展示溯源。
+    /// 得出 `deviceType` 的方法（`hid_usage` / `ble_appearance` / `verified_device_mapping` / `unknown`），仅用于溯源。
     pub classification_method: String,
     /// 当前电量。`null` = 当前无有效读数。
     pub battery: Option<u8>,

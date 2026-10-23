@@ -1,7 +1,6 @@
 //! 设备状态：五种，且只有五种（规格 §5）。
 //!
-//! `Unknown` 与 `Unavailable` 在 UI 上必须可区分（E）：
-//! `Unknown` = 从未拿到过数据；`Unavailable` = 曾经拿到过，当前拿不到。
+//! `Unknown` 与 `Unavailable` UI 必须可区分（E）：前者从未拿到数据，后者曾经拿到、当前拿不到。
 
 use serde::{Deserialize, Serialize};
 
@@ -33,15 +32,12 @@ impl DeviceState {
         }
     }
 
-    /// 是否为「活跃」：L2 分组的谓词之一（§9.2）。
-    ///
-    /// `Online` / `Stale` 都还有一条可展示的当前读数；`Unavailable` 表示数据不可信，
-    /// 因此算「非活跃」，在合并卡里只显示「未活动 + 时长」。
+    /// L2 分组谓词之一（§9.2）：`Online` / `Stale` 仍有可展示读数；`Unavailable` 数据不可信，算非活跃。
     pub const fn is_active(self) -> bool {
         matches!(self, Self::Online | Self::Stale)
     }
 
-    /// 解析字符串（严格）。
+    /// 严格解析字符串，非小写枚举值返回 `None`。
     pub fn parse(raw: &str) -> Option<Self> {
         match raw {
             "unknown" => Some(Self::Unknown),

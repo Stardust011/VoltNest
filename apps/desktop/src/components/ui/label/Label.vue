@@ -6,12 +6,7 @@ import { cn } from "@/lib/utils";
 
 const props = defineProps<LabelProps & { class?: HTMLAttributes["class"] }>();
 
-/**
- * `for` 必须继续往下传，否则 `<label for>` 不会落到真实节点上，
- * 「点文字切换控件」与无障碍名称关联两件事一起失效。
- * 写法与 `ui/checkbox`、`ui/progress` 一致：用 reactiveOmit 摘掉 class，
- * 避免它与下面合并后的 class 重复。
- */
+/** `for` 须继续下传，否则 `<label for>` 落不到真实节点、「点文字切换控件」与无障碍名称关联都失效；用 reactiveOmit 摘掉 class（与 `ui/checkbox`、`ui/progress` 一致）避免与合并后的 class 重复。 */
 const delegatedProps = reactiveOmit(props, "class");
 </script>
 

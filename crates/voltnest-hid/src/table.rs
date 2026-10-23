@@ -1,12 +1,8 @@
 //! 「VID:PID → 型号」快照表（品牌无关的加载器）。
 //!
-//! 每个品牌一份 JSON 快照，由 [`crate::brands::BrandSpec::device_table_json`]
-//! 编译期嵌入（`include_str!`）：安装目录不需要携带数据文件，也不会与二进制
-//! 版本分叉（ADR-0010 D7）。新增品牌只新增一份数据文件 + 一个注册项，
-//! 本文件无需改动（ADR-0011）。
+//! 每品牌一份 JSON 快照，由 [`crate::brands::BrandSpec::device_table_json`] 编译期嵌入（`include_str!`），安装目录无需带数据文件，也不会与二进制版本分叉（ADR-0010 D7）。新增品牌只加数据文件 + 注册项，本文件不变（ADR-0011）。
 //!
-//! 匹配必须**精确**：`0x6425 = AJ159 NL P`、`0x6426 = AJ159 NL`，只差一位，
-//! 任何前缀 / 区间匹配都会把型号搞错（规格 §2「型号匹配必须使用表驱动的 Profile」）。
+//! 匹配必须**精确**：`0x6425 = AJ159 NL P`、`0x6426 = AJ159 NL`，只差一位，任何前缀/区间匹配都会搞错型号（§2「型号匹配须用表驱动的 Profile」）。
 
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -28,23 +24,13 @@ pub struct Entry {
 }
 
 impl Entry {
-    /// 从 `hid_interface` 取接口号：`MI_01` → `1`。
-    ///
-    /// 集合选择顺序是「VID/PID 精确 → 表内 MI_xx → UsagePage」，
-    /// 三者缺一不可（`docs/hid-rust-verification.md` §集合选择）。
+    /// 从 `hid_interface` 取接口号：`MI_01` → `1`。集合选择须「VID/PID 精确 → 表内 MI_xx → UsagePage」三者齐全（`docs/hid-rust-verification.md` §集合选择）。
     pub fn interface_index(&self) -> Option<u8> {
         let tail = self.hid_interface.rsplit("MI_").next()?;
         u8::from_str_radix(tail, 16).ok()
     }
 
-    /// 厂商在官方驱动配置里声明的设备类型词 → [`DeviceType`]。
-    ///
-    /// `device_attr` 是**厂商自定义字段，不是标准**：同一份 AJAZZ W1 配置里
-    /// `AJ159` 写 `mouse`，而 `AJ179` / `AJ139` 写的是型号族名（`aj179` / `aj139`）。
-    /// 所以只有**恰好等于规范类型词**时才映射，其余一律 `None`，交给 Usage 规则
-    /// 或返回 `Unknown`——把族名当类型猜，正是规范禁止的「厂商自定义数据当标准」。
-    ///
-    /// 另外 `device_type`（101..108）是驱动内部的**型号编号**，不是类型，禁止映射。
+    /// 厂商驱动配置里的设备类型词 → [`DeviceType`]。`device_attr` 是厂商自定义字段而非标准：同份 AJAZZ W1 配置里 `AJ159` 写 `mouse`，而 `AJ179`/`AJ139` 写型号族名。故只有恰好等于规范类型词才映射，其余一律 `None`——把族名当类型猜正是规范禁止的「厂商自定义数据当标准」。另 `device_type`（101..108）是驱动内部型号编号，非类型，禁止映射。
     pub fn declared_device_type(&self) -> Option<DeviceType> {
         let attr = self.device_attr.trim().to_ascii_lowercase();
         match attr.as_str() {

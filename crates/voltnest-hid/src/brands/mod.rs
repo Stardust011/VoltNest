@@ -1,12 +1,7 @@
 //! 品牌注册表：`hid-vbas` 家族下的所有已知品牌。
 //!
 //! **新增品牌 = 新增一个模块 + 在 [`BRANDS`] 里加一项**，运行时代码不动：
-//!
-//! ```text
-//! 1. src/brands/<brand>.rs     声明 BrandSpec（UsagePage / 帧布局 / 字段下标 / 表）
-//! 2. data/vbas/<brand>.json    型号表快照（VID:PID → 名称）
-//! 3. BRANDS 数组加一行          ↓ 唯一需要改的既有代码
-//! ```
+//! 1. `src/brands/<brand>.rs` 声明 BrandSpec；2. `data/vbas/<brand>.json` 型号表快照；3. `BRANDS` 加一行（唯一要改的既有代码）。
 //!
 //! 注册表在首次枚举前建立一次（[`Registry::embedded`]），建立时逐个跑
 //! [`BrandSpec::validate`]，写错字段下标即 panic —— 早于任何设备 I/O。
@@ -18,10 +13,7 @@ use crate::table::{DeviceTable, Entry};
 use std::sync::OnceLock;
 use voltnest_provider::ProviderProfile;
 
-/// 全部已知品牌（编译期常量数组）。
-///
-/// 顺序即冲突时的优先顺序：同一 VID:PID 被两个品牌同时登记属于配置错误，
-/// [`Registry::embedded`] 会直接 panic，因此顺序不影响匹配结果。
+/// 全部已知品牌（编译期常量数组）。顺序无关匹配结果：同一 VID:PID 被两品牌同时登记属配置错误，[`Registry::embedded`] 会 panic。
 pub static BRANDS: &[&BrandSpec] = &[&ajazz::SPEC];
 
 /// 一个品牌：协议描述 + 已解析的型号表。
@@ -40,10 +32,7 @@ pub struct Registry {
 }
 
 impl Registry {
-    /// 建立注册表：校验每份品牌描述与型号表。
-    ///
-    /// panic 是可接受的：这些数据是编译期常量，校验失败属于**发版事故**，
-    /// 必须在第一次枚举前暴露，而不是运行几个小时后解析出错电量。
+    /// 建立注册表：校验每份品牌描述与型号表。panic 可接受——这些是编译期常量，失败属发版事故，须在第一枚举前暴露，而非运行几小时后解析出错电量。
     pub fn embedded() -> &'static Self {
         static REGISTRY: OnceLock<Registry> = OnceLock::new();
         REGISTRY.get_or_init(|| {
@@ -65,8 +54,7 @@ impl Registry {
             if brands.iter().any(|b: &Brand| b.spec.id == spec.id) {
                 return Err(SpecError::DuplicateBrandId { brand: spec.id });
             }
-            // 精确匹配必须唯一：同一 VID:PID 落到两个品牌时，型号名与字段
-            // 位置都会随枚举顺序漂移 —— 这是配置错误，不能拖到运行期。
+            // 精确匹配必须唯一：同一 VID:PID 落到两品牌时型号名与字段位置会随枚举顺序漂移，属配置错误，不能拖到运行期。
             for other in &brands {
                 let other: &Brand = other;
                 for ((vid, pid), _) in other.table.entries() {
