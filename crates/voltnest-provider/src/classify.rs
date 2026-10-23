@@ -27,7 +27,7 @@
 //!
 //! | 规则 | 来源 | 实测状态 |
 //! |---|---|---|
-//! | HID Usage `0x01/0x02,0x04,0x05,0x06` | USB-IF HID Usage Tables 1.4（Generic Desktop） | 单测覆盖；本机验证设备为厂商自定义 UsagePage，未命中 |
+//! | HID Usage `0x01/0x01,0x02,0x04..0x08` | USB-IF HID Usage Tables 1.4（Generic Desktop） | 单测覆盖；本机验证设备为厂商自定义 UsagePage，未命中 |
 //! | BLE Appearance `0x03C1..0x03C4 / 0x0841..0x0844 / 0x0942,0x0943` | Bluetooth SIG Assigned Numbers（Appearance Values），值 = `category << 6 \| subcategory` | 单测覆盖；本机 BLE 鼠标实测值见 `docs/device-classification.md` |
 //! | BLE 服务 `0x180F / 0x1812 / 0x180A` | Battery Service / HOGP / DIS 规范 | 只作上下文证据，不单独定型 |
 //! | 可核验设备映射 | 品牌型号表（官方驱动 `config.xml` 的 `device_attr`） | 仅 `device_attr` 恰为规范类型词时生效 |
@@ -438,17 +438,32 @@ fn resolve(
 
 /// HID Generic Desktop 页的标准 Usage → 类型。
 ///
-/// 只收录 HID Usage Tables 明确列出、且本项目能对应到 [`DeviceType`] 的组合：
-/// Mouse `0x02`、Joystick `0x04`、Game Pad `0x05`、Keyboard `0x06`。
-/// `0x08` Multi-axis Controller 等未收录项**不映射**（项目未验证，不猜）。
+/// 收录 HID Usage Tables 1.4 在 `0x0001` 页定义的**全部**设备类应用集合
+/// （`0x01` Pointer … `0x08` Multi-axis Controller）。`0x03` 在标准里是
+/// Reserved，没有设备含义，因此不映射；`0x80` System Control 不是设备类别，
+/// 同样不映射。除此之外的组合一律 `None`。
+///
+/// 三处映射是**项目粒度上的收敛**，不是标准里的等价关系：
+///
+/// - `0x01` Pointer：通用指针集合（鼠标 / 触控板 / 指点杆都可能声明它）。
+///   本项目只有「鼠标」这一个指针槽位，故归入 `Mouse`，证据保留 `Pointer` 原文。
+/// - `0x07` Keypad：独立数字键盘，属键盘族，归入 `Keyboard`。
+/// - `0x04` Joystick / `0x08` Multi-axis Controller：标准里都是游戏控制器，
+///   本项目只有粗粒度的 `Controller`。
+///
+/// 这样收敛的好处是同一台设备的多个相关集合不会互相冲突：指针类
+/// （`0x01`+`0x02`）、键盘类（`0x06`+`0x07`）、控制器类（`0x04`+`0x08`）
+/// 各自合并为一种候选，而不是被判成「复合冲突」。
 pub fn usage_type(usage_page: u16, usage: u16) -> Option<(DeviceType, &'static str)> {
     const PAGE_GENERIC_DESKTOP: u16 = 0x0001;
     match (usage_page, usage) {
+        (PAGE_GENERIC_DESKTOP, 0x01) => Some((DeviceType::Mouse, "Pointer")),
         (PAGE_GENERIC_DESKTOP, 0x02) => Some((DeviceType::Mouse, "Mouse")),
-        // Joystick 在 HID 表里是一类游戏控制器；本项目只有粗粒度的 Controller。
         (PAGE_GENERIC_DESKTOP, 0x04) => Some((DeviceType::Controller, "Joystick")),
         (PAGE_GENERIC_DESKTOP, 0x05) => Some((DeviceType::Gamepad, "Game Pad")),
         (PAGE_GENERIC_DESKTOP, 0x06) => Some((DeviceType::Keyboard, "Keyboard")),
+        (PAGE_GENERIC_DESKTOP, 0x07) => Some((DeviceType::Keyboard, "Keypad")),
+        (PAGE_GENERIC_DESKTOP, 0x08) => Some((DeviceType::Controller, "Multi-axis Controller")),
         _ => None,
     }
 }
@@ -576,25 +591,61 @@ mod tests {
 
     #[test]
     fn hid_usage_hits_standard_types() {
-        for (usage, want) in [
-            (0x02u16, DeviceType::Mouse),
-            (0x04, DeviceType::Controller),
-            (0x05, DeviceType::Gamepad),
-            (0x06, DeviceType::Keyboard),
+        // Generic Desktop 页全部设备类应用集合，逐个核对结论与方法。
+        for (usage, want, name) in [
+            (0x01u16, DeviceType::Mouse, "Pointer"),
+            (0x02, DeviceType::Mouse, "Mouse"),
+            (0x04, DeviceType::Controller, "Joystick"),
+            (0x05, DeviceType::Gamepad, "Game Pad"),
+            (0x06, DeviceType::Keyboard, "Keyboard"),
+            (0x07, DeviceType::Keyboard, "Keypad"),
+            (0x08, DeviceType::Controller, "Multi-axis Controller"),
         ] {
             let mut ev = HidEvidence::new(0x1234, 0x5678);
             ev.push_collection(0x01, usage);
             let c = classify_hid(&ev, None);
             assert_eq!(c.device_type, want, "usage {usage:#04x}");
             assert_eq!(c.method, ClassificationMethod::HidUsage);
-            assert!(!c.evidence.is_empty(), "结论必须带证据");
+            assert!(
+                c.evidence.iter().any(|e| e.contains(name)),
+                "usage {usage:#04x} 的证据必须写明标准名称 {name}：{:?}",
+                c.evidence
+            );
         }
+    }
+
+    #[test]
+    fn pointer_and_mouse_share_one_slot() {
+        // 指针类集合（Pointer + Mouse）收敛到同一类型，不得被判成复合冲突。
+        let mut ev = HidEvidence::new(0x1234, 0x5678);
+        ev.push_collection(0x01, 0x01);
+        ev.push_collection(0x01, 0x02);
+        let c = classify_hid(&ev, None);
+        assert_eq!(c.device_type, DeviceType::Mouse);
+        assert_eq!(c.method, ClassificationMethod::HidUsage);
+        assert!(!c.evidence.iter().any(|e| e.contains("复合集合")));
+    }
+
+    #[test]
+    fn keyboard_family_collections_do_not_conflict() {
+        // 键盘 + 数字键盘是同一族：合并为 keyboard，而不是冲突。
+        let mut ev = HidEvidence::new(0x1234, 0x5678);
+        ev.push_collection(0x01, 0x06);
+        ev.push_collection(0x01, 0x07);
+        let c = classify_hid(&ev, None);
+        assert_eq!(c.device_type, DeviceType::Keyboard);
+
+        // Joystick + Multi-axis Controller 同属控制器，同样合并。
+        let mut ev = HidEvidence::new(0x1234, 0x5678);
+        ev.push_collection(0x01, 0x04);
+        ev.push_collection(0x01, 0x08);
+        assert_eq!(classify_hid(&ev, None).device_type, DeviceType::Controller);
     }
 
     #[test]
     fn unknown_usage_is_unknown_not_other() {
         let mut ev = HidEvidence::new(0x1234, 0x5678);
-        ev.push_collection(0x01, 0x08); // Multi-axis Controller：项目未收录
+        ev.push_collection(0x01, 0x0080); // System Control：不是设备类别
         ev.push_collection(0xFFB2, 0x0001); // 厂商自定义页
         let c = classify_hid(&ev, None);
         assert_eq!(c.device_type, DeviceType::Unknown);
