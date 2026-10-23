@@ -1,14 +1,4 @@
-//! Provider 线程组监管：panic 隔离与退避重启（RT-1 / RT-2 / §3.3）。
-//!
-//! 每个 transport 一个监管线程，它自己**不做 I/O**，只做三件事：
-//!
-//! 1. 起真正的采集线程，用 `catch_unwind` 包住 `Provider::run`；
-//! 2. 把采集线程上报的事件原样转发给宿主事件循环；
-//! 3. 采集线程异常结束时上报 `TransportDown`，按 5s / 15s / 60s 退避重启，
-//!    连续 5 次失败后标记「不可用」，只等用户手动重启。
-//!
-//! 关键点：**panic 不得跨 transport 传播**。HID 的解析器崩溃时蓝牙必须照常工作，
-//! 所以崩溃隔离发生在采集线程边界，而不是在宿主里 catch。
+//! Provider 线程组监管：panic 隔离与退避重启（RT-1/RT-2/§3.3）。每个 transport 一个监管线程，自身不做 I/O，只做三件事：用 `catch_unwind` 包住 `Provider::run` 起采集线程；把上报事件原样转发宿主；采集线程异常结束时上报 `TransportDown` 并按 5s/15s/60s 退避重启，连续 5 次失败标记「不可用」等手动重启。**panic 不得跨 transport 传播**：HID 解析器崩溃时蓝牙必须照常，故隔离在采集线程边界而非宿主里 catch。
 
 use std::panic::AssertUnwindSafe;
 use std::sync::Arc;
@@ -202,9 +192,7 @@ fn supervise(
     }
 }
 
-/// 第 `failures` 次连续失败后的退避时长；达到上限返回 `None`（转人工重启）。
-///
-/// 抽成纯函数是为了能在毫秒级退避表下测完整序列，而不必真的等 60 秒。
+/// 第 `failures` 次连续失败后的退避时长；达到上限返回 `None`（转人工重启）。抽成纯函数以便用毫秒级退避表测完整序列，不必真等 60 秒。
 pub fn backoff_for(failures: u32, table: &[u64]) -> Option<u64> {
     if failures == 0 || failures >= MAX_CONSECUTIVE_FAILURES || table.is_empty() {
         return None;

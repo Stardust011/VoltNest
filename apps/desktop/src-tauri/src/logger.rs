@@ -1,10 +1,4 @@
-//! 极简文件日志（`%APPDATA%\VoltNest\logs\voltnest.log`）。
-//!
-//! 不引入 `tauri-plugin-log`：它的日志目录是 `%APPDATA%\<identifier>\logs`，
-//! 那会变成 `%APPDATA%\VoltNest.Desktop\logs`，与规格 §11 的数据根目录不符，
-//! 等于多写一个目录。这里只需要「出问题时能拿到一份时间线」，三十行足够。
-//!
-//! 时间戳一律走 `voltnest_provider::clock::now_utc_ms()`（Z-6：全仓唯一时间源）。
+//! 极简文件日志（`%APPDATA%\VoltNest\logs\voltnest.log`）。不引入 `tauri-plugin-log`：其目录 `%APPDATA%\<identifier>\logs` 会与规格 §11 的数据根分叉、多写一个目录。只需「出问题时拿到时间线」，三十行足够。时间戳一律走 `clock::now_utc_ms()`（Z-6：全仓唯一时间源）。
 
 use std::fs::{File, OpenOptions};
 use std::io::Write;

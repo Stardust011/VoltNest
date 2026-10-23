@@ -1,7 +1,7 @@
-//! 低电量通知策略：**跌破触发 + 迟滞 + 冷却**（AB-1..AB-5）。
+//! 低电量通知策略：跌破触发 + 迟滞 + 冷却（AB-1..AB-5）。
 //!
-//! 关键点：通知由事件触发，不是周期性提醒。8 小时不充电只应产生 2 次通知
-//! （20% 与 10% 各一次）；持续可见性由托盘环颜色承担（AB-3）。
+//! 通知由事件触发而非周期提醒：8 小时不充电只产生 2 次通知（20% 与 10% 各一次）；
+//! 持续可见性由托盘环颜色承担（AB-3）。
 
 use std::collections::{BTreeMap, HashMap};
 
@@ -113,19 +113,11 @@ impl NotificationBook {
 
     /// 更新配置（设置页改动）。
     ///
-    /// 阈值列表变化时重建每个设备的条目：
-    ///
-    /// - 不在新配置里的档位直接丢弃 —— `entries()` 既是诊断页「通知触发节点」
-    ///   的数据源，也是 `state.json` 的持久化来源。留着旧档位，用户改完阈值
-    ///   仍会看到已经不存在的节点，重启后还会被 [`Self::seed`] 读回来；
-    /// - 新档位立刻建出来（`armed`、无通知历史），诊断页当场就能看到两档，
-    ///   不必等下一次电量上报才补齐；
-    /// - 跌破判定基线清空：电量本来就低于新阈值时（例如从 20 改成 30，当前 15%），
-    ///   「上次电量 >= 新阈值」永远不成立，新档位一次也不会触发。清空后按
-    ///   「首次获得读数」判定一次；已跌破且尚未回升的档位仍是未武装状态，不会重复提醒。
-    ///
-    /// 阈值列表没变（例如只改通知方式）时不动条目与基线，否则会把已通知的档位
-    /// 重新武装，同一次低电量会再弹一遍。
+    /// 仅当阈值列表变化时重建每设备条目：不在新配置里的档位直接丢弃——`entries()` 既供诊断页展示
+    /// 也持久化到 `state.json`，留着旧档位会让用户改完阈值还看到已不存在的节点，重启后还会被
+    /// [`Self::seed`] 读回；新档位立刻建出（armed、无历史），诊断页当场可见两档；跌破基线清空，
+    /// 否则电量本就低于新阈值时「上次电量 >= 新阈值」永远不成立，新档位一次也不触发。
+    /// 阈值列表未变（只改通知方式）则不动条目与基线，避免把已通知的档位重新武装而重复提醒。
     pub fn set_config(&mut self, config: NotificationConfig) {
         let next = config.normalized();
         let thresholds_changed = next.thresholds != self.config.thresholds;
@@ -176,10 +168,9 @@ impl NotificationBook {
         }
     }
 
-    /// 观察一次有效读数，返回需要发送的通知（最多一条）。
+    /// 观察一次有效读数，返回需发送的通知（最多一条）。
     ///
-    /// `charging == Some(true)` 时不发送（AB 抑制条件）。BLE 的 `charging` 恒为 `None`，
-    /// 因此不会被误判为「未充电」。
+    /// `charging == Some(true)` 时不发送（AB 抑制条件）；BLE 的 `charging` 恒为 `None`，不会误判为未充电。
     pub fn observe(
         &mut self,
         stable_id: &str,
@@ -250,11 +241,10 @@ impl NotificationBook {
         alert
     }
 
-    /// 覆盖某个 `(device, threshold)` 的最后结果（AB-5）。
+    /// 覆盖某 `(device, threshold)` 的最后结果（AB-5）。
     ///
-    /// `observe()` 只能记录「策略判定为应当发送」，它不知道宿主最终有没有送出去：
-    /// Toast 可能被系统通知设置关掉、模式可能是「关闭」。宿主投递完再回填真实结果，
-    /// 这样诊断页显示的是事实而不是意图。
+    /// `observe()` 只记录策略判定为应当发送，不知宿主是否真送出去：Toast 可能被系统通知关掉、
+    /// 模式可能是关闭。宿主投递完回填真实结果，诊断页才能显示事实而非意图。
     pub fn mark_result(&mut self, stable_id: &str, threshold: u8, result: &str) {
         if let Some(device) = self.devices.get_mut(stable_id)
             && let Some(entry) = device.entries.get_mut(&threshold)
@@ -275,9 +265,8 @@ impl NotificationBook {
 
     /// 导出全部 `(device, threshold)` 状态用于持久化与诊断页（AB-5）。
     ///
-    /// 排序：设备按 `stable_id` 升序，同一设备内**阈值从高到低**。
-    /// 档位本身是有先后语义的（第一档电量较高时先提醒），诊断页若按
-    /// `BTreeMap` 的自然升序展示，第二档会排在第一条，和设置页的顺序反着。
+    /// 排序：设备按 `stable_id` 升序，同设备内阈值从高到低。档位有先后语义（第一档先提醒），
+    /// 若按 `BTreeMap` 自然升序展示，第二档会排在第一条，与设置页顺序相反。
     pub fn entries(&self) -> Vec<NotificationEntry> {
         let mut out = Vec::new();
         let mut ids: Vec<&String> = self.devices.keys().collect();

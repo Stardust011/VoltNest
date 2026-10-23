@@ -1,11 +1,8 @@
 //! `settings.json`：用户资产（阈值档位、通知方式、自启、托盘顺序与隐藏列表）。
 //!
-//! 规则（X-1 / X-3 / X-4 / X-6 / X-7）：
-//!
-//! - 带整数 `schemaVersion`；
-//! - **未知字段读入后原样保留**（`#[serde(flatten)]` 收进 `extra`），降级运行不静默清空；
-//! - 损坏或版本过高：备份 → 默认值启动 → 诊断告警，**绝不阻塞启动**；
-//! - 配置里不出现任何毫秒值（Z-1）：只存档位字符串。
+//! 规则（X-1 / X-3 / X-4 / X-6 / X-7）：带整数 `schemaVersion`；未知字段读入后原样保留
+//! （`#[serde(flatten)]` 收进 `extra`），降级运行不静默清空；损坏或版本过高时备份 → 默认值启动 →
+//! 诊断告警，绝不阻塞启动；配置不出现任何毫秒值（Z-1），只存档位字符串。
 
 use crate::SCHEMA_VERSION;
 use crate::atomic::{archive_corrupt, read_optional, write_json_atomic};
@@ -157,12 +154,12 @@ impl core::fmt::Display for SettingsLoadWarning {
         match self {
             Self::Corrupt { backup, .. } => write!(
                 f,
-                "settings.json 解析失败，已备份到 {} 并用默认值启动",
+                "settings.json 解析失败，已备份到 {}，用默认值启动",
                 backup.display()
             ),
             Self::VersionTooHigh { found, backup } => write!(
                 f,
-                "settings.json 版本 {found} 高于本程序支持的版本，已备份到 {} 并用默认值启动",
+                "settings.json 版本 {found} 高于本程序支持版本，已备份到 {}，用默认值启动",
                 backup.display()
             ),
             Self::Io { path, detail } => {
@@ -263,7 +260,7 @@ impl SettingsStore {
             Err(_) => backup_target,
         };
         eprintln!(
-            "VoltNest: settings.json 损坏（{detail}），已存档到 {}",
+            "settings.json 损坏（{detail}），存档到 {}",
             backup.display()
         );
         LoadedSettings {

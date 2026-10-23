@@ -3,13 +3,7 @@ import { getSnapshot, subscribeSnapshot } from "../lib/ipc";
 import { anchorOffset, serverNow } from "../lib/time";
 import type { Snapshot } from "../lib/types";
 
-/**
- * 快照订阅（W-6 / W-7）。
- *
- * 顺序不可颠倒：**先订阅事件 → 再 get_snapshot()**，然后丢弃
- * `rev <= snapshot.rev` 的缓冲事件、应用剩余。反过来写会稳定丢掉启动瞬间的
- * 第一次变化（Tauri 事件在 webview 未就绪时会永久丢失）。
- */
+// 快照订阅（W-6 / W-7）。顺序不可颠倒：先订阅事件→再 get_snapshot()，丢弃 `rev <= snapshot.rev` 的缓冲事件。反之会稳定丢失启动瞬间首变（Tauri 事件在 webview 未就绪时永久丢失）。
 export function useSnapshot() {
   const snapshot = ref<Snapshot | null>(null);
   const nowMs = ref(Date.now());

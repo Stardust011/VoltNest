@@ -18,7 +18,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: "restart", transport: "hid" | "ble"): void;
-  /** 调试用：把首次引导遮罩重新叫出来（宿主决定是否落盘）。 */
+  /** 调试：重新唤起首次引导遮罩（是否落盘由宿主决定）。 */
   (e: "replayOnboarding"): void;
 }>();
 
@@ -36,45 +36,30 @@ const levelLabel: Record<string, string> = {
   debug: "调试",
 };
 
-/**
- * `debug` 默认折叠：逐条枚举细节，展开才看。
- *
- * 这是**纯前端展示状态**（不落盘、不影响宿主采集），开关放在页面底部「调试区」，
- * 与「重现首次引导页」同处一块，避免把调试开关混进正常诊断信息里。
- */
+/** `debug` 默认折叠（逐条细节，展开才看）；纯前端状态不落盘，开关置于底部「调试区」以免混入正常诊断。 */
 const showDebug = ref(false);
 const visibleEvents = computed(() =>
   visibleDiagEvents(props.diagnostics.events, showDebug.value),
 );
 
-/**
- * `debug` 级记录总数。
- *
- * 只依赖原始事件列表，**不随开关变化**：早先按「总数 - 可见数」算，
- * 展开后差值归零，按钮会自己消失（再也关不回去）。开关必须两种状态都能拨。
- */
+/** `debug` 级记录总数，只数原始列表、不随开关变化：若按「总数-可见数」算，展开后差值归零会让开关自消失。 */
 const debugCount = computed(
   () => props.diagnostics.events.filter((event) => event.level === "debug").length,
 );
 
-/**
- * 事件卡标题右侧的计数。
- *
- * 折叠状态下必须把「还有多少条调试没展开」说出来：开关已经挪到页面底部的调试区，
- * 这里若只报可见条数，列表看起来就像少了记录。
- */
+/** 折叠时须在标题处点明「还有多少条 debug 未展开」，否则列表看起来像缺了记录（开关已移到调试区）。 */
 const eventCountText = computed(() => {
   const shown = visibleEvents.value.length;
   return !showDebug.value && debugCount.value > 0
-    ? `${shown} 条事件 · 另有 ${debugCount.value} 条调试未展开`
+    ? `${shown} 条事件 · 另 ${debugCount.value} 条调试未展开`
     : `${shown} 条事件`;
 });
 
-/** 调试区开关的说明文案（没有调试记录时说明为什么拨了也没变化）。 */
+/** 调试区开关说明（无 debug 记录时说明拨了也无效）。 */
 const debugHint = computed(() =>
   debugCount.value > 0
-    ? `「诊断事件」中一并展开 ${debugCount.value} 条 debug 级记录（逐条枚举证据，噪声较大）。`
-    : "当前没有 debug 级记录。",
+    ? `「诊断事件」中展开 ${debugCount.value} 条 debug 级记录（逐条枚举，噪声大）。`
+    : "当前无 debug 级记录。",
 );
 
 const statusLabel: Record<string, string> = {
@@ -105,10 +90,7 @@ function statusClass(status: string) {
     : "border-destructive/40 text-destructive font-normal";
 }
 
-/**
- * 坏帧诊断的 detail 是「成因 + 原始字节」（`cmd_mismatch(...) · 6B: 06 FA …`），
- * 属于机器数据：按等宽字体渲染，字节间距才对得齐、好逐位核对。
- */
+/** 坏帧 detail 为「成因+原始字节」，属机器数据，用等宽字体对齐以便逐位核对。 */
 function detailClass(code: string) {
   return code === "reading_unreadable" ? "font-mono text-[11px]" : "";
 }

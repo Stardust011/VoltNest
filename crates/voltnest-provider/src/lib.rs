@@ -1,19 +1,13 @@
-//! VoltNest Provider 契约。
+//! VoltNest Provider 契约：纯类型与常量，是 HID / BLE 与宿主（`voltnest-core`、`src-tauri`）之间唯一的契约面（ADR-0010）。
+//! 不含 I/O、线程、平台 API 与状态机。
 //!
-//! 本 crate 只包含**纯类型与常量**，是 HID / BLE crate 与宿主（`voltnest-core`、
-//! `src-tauri`）之间唯一的契约面（ADR-0010）。它不含任何 I/O、线程、平台 API，
-//! 也不含状态机。
+//! 两条最易写错的规则由类型消灭而非靠评审记住：
+//! [`Percent`] 是 newtype，`> 100` 在构造期拒绝 → 状态机不可能收到越界电量；
+//! [`ProviderProfile::charging`] 为 [`ChargingSupport::Unavailable`] 时，
+//! [`ProviderProfile::sanitize_charging`] 把任何 `Some(bool)` 压成 `None` → BLE 不会被渲染成未充电（PC-5）。
 //!
-//! 两条最容易写错的规则在这里被类型消灭，而不是靠评审记住：
-//!
-//! - [`Percent`] 是 newtype，`> 100` 在构造期被拒绝 → 状态机不可能收到越界电量。
-//! - [`ProviderProfile::charging`] 为 [`ChargingSupport::Unavailable`] 时，
-//!   [`ProviderProfile::sanitize_charging`] 会把任何 `Some(bool)` 压成 `None`
-//!   → BLE 不会被渲染成「未充电」（PC-5）。
-//!
-//! 设备类型识别（[`classify`]）同样是纯类型 + 纯函数：Provider 只负责把
-//! **实际取到的标准字段**填进 [`HidEvidence`] / [`BleEvidence`]，判定规则与
-//! 冲突处理不依赖任何 I/O，也不会反过来影响电量采集。
+//! 设备类型识别（[`classify`]）同样是纯类型 + 纯函数：Provider 只把实际取到的标准字段填进
+//! [`HidEvidence`] / [`BleEvidence`]，判定规则与冲突处理不依赖 I/O，也不影响电量采集。
 
 #![forbid(unsafe_code)]
 #![deny(clippy::disallowed_types)]
@@ -49,18 +43,15 @@ use std::sync::mpsc::Sender;
 
 /// 协议家族 ID：`hid-vbas`（HID Vendor Battery Access Spec）。
 ///
-/// 同时是日志前缀、诊断分组键与 `Snapshot.provider` 值。家族层面**不含品牌**：
-/// 任何走 HID 私有协议报电量的设备都归入本家族，品牌差异由
-/// `voltnest-hid` 内的品牌描述（字段位置 + 解析规则）表达，见 ADR-0011。
+/// 同时是日志前缀、诊断分组键与 `Snapshot.provider` 值。家族层面不含品牌：
+/// 任何走 HID 私有协议报电量的设备都归入此处，品牌差异由 `voltnest-hid` 内的品牌描述表达（ADR-0011）。
 pub const FAMILY_HID_VBAS: &str = "hid-vbas";
 
 /// 协议家族 ID：`ble-bas`。
 pub const FAMILY_BLE_BAS: &str = "ble-bas";
 
-/// Provider 的统一入口（ADR-0010 D1）。
-///
-/// 实现者只上报**原始事实**：出现、原始读数、结构化错误、链路状态。
-/// 去重、冲突仲裁、`modelKey` 归一化、分组、时间戳、持久化全部属于宿主。
+/// Provider 统一入口（ADR-0010 D1）：实现者只上报原始事实（出现、读数、结构化错误、链路状态）。
+/// 去重、冲突仲裁、归一化、分组、时间戳、持久化全属宿主。
 pub trait Provider: Send + 'static {
     /// 编译期声明的能力与节奏。
     fn profile(&self) -> &'static ProviderProfile;

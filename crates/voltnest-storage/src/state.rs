@@ -1,10 +1,8 @@
 //! `state.json`：可丢弃缓存（设备最后已知电量、时间、路径、通知冷却与 `armed`）。
 //!
-//! 规则（X-3 / X-5 / X-7）：
-//!
-//! - 写入节流 5s；退出、隐藏到托盘、状态退化时由宿主强制 flush；
-//! - **随时删除、功能不受影响**：只失去启动回填（有自动化测试，不靠人工记得）；
-//! - 按 `stableId` 的条目超过 32 条时淘汰最久未出现项（Y-5 的地址轮换孤儿）。
+//! 规则（X-3 / X-5 / X-7）：写入节流 5s，退出、隐藏到托盘、状态退化时由宿主强制 flush；
+//! 随时删除功能不受影响，只失去启动回填（有自动化测试，不靠人工记得）；按 `stableId` 条目超 32 条时
+//! 淘汰最久未出现项（Y-5 地址轮换产生的孤儿）。
 
 use crate::SCHEMA_VERSION;
 use crate::atomic::{archive_corrupt, read_optional, write_json_atomic};
@@ -171,10 +169,10 @@ impl StateStore {
                 state
             }
             Err(e) => {
-                // 缓存坏了不值得打扰用户：存档 + 空状态，诊断由宿主补一条。
+                // 缓存损坏不打扰用户：存档 + 空状态，诊断由宿主补一条。
                 let target = self.paths.corrupt_state_file(now_ms);
                 let _ = archive_corrupt(&path, &target);
-                eprintln!("VoltNest: state.json 损坏（{e}），已丢弃缓存");
+                eprintln!("state.json 损坏（{e}），丢弃缓存");
                 StateFile::default()
             }
         }

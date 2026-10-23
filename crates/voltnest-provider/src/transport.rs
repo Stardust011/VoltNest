@@ -18,7 +18,7 @@ impl Transport {
         }
     }
 
-    /// 用户可见的链路名称。命名归宿主（W-2），但链路词汇是协议事实，放在契约里避免两处漂移。
+    /// 用户可见的链路名称。命名归宿主（W-2），但链路词汇是协议事实，放契约里避免两处漂移。
     pub const fn display_label(self) -> &'static str {
         match self {
             Self::Hid => "2.4G",

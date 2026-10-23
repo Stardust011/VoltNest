@@ -1,12 +1,7 @@
-//! `ble-bas` 协议家族：标准 BLE Battery Service 的电量读取。
-//!
-//! 实测结论（`docs/ble-rust-verification.md`）：
-//!
-//! - 服务 `0x180F` Battery Service，特征 `0x2A19` Battery Level（READ + NOTIFY）；
-//! - 设备名必须读 GAP `0x2A00`，**禁止**使用 `BluetoothLEDevice.Name` /
-//!   `properties().local_name`（Windows 注册表缓存，用户可改名）；
-//! - 读取一律 `Uncached`，缓存值不得进入状态机（E）；
-//! - 充电状态协议层不可得（`0x2BF0`/`0x2BEA` 未实现，`0x2BED` 失真）→ 恒为 Unknown。
+//! `ble-bas` 协议家族：标准 BLE Battery Service 的电量读取。实测结论（`docs/ble-rust-verification.md`）：
+//! 服务 `0x180F` 的 `0x2A19`（READ + NOTIFY）；设备名必须读 GAP `0x2A00`，禁用 `BluetoothLEDevice.Name` /
+//! `properties().local_name`（Windows 注册表缓存，用户可改名）；读取一律 `Uncached`，缓存值不得进状态机（E）；
+//! 充电状态协议层不可得（`0x2BF0`/`0x2BEA` 未实现，`0x2BED` 失真）→ 恒为 Unknown。
 
 #![forbid(unsafe_code)]
 #![deny(clippy::disallowed_types)]
@@ -37,8 +32,7 @@ pub const MAX_TRACKED: usize = 8;
 /// 全局同时建链上限（O-4）。
 pub const MAX_CONCURRENT: usize = 2;
 
-/// 定时器槽位上限：`btleplug` 的单线程巡检最坏 8×9s=72s > 60s 周期，
-/// 所以 I/O 必须是 2 个并行执行器（ADR-0010 D6 的算术依据）。
+/// I/O 并行执行器数：`btleplug` 单线程巡检最坏 8×9s=72s > 60s 周期，故 I/O 须由两个并行执行器承担（ADR-0010 D6 的算术依据）。
 pub const IO_WORKERS: usize = 2;
 
 /// 连续失败多少次后进入退避（O-5）。

@@ -8,6 +8,10 @@ node_modules/
 dist/
 apps/desktop/src-tauri/gen/
 
+# Python 字节码缓存
+__pycache__/
+*.pyc
+
 # 运行时与本地数据
 *.log
 logs/

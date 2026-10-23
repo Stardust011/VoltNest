@@ -15,15 +15,9 @@ pub const CHAR_GAP_APPEARANCE: u16 = 0x2A01;
 /// Battery Level Status：**只用于诊断展示**，失真，不进入状态机。
 pub const CHAR_BATTERY_LEVEL_STATUS: u16 = 0x2BED;
 
-/// 解析 GAP `0x2A01` Appearance。
-///
-/// Appearance 是 16 位枚举（`category << 6 | subcategory`），按小端序传输。
-/// 只有**恰好两个字节**才算取得有效值；长度不符、读取失败都返回 `None`，
-/// 调用方据此走「未取得 Appearance」的分支，绝不补默认值。
-///
-/// 这里只做长度与字节序的机械解析，**不做**语义映射——映射表在
-/// [`voltnest_provider::classify`] 里集中维护，保证「标准数值」与「应用层分类」
-/// 两件事分开可核对。
+/// 解析 GAP `0x2A01` Appearance：16 位枚举（`category << 6 | subcategory`），小端序传输。
+/// 只有恰好两个字节才算有效；长度不符即 `None`，绝不补默认值。只做长度与字节序的机械解析，
+/// 语义映射集中在 [`voltnest_provider::classify`]，让「标准数值」与「应用层分类」两件事分开可核对。
 pub fn parse_appearance(bytes: &[u8]) -> Option<u16> {
     match bytes.len() {
         2 => Some(u16::from_le_bytes([bytes[0], bytes[1]])),
@@ -31,16 +25,10 @@ pub fn parse_appearance(bytes: &[u8]) -> Option<u16> {
     }
 }
 
-/// 解析 `0x2A19` 读数。
+/// 解析 `0x2A19` 读数：`[0x64]` → 100%，`[0x00]` → 0%。
 ///
-/// ```text
-/// [0x64] -> 100%
-/// [0x00] -> 0%
-/// ```
-///
-/// 注意：单字节 `0x00` 是**合法的 0%**，不是「全零 payload」。
-/// 规格 §5 的「全零 payload 判不可读」针对的是 HID 的三字节 payload；
-/// 在这里套用会把真正没电的设备判成不可读。长度 > 1 且全零才按不可读处理。
+/// 单字节 `0x00` 是合法的 0% 而非「全零 payload」；规格 §5 的「全零 payload 判不可读」针对 HID 三字节 payload，
+/// 套用在此会把真没电的设备判成不可读。长度 > 1 且全零才按不可读处理。
 pub fn parse_battery_level(bytes: &[u8]) -> Result<Percent, ErrorCode> {
     if bytes.is_empty() {
         return Err(ErrorCode::EmptyPayload);
@@ -55,10 +43,8 @@ pub fn parse_battery_level(bytes: &[u8]) -> Result<Percent, ErrorCode> {
     Percent::new(bytes[0]).ok_or(ErrorCode::PercentOutOfRange)
 }
 
-/// 解析 GAP `0x2A00` 的设备名：去掉尾部 NUL 与首尾空白。
-///
-/// HID 与 BLE 的 `model_name_raw` 都由各自 Provider 上报原文，`modelKey`
-/// 归一化只在宿主做（D4）；这里的处理只是为了不让填充字节进入展示名。
+/// 解析 GAP `0x2A00` 设备名：去尾部 NUL 与首尾空白。
+/// `model_name_raw` 原文由 Provider 上报，`modelKey` 归一化只在宿主做（D4）；此处只为避免填充字节进入展示名。
 pub fn parse_device_name(bytes: &[u8]) -> Option<String> {
     let text: String = bytes
         .iter()

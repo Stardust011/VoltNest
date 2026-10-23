@@ -1,8 +1,4 @@
-/**
- * Tauri 命令封装。
- *
- * 前端只通过这里与宿主通信：不直接调用 HID/BLE，不读写 settings.json / state.json。
- */
+// Tauri 命令封装：前端只经此与宿主通信，不直接调 HID/BLE 或读写配置文件。
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -13,10 +9,10 @@ import type {
   Snapshot,
 } from "./types";
 
-/** 快照事件名（W：`state://snapshot`）。 */
+// 快照事件名（W：`state://snapshot`）。
 export const SNAPSHOT_EVENT = "state://snapshot";
 
-/** 诊断数据变更事件名（宿主侧 `host::DIAGNOSTICS_EVENT`）。 */
+// 诊断变更事件名（宿主侧 `host::DIAGNOSTICS_EVENT`）。
 export const DIAGNOSTICS_EVENT = "state://diagnostics";
 
 export function getSnapshot(): Promise<Snapshot> {
@@ -55,12 +51,7 @@ export function subscribeSnapshot(handler: (snap: Snapshot) => void) {
   return listen<Snapshot>(SNAPSHOT_EVENT, (event) => handler(event.payload));
 }
 
-/**
- * 订阅「诊断数据已变」信号（采集线程组状态 / 重启次数发生变化）。
- *
- * 事件不带载荷：诊断数据唯一来源仍是 `get_diagnostics`，宿主只负责告诉我们
- * 「该重新拉了」，避免把 transports 与事件环形缓冲塞进事件通道。
- */
+// 订阅「诊断已变」信号。事件无载荷——数据仍以 `get_diagnostics` 为准，宿主只通知「该重拉」，避免把 transports/环形缓冲塞进事件通道。
 export function subscribeDiagnostics(handler: () => void) {
   return listen(DIAGNOSTICS_EVENT, () => handler());
 }

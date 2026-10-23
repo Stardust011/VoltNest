@@ -1,14 +1,6 @@
-//! 宿主事件循环：唯一持有 `Engine` 的地方。
+//! 宿主事件循环：唯一持有 `Engine` 的地方（§5.2）。
 //!
-//! 职责边界（规格 §5.2）：
-//!
-//! - **唯一时钟调用点**：每批事件只取一次 `now_utc_ms()` 并向下透传；
-//! - **1s tick** 驱动退化，只有真变化才发布快照；
-//! - **250ms 合并窗口**：窗口内的多次变化合成一次快照，上限 4Hz；
-//! - **`rev` 单调**：所有快照（含命令直接取的）都在同一把锁里生成。
-//!
-//! Provider 线程只往 `tx` 里塞事件，永远不碰 `Engine`；`state.json` 的写入
-//! 也只在发布路径上发生，避免「状态机里做 I/O」。
+//! 职责边界：唯一时钟调用点（每批只取一次 `now_utc_ms()` 向下透传）；1s tick 驱动退化且仅真变化才发布；250ms 合并窗口把多次变化合成一次快照（≤4Hz）；所有快照在同一把锁里生成保证 `rev` 单调。Provider 线程只往 `tx` 塞事件、永不碰 `Engine`；`state.json` 只在发布路径写，状态机里不做 I/O。
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -56,10 +48,8 @@ pub enum HostEvent {
     },
     /// 强制发布一次快照（设置变更、手动重启等用户动作）。
     Wake,
-    /// 采集线程组状态变化（重启次数、状态、最近错误）：诊断页需要重新拉取。
-    ///
-    /// 只发信号不带载荷：诊断数据仍由 `get_diagnostics` 提供，宿主不在事件通道里
-    /// 复制 transports 与事件环形缓冲（诊断数据只有一个来源）。
+    /// 采集线程组状态变化（重启次数/状态/最近错误），诊断页据此重拉。
+    /// 只发信号不带载荷：诊断数据唯一来源是 `get_diagnostics`，事件通道不复制缓冲。
     Diagnostics,
 }
 
@@ -221,11 +211,8 @@ pub fn publish(app: &AppHandle, shared: &Arc<Shared>, now: u64) {
     persist(shared, now, false);
 }
 
-/// 告诉前端「诊断数据已变」。
-///
-/// 采集线程组的 `restarts` / `status` 不在 [`Snapshot`] 里（它们属于线程组而不是设备），
-/// 所以快照事件推不动诊断页。没有这条信号时，诊断页只能靠切页时重新拉取，
-/// 后台退避重启、甚至手动重启后的计数变化都不会自己出现在界面上。
+/// 通知前端诊断数据已变。`restarts`/`status` 不属于设备、不在快照里，
+/// 缺这条信号诊断页就只能切页时重拉，后台退避/手动重启的计数变化不会自动上界面。
 fn emit_diagnostics(app: &AppHandle) {
     if let Err(err) = app.emit(DIAGNOSTICS_EVENT, ()) {
         log::warn!("诊断事件发送失败: {err}");
@@ -286,10 +273,7 @@ pub fn persist(shared: &Shared, now: u64, force: bool) {
     }
 }
 
-/// 由设置构造引擎配置。
-///
-/// 阈值只来自 Provider 与档位（Z-1），用户的 `lowThresholds` 只影响**通知**，
-/// 不参与状态退化 —— 两者共用「阈值」这个词，但语义完全不同。
+/// 由设置构造引擎配置。「阈值」一词两义：Z-1 的状态退化阈值来自 Provider/档位，用户的 `lowThresholds` 只影响通知、不参与退化。
 pub fn engine_config(settings: &Settings) -> EngineConfig {
     EngineConfig {
         sensitivity: settings.sensitivity(),

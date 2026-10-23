@@ -1,20 +1,10 @@
 //! `hid-vbas` 的通用协议描述（**品牌无关**）。
 //!
-//! 一个品牌接入 = 一份 [`BrandSpec`]：设备怎么匹配、帧长什么样、电量与充电标志
-//! 落在第几个字节、若要主动查询该怎么发。解析器（[`crate::frame`]）与运行时
-//! （[`crate::provider`]）只读这些字段，**不存在** `match brand_id { ... }` 分支，
-//! 因此新增品牌不需要修改任何既有代码路径（ADR-0011）。
+//! 一个品牌接入 = 一份 [`BrandSpec`]：怎么匹配、帧长什么样、电量与充电标志落在第几个字节、是否要主动查询。解析器（[`crate::frame`]）与运行时（[`crate::provider`]）只读这些字段，无 `match brand_id` 分支，新增品牌不改任何既有代码（ADR-0011）。
 //!
-//! 两个层次要分清：
+//! 两层：**家族**（`hid-vbas`，协议形状：HID 私有通道+定长报告+命令字，能力在 [`voltnest_provider::HID_VBAS`]）与**品牌**（[`BrandSpec`]，填充 VID/PID 表、UsagePage、字段下标、充电取值、查询报文）。差异只在数据。
 //!
-//! - **家族**（`hid-vbas`）：协议形状相同 —— HID 私有通道 + 定长报告 + 命令字，
-//!   电量从某帧的某几个字节读出来。家族级能力与节奏是 `voltnest-provider`
-//!   里的 [`voltnest_provider::HID_VBAS`]。
-//! - **品牌**（[`BrandSpec`]）：填充差异 —— VID/PID 表、UsagePage、字段下标、
-//!   充电标志取值、查询报文。差异只落在数据上。
-//!
-//! [`BrandSpec::validate`] 在进程内首次枚举前跑一次，把「字段下标越界」这类
-//! 手写错误挡在读线程之外：写错即启动失败，不会带病解析出错误电量。
+//! [`BrandSpec::validate`] 在首次枚举前跑一次，把「字段下标越界」等手写错误挡在读线程外：写错即启动失败，不会带病解析出错误电量。
 
 use voltnest_provider::{Cadence, ChargingSupport, ProviderProfile};
 

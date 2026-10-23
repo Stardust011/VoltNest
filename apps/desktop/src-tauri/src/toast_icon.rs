@@ -1,10 +1,4 @@
-//! Toast 图标落盘。
-//!
-//! Windows 的 Toast 头图（`appLogoOverride`）和 AUMID 的 `IconUri` 都只认
-//! **磁盘上的真实图片文件**，不接受 exe 内嵌资源；而安装目录运行时只读（规格 §13），
-//! 所以把打包进来的一张 128×128 PNG 落到数据目录，启动时幂等写一次。
-//!
-//! 图标缺失不是致命错误：Toast 照样发得出去，只是头图会回落到 AUMID 解析的结果。
+//! Toast 图标落盘。Windows 的 `appLogoOverride` 与 AUMID 的 `IconUri` 只认磁盘真实图片、不认 exe 内嵌资源；安装目录运行时只读（§13），故把打包的 128×128 PNG 幂等落到数据目录。图标缺失非致命：Toast 照发，头图回落 AUMID 解析结果。
 
 use std::fs;
 use std::path::{Path, PathBuf};
