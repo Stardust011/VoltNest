@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, ref, watch, type Component } from "vue";
+import { BatteryLow, BatteryMedium } from "@lucide/vue";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -11,6 +12,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  applyThresholdEdit,
+  parseThresholdInput,
+  validateThresholdPair,
+  type ThresholdIndex,
+} from "../lib/thresholds";
 import type { NotificationMode, Sensitivity, SettingsDto } from "../lib/types";
 
 const props = defineProps<{ settings: SettingsDto }>();
@@ -31,7 +38,77 @@ const modeOptions: Array<{ value: NotificationMode; label: string }> = [
   { value: "off", label: "关闭" },
 ];
 
+/**
+ * 两档提醒的展示信息。
+ *
+ * `id` / `errorId` 必须是稳定且唯一的：输入框靠 `id` 与 Label 的 `for` 配对，
+ * 错误文本靠 `errorId` 被 `aria-describedby` 引用。
+ */
+interface ThresholdRow {
+  index: ThresholdIndex;
+  id: string;
+  errorId: string;
+  label: string;
+  hint: string;
+  icon: Component;
+}
+
+const thresholdRows: readonly ThresholdRow[] = [
+  {
+    index: 0,
+    id: "threshold-first",
+    errorId: "threshold-first-error",
+    label: "第一档提醒",
+    hint: "电量较低，首次提醒",
+    icon: BatteryMedium,
+  },
+  {
+    index: 1,
+    id: "threshold-second",
+    errorId: "threshold-second-error",
+    label: "第二档提醒",
+    hint: "电量更低，再次提醒",
+    icon: BatteryLow,
+  },
+];
+
 const thresholds = computed(() => props.settings.notifications.lowThresholds);
+
+/**
+ * 输入框的临时文本。
+ *
+ * 不能直接把 `thresholds` 喂给输入框：正式值是数字，空串和小数没法表达，
+ * 一旦把非法输入写回设置，宿主回传的旧值会把用户正在输的内容顶掉。
+ * 所以这里保留一份字符串缓冲，合法且失焦时才通过 `setThreshold` 落到正式值。
+ */
+const thresholdInputs = ref<[string, string]>([
+  String(thresholds.value[0]),
+  String(thresholds.value[1]),
+]);
+
+/** 实时校验结果：输入过程中就能变红，不用等失焦。 */
+const thresholdErrors = computed<[string | null, string | null]>(() =>
+  validateThresholdPair(thresholdInputs.value),
+);
+
+/**
+ * 宿主回传的正式值变化时校准缓冲。
+ *
+ * 只同步「没被用户改过」的镜像值：用户输入过又没提交的内容一律不动，
+ * 免得宿主回传把红框里的半成品悄悄替换掉（那也是一种自动调整）。
+ */
+watch(
+  thresholds,
+  (next, previous) => {
+    const buffered: [string, string] = [thresholdInputs.value[0], thresholdInputs.value[1]];
+    for (const index of [0, 1] as const) {
+      if (buffered[index] !== String(previous?.[index])) continue;
+      buffered[index] = String(next[index]);
+    }
+    thresholdInputs.value = buffered;
+  },
+  { deep: true },
+);
 
 function patch(partial: Partial<SettingsDto>) {
   emit("change", { ...props.settings, ...partial });
@@ -49,18 +126,52 @@ function setMode(mode: unknown) {
   patch({ notifications: { ...props.settings.notifications, mode: mode as NotificationMode } });
 }
 
-function setThreshold(index: 0 | 1, raw: string | number) {
-  const value = Number.parseInt(String(raw), 10);
-  if (Number.isNaN(value)) return;
-  const clamped = Math.min(95, Math.max(5, value));
-  const next: [number, number] = [thresholds.value[0], thresholds.value[1]];
-  next[index] = clamped;
-  // 高阈值必须严格大于低阈值，否则同一档会重复触发。
-  if (next[0] <= next[1]) {
-    if (index === 0) next[0] = next[1] + 1;
-    else next[1] = next[0] - 1;
-  }
+/**
+ * 写正式阈值。越界 / 顺序兜底在 `applyThresholdEdit` 里（0 / 95 边界会挪另一档），
+ * 非整数直接放弃，正式值保持原样。
+ */
+function setThreshold(index: ThresholdIndex, raw: string | number) {
+  const next = applyThresholdEdit(thresholds.value, index, raw);
+  if (!next) return;
   patch({ notifications: { ...props.settings.notifications, lowThresholds: next } });
+}
+
+/** 输入只更新缓冲，不写正式值：空串和半成品输入必须留在输入框里。 */
+function onThresholdInput(index: ThresholdIndex, value: string) {
+  if (index === 0) thresholdInputs.value = [value, thresholdInputs.value[1]];
+  else thresholdInputs.value = [thresholdInputs.value[0], value];
+}
+
+/**
+ * 失焦提交：**不做任何自动调整**。
+ *
+ * 值非法（空 / 非整数 / 越界 / 两档顺序不成立）时既不写正式值，
+ * 也不改写用户输入、不回退成旧值 —— 红框继续留着，等用户自己改。
+ * 只有整对值合法且与正式值不同才走 `setThreshold(index, raw)`。
+ */
+function commitThreshold(index: ThresholdIndex) {
+  if (thresholdErrors.value[index] !== null) return;
+  const value = parseThresholdInput(thresholdInputs.value[index]);
+  if (value === null || value === thresholds.value[index]) return;
+  setThreshold(index, value);
+}
+
+function onThresholdBlur(index: ThresholdIndex) {
+  commitThreshold(index);
+}
+
+/** 回车等价于失焦提交，避免键盘用户必须先点别处才生效。 */
+function onThresholdEnter(event: KeyboardEvent) {
+  (event.target as HTMLInputElement | null)?.blur();
+}
+
+/**
+ * 数字框仍允许键入 `e` / `+` / `-` / `.`，这里直接挡掉：只要整数百分比。
+ * 不拦组合键，Ctrl+A / Ctrl+V 之类照常。
+ */
+function onThresholdKeydown(event: KeyboardEvent) {
+  if (event.ctrlKey || event.metaKey || event.altKey) return;
+  if (["e", "E", "+", "-", ".", ","].includes(event.key)) event.preventDefault();
 }
 
 /** Checkbox 的 modelValue 还可能是 "indeterminate"，这里只认布尔。 */
@@ -92,8 +203,9 @@ function onCheckbox(value: boolean | "indeterminate", apply: (checked: boolean) 
     <Card class="gap-3 py-4">
       <CardHeader class="px-4">
         <CardTitle class="text-sm">低电量通知</CardTitle>
+        <p class="text-muted-foreground text-xs">电量下降时，按以下档位依次提醒。</p>
       </CardHeader>
-      <CardContent class="px-4">
+      <CardContent class="flex flex-col gap-3 px-4">
         <div class="flex items-center justify-between gap-3">
           <Label for="notification-mode" class="text-muted-foreground text-xs font-normal">
             通知方式
@@ -110,31 +222,53 @@ function onCheckbox(value: boolean | "indeterminate", apply: (checked: boolean) 
           </Select>
         </div>
 
-        <div class="mt-3 flex items-center justify-between gap-3">
-          <Label for="threshold-low" class="text-muted-foreground text-xs font-normal">
-            提醒电量
-          </Label>
-          <div class="flex items-center gap-1.5">
-            <Input
-              id="threshold-low"
-              type="number"
-              min="5"
-              max="95"
-              class="h-8 w-16 text-center text-xs tabular-nums"
-              :model-value="thresholds[0]"
-              @change="setThreshold(0, ($event.target as HTMLInputElement).value)"
-            />
-            <span class="text-muted-foreground text-xs">→</span>
-            <Input
-              type="number"
-              min="5"
-              max="95"
-              aria-label="第二档提醒电量"
-              class="h-8 w-16 text-center text-xs tabular-nums"
-              :model-value="thresholds[1]"
-              @change="setThreshold(1, ($event.target as HTMLInputElement).value)"
-            />
-            <span class="text-muted-foreground text-xs">%</span>
+        <!--
+          两档各占一行，不各占一张卡片：同一张 Card 里保持纵向列表，
+          左侧是图标 + 名称/说明，右侧是百分比输入框 + 外置的 %。
+        -->
+        <div v-for="row in thresholdRows" :key="row.id" class="flex flex-col gap-1">
+          <div class="flex items-start justify-between gap-3">
+            <div class="flex min-w-0 flex-1 items-center gap-2">
+              <component :is="row.icon" class="size-4 shrink-0 text-foreground" />
+              <div class="min-w-0">
+                <Label :for="row.id" class="text-xs font-medium">{{ row.label }}</Label>
+                <p class="text-muted-foreground mt-0.5 text-[11px] leading-snug">{{ row.hint }}</p>
+              </div>
+            </div>
+            <div class="flex shrink-0 items-center gap-1.5">
+              <Input
+                :id="row.id"
+                type="number"
+                min="0"
+                max="95"
+                step="1"
+                inputmode="numeric"
+                autocomplete="off"
+                :aria-label="`${row.label}电量（百分比）`"
+                :aria-invalid="thresholdErrors[row.index] ? 'true' : undefined"
+                :aria-describedby="thresholdErrors[row.index] ? row.errorId : undefined"
+                :model-value="thresholdInputs[row.index]"
+                :class="[
+                  'h-8 w-14 px-2 text-right text-xs tabular-nums',
+                  thresholdErrors[row.index] ? 'text-destructive' : '',
+                ]"
+                @update:model-value="(value) => onThresholdInput(row.index, String(value))"
+                @blur="onThresholdBlur(row.index)"
+                @keydown="onThresholdKeydown"
+                @keydown.enter="onThresholdEnter"
+              />
+              <span class="text-muted-foreground text-xs" aria-hidden="true">%</span>
+            </div>
+          </div>
+          <!-- 错误行常驻占位，出现/消失不会让上下内容跳动。 -->
+          <div class="flex min-h-4 justify-end">
+            <p
+              v-if="thresholdErrors[row.index]"
+              :id="row.errorId"
+              class="text-destructive text-right text-[11px] leading-tight"
+            >
+              {{ thresholdErrors[row.index] }}
+            </p>
           </div>
         </div>
       </CardContent>
