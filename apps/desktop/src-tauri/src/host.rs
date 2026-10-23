@@ -33,6 +33,9 @@ use crate::{notification, tray};
 /// 快照事件名（与前端 `SNAPSHOT_EVENT` 一字不差）。
 pub const SNAPSHOT_EVENT: &str = "state://snapshot";
 
+/// 诊断数据变更事件名（与前端 `DIAGNOSTICS_EVENT` 一字不差）。
+pub const DIAGNOSTICS_EVENT: &str = "state://diagnostics";
+
 /// 合并窗口：250ms 内的变化发一次快照（W-5）。
 pub const SNAPSHOT_WINDOW_MS: u64 = 250;
 
@@ -42,7 +45,7 @@ pub const TICK_MS: u64 = 1_000;
 /// 队列深度告警阈值（§3.3：超过 64 条报警）。
 pub const QUEUE_ALERT_DEPTH: usize = 64;
 
-/// 宿主收到的两类唤醒。
+/// 宿主收到的三类唤醒。
 pub enum HostEvent {
     /// Provider 线程组上报的原始事件。
     Provider {
@@ -53,6 +56,11 @@ pub enum HostEvent {
     },
     /// 强制发布一次快照（设置变更、手动重启等用户动作）。
     Wake,
+    /// 采集线程组状态变化（重启次数、状态、最近错误）：诊断页需要重新拉取。
+    ///
+    /// 只发信号不带载荷：诊断数据仍由 `get_diagnostics` 提供，宿主不在事件通道里
+    /// 复制 transports 与事件环形缓冲（诊断数据只有一个来源）。
+    Diagnostics,
 }
 
 /// 跨线程共享的宿主状态。
@@ -213,6 +221,17 @@ pub fn publish(app: &AppHandle, shared: &Arc<Shared>, now: u64) {
     persist(shared, now, false);
 }
 
+/// 告诉前端「诊断数据已变」。
+///
+/// 采集线程组的 `restarts` / `status` 不在 [`Snapshot`] 里（它们属于线程组而不是设备），
+/// 所以快照事件推不动诊断页。没有这条信号时，诊断页只能靠切页时重新拉取，
+/// 后台退避重启、甚至手动重启后的计数变化都不会自己出现在界面上。
+fn emit_diagnostics(app: &AppHandle) {
+    if let Err(err) = app.emit(DIAGNOSTICS_EVENT, ()) {
+        log::warn!("诊断事件发送失败: {err}");
+    }
+}
+
 /// 把 `Engine` 当前状态整理成可落盘的 `state.json`。
 pub fn build_state(shared: &Shared) -> StateFile {
     let engine = lock(&shared.engine);
@@ -328,6 +347,7 @@ pub fn spawn_loop(app: AppHandle, shared: Arc<Shared>, rx: Receiver<HostEvent>) 
                         dirty |= apply_event(&shared, transport, &event, clock::now_utc_ms());
                     }
                     Ok(HostEvent::Wake) => dirty = true,
+                    Ok(HostEvent::Diagnostics) => emit_diagnostics(&app),
                     Err(RecvTimeoutError::Timeout) => {}
                     Err(RecvTimeoutError::Disconnected) => break,
                 }
@@ -341,6 +361,7 @@ pub fn spawn_loop(app: AppHandle, shared: Arc<Shared>, rx: Receiver<HostEvent>) 
                             dirty |= apply_event(&shared, transport, &event, clock::now_utc_ms());
                         }
                         HostEvent::Wake => dirty = true,
+                        HostEvent::Diagnostics => emit_diagnostics(&app),
                     }
                 }
 

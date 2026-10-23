@@ -16,6 +16,9 @@ import type {
 /** 快照事件名（W：`state://snapshot`）。 */
 export const SNAPSHOT_EVENT = "state://snapshot";
 
+/** 诊断数据变更事件名（宿主侧 `host::DIAGNOSTICS_EVENT`）。 */
+export const DIAGNOSTICS_EVENT = "state://diagnostics";
+
 export function getSnapshot(): Promise<Snapshot> {
   return invoke<Snapshot>("get_snapshot");
 }
@@ -50,4 +53,14 @@ export function completeOnboarding(choice: OnboardingChoice): Promise<SettingsDt
 
 export function subscribeSnapshot(handler: (snap: Snapshot) => void) {
   return listen<Snapshot>(SNAPSHOT_EVENT, (event) => handler(event.payload));
+}
+
+/**
+ * 订阅「诊断数据已变」信号（采集线程组状态 / 重启次数发生变化）。
+ *
+ * 事件不带载荷：诊断数据唯一来源仍是 `get_diagnostics`，宿主只负责告诉我们
+ * 「该重新拉了」，避免把 transports 与事件环形缓冲塞进事件通道。
+ */
+export function subscribeDiagnostics(handler: () => void) {
+  return listen(DIAGNOSTICS_EVENT, () => handler());
 }
