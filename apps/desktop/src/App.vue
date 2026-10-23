@@ -59,8 +59,8 @@ const navItems: Array<{ id: View; label: string; icon: Component }> = [
 
 /**
  * 面板行：快照里的 `cards` 只覆盖「HID + BLE 同一型号」的合并对，
- * 其余设备各自成行。行的顺序直接沿用 `devices` 的数组顺序 —— 排序在
- * Rust 决定（W-3），前端不得重排。
+ * 其余设备各自成行。行的顺序直接沿用 `devices` 的数组顺序 —— 排序统一在
+ * Rust 决定，前端不得重排。
  *
  * 合并卡的非活跃成员不再单独出行，它的信息以副行文案出现在主成员卡上。
  */
@@ -147,7 +147,7 @@ function scheduleDiagnosticsRefresh() {
 /**
  * 建立诊断订阅并拉取首帧。
  *
- * 顺序与快照一致（W-6）：**先订阅 → 再拉全量**。反过来写会漏掉
+ * 顺序与快照一致：**先订阅 → 再拉全量**。反过来写会漏掉
  * 「拉取已返回、订阅尚未建立」这段时间内发生的线程组变化。
  */
 async function startDiagnosticsFeed() {
@@ -185,7 +185,8 @@ async function applyAutostart(enabled: boolean) {
   try {
     const actual = await setAutostart(enabled);
     if (settings.value) settings.value = { ...settings.value, autostart: actual };
-    if (actual !== enabled) error.value = enabled ? "无法写入启动项，请检查系统策略" : "无法移除启动项";
+    if (actual !== enabled)
+      error.value = enabled ? "无法写入启动项，请检查系统策略" : "无法移除启动项";
   } catch (e) {
     fail(e);
     await loadSettings();
@@ -254,7 +255,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="bg-muted/40 dark:bg-background flex h-screen flex-col overflow-hidden select-none">
+  <div class="flex h-screen flex-col overflow-hidden bg-muted/40 select-none dark:bg-background">
     <TitleBar />
 
     <nav class="flex shrink-0 items-center gap-1 border-b px-3 py-1.5">
@@ -289,15 +290,13 @@ onBeforeUnmount(() => {
           v-else-if="connected"
           class="flex flex-col items-center justify-center gap-2 py-16 text-center"
         >
-          <div class="border-muted-foreground/40 size-3 rounded-full border-2" />
+          <div class="size-3 rounded-full border-2 border-muted-foreground/40" />
           <p class="text-sm font-medium">还没有发现设备</p>
-          <p class="text-muted-foreground max-w-[280px] text-xs leading-relaxed">
+          <p class="max-w-[280px] text-xs leading-relaxed text-muted-foreground">
             插上 2.4G 接收器，或在系统设置里把蓝牙耳机连接一次，设备会自己出现在这里。
           </p>
         </div>
-        <div v-else class="text-muted-foreground py-16 text-center text-sm">
-          正在连接宿主进程…
-        </div>
+        <div v-else class="py-16 text-center text-sm text-muted-foreground">正在连接宿主进程…</div>
       </template>
 
       <SettingsPanel
@@ -315,7 +314,7 @@ onBeforeUnmount(() => {
         @replay-onboarding="replayOnboarding = true"
       />
 
-      <div v-else class="text-muted-foreground py-16 text-center text-sm">正在读取…</div>
+      <div v-else class="py-16 text-center text-sm text-muted-foreground">正在读取…</div>
     </main>
 
     <OnboardingFlow
@@ -327,7 +326,7 @@ onBeforeUnmount(() => {
     <Alert
       v-if="error"
       variant="destructive"
-      class="bg-popover fixed bottom-4 left-1/2 z-50 w-[calc(100%-2rem)] max-w-[420px] -translate-x-1/2 shadow-lg"
+      class="fixed bottom-4 left-1/2 z-50 w-[calc(100%-2rem)] max-w-[420px] -translate-x-1/2 bg-popover shadow-lg"
     >
       <CircleAlert />
       <AlertDescription>
@@ -336,7 +335,7 @@ onBeforeUnmount(() => {
           <Button
             variant="ghost"
             size="sm"
-            class="text-destructive -my-1 h-7 shrink-0 px-2"
+            class="-my-1 h-7 shrink-0 px-2 text-destructive"
             type="button"
             @click="error = null"
           >

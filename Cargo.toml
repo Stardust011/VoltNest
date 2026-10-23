@@ -1,8 +1,6 @@
 [workspace]
 resolver = "3"
 members = ["crates/*", "apps/desktop/src-tauri"]
-# tools/ 是取证探针，不属于产品代码，不得被产品 crate 依赖（ADR-0010 D1）。
-exclude = ["tools/hid-probe-rs", "tools/ble-probe-rs"]
 
 [workspace.package]
 version = "0.1.0"
@@ -29,5 +27,6 @@ codegen-units = 1
 lto = "thin"
 opt-level = "s"
 strip = "symbols"
-# 注意：不得设置 panic = "abort"。Provider 线程依赖 catch_unwind 做故障隔离（RT-2 / ADR-0010 D7）。
+# 不要设置 panic = "abort"：采集线程靠 catch_unwind 做故障隔离，
+# unwind 表被裁掉后单个 transport 的 panic 会直接带走整个进程。
 

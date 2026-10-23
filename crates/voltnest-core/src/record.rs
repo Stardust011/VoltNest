@@ -1,20 +1,20 @@
-//! L1 设备记录：每个 transport 一条，**永不合并**（§9.2）。
+//! 设备记录：每个 transport 一条，永不合并。
 //!
-//! L1 持有身份、读数、状态与新鲜度；L2 只是渲染分组，不改变这里的任何字段。
+//! 记录持有身份、读数、状态与新鲜度；呈现分组只读取它，不改这里的任何字段。
 
 use crate::state::DeviceState;
 use voltnest_provider::{DeviceClassification, ErrorCode, Percent, StableId, Transport};
 
 /// 单台设备在一次「出现」里最多记住多少种坏帧（见 [`Record::unreadable_kinds`]）。
 ///
-/// 上限的作用是兜住「每帧字节都不同」的极端情况（例如帧里带计数器）：
-/// 达到上限后新的种类不再留痕，宁可少一条诊断，也不让环形缓冲被刷空。
+/// 兜住「每帧字节都不同」的极端情况（如帧内带计数器）：达上限后新种类不再留痕，
+/// 宁可少一条诊断，也不让环形缓冲被刷空。
 pub const UNREADABLE_KINDS_MAX: usize = 32;
 
 /// 一个 transport 上的一台设备。
 #[derive(Clone, Debug)]
 pub struct Record {
-    /// 稳定标识（Y-1）。
+    /// 稳定标识。
     pub stable_id: StableId,
     /// 传输层。
     pub transport: Transport,
@@ -24,14 +24,14 @@ pub struct Record {
     pub display_name: String,
     /// 未归一化的型号原文。
     pub model_name_raw: String,
-    /// 宿主计算的归一化键（D4）。`None` = 查表未命中 / 名称为空。
+    /// 宿主计算的归一化键。`None` = 查表未命中 / 名称为空。
     pub model_key: Option<String>,
-    /// 设备类型识别结果（含证据）。默认 `Unknown`：**不参与**任何状态判定，
-    /// 只影响展示与诊断；重启后未收到 `Arrived` 前恒为 `Unknown`（不落盘）。
+    /// 设备类型识别结果（含证据）。默认 `Unknown`：不参与状态判定，只影响展示与诊断；
+    /// 重启后未收到 `Arrived` 前恒为 `Unknown`（不落盘）。
     pub classification: DeviceClassification,
     /// 当前有效电量。`None` 表示当前无有效读数，**绝不**用 0 代替。
     pub battery: Option<Percent>,
-    /// 上次已知电量，仅用于启动后的副行展示（W-9）。
+    /// 上次已知电量，仅用于启动后的副行展示。
     pub last_known_battery: Option<Percent>,
     /// 上次已知电量的时间戳。
     pub last_known_at_ms: Option<u64>,
@@ -39,29 +39,27 @@ pub struct Record {
     pub charging: Option<bool>,
     /// 状态。
     pub state: DeviceState,
-    /// 唯一退化依据（Z-2）。
+    /// 唯一退化依据。
     pub last_valid_at_ms: Option<u64>,
-    /// 仅用于诊断页展示节奏偏离（Z-2）。
+    /// 仅用于诊断页展示节奏偏离。
     pub last_push_at_ms: Option<u64>,
     /// 最近一次结构化错误。
     pub last_error: Option<ErrorCode>,
-    /// 本次「出现」以来已经记录过的坏帧诊断文本（错误码 + 成因 + 原始字节）。
+    /// 本次「出现」以来记录过的坏帧诊断文本（错误码 + 成因 + 原始字节）。
     ///
-    /// **只用于去重**：坏帧可能每 20ms 一条，重复内容进环形缓冲会把其它线索
-    /// （到达、识别、链路）挤掉。按「不同种类各留一条」而不是「与上一条比」，
-    /// 是因为同一台设备常轮流发出几种非电量报文：交替刷屏时相邻两条永远不同，
-    /// 只比上一条挡不住。读到有效帧**不**清空（好坏帧交替同理），
-    /// 只有设备重新出现（`Offline` → `Unknown`）才清空，让新一段坏帧重新留痕。
+    /// 只用于去重：坏帧可能每 20ms 一条，重复内容会挤掉其它线索。按「不同种类各留一条」而非
+    /// 「与上一条比」——同一设备常轮流发几种非电量报文，只比上一条挡不住交替刷屏。
+    /// 读到有效帧不清空（好坏交替同理），仅设备重新出现（`Offline` → `Unknown`）才清空。
     pub unreadable_kinds: Vec<String>,
-    /// 物理存在（AA）。只由 `Arrived` / `Removed` 改变，**不随 `state` 变化**。
+    /// 物理存在。只由 `Arrived` / `Removed` 改变，不随 `state` 变化。
     pub present: bool,
-    /// 诊断用设备路径（Y-6）。
+    /// 诊断用设备路径。
     pub path: Option<String>,
     /// 首次发现时间。
     pub first_seen_at_ms: u64,
     /// 最近一次出现在枚举中的时间。
     pub last_seen_at_ms: u64,
-    /// Y-3 冲突告警（保留先发现者，不建第二条）。
+    /// 冲突告警（保留先发现者，不建第二条）。
     pub conflict: Option<String>,
 }
 
@@ -104,12 +102,12 @@ impl Record {
 
     /// 距最后一次有效读数的毫秒数；从未有有效读数时为 `None`。
     ///
-    /// 全部时间差使用 `saturating_sub`（Z-8）：系统时间后跳时不得下溢成天文数字。
+    /// 用 `saturating_sub`：系统时间后跳时不得下溢成天文数字。
     pub fn age_ms(&self, now_ms: u64) -> Option<u64> {
         self.last_valid_at_ms.map(|t| now_ms.saturating_sub(t))
     }
 
-    /// 该记录是否还该有托盘图标（AA-1：只由物理存在决定）。
+    /// 该记录是否还该有托盘图标（只由物理存在决定）。
     pub fn has_tray_icon(&self, hidden: bool) -> bool {
         self.present && !hidden
     }
@@ -153,9 +151,9 @@ mod tests {
     fn tray_icon_follows_presence_not_state() {
         let mut r = rec();
         r.state = DeviceState::Offline;
-        assert!(r.has_tray_icon(false), "AA-1：Offline 但物理存在仍保留图标");
+        assert!(r.has_tray_icon(false), "Offline 但物理存在仍保留图标");
         assert!(!r.has_tray_icon(true));
         r.present = false;
-        assert!(!r.has_tray_icon(false), "AA-2：物理消失才销毁");
+        assert!(!r.has_tray_icon(false), "物理消失才销毁");
     }
 }

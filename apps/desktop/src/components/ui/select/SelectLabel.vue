@@ -15,7 +15,7 @@ const forwardedProps = useForwardProps(delegatedProps);
   <SelectLabel
     data-slot="select-label"
     v-bind="forwardedProps"
-    :class="cn('text-muted-foreground px-2 py-1.5 text-xs', props.class)"
+    :class="cn('px-2 py-1.5 text-xs text-muted-foreground', props.class)"
   >
     <slot />
   </SelectLabel>

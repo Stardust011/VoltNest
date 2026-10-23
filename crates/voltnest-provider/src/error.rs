@@ -1,11 +1,9 @@
-//! 结构化错误码。字符串即契约，改名属破坏性变更（ADR-0010）。
+//! 结构化错误码。字符串形式对外可见，改名属破坏性变更。
 
 use std::fmt;
 
-/// Provider 上报的结构化错误码。
-///
-/// 宿主只做**分类**（`Unreadable` / `LinkLost` / `TransportDown`），不重新校验数据，
-/// 因此错误码必须足够细以支撑诊断页的二分排查。
+/// Provider 上报的结构化错误码。宿主只做分类（`Unreadable` / `LinkLost` / `TransportDown`），
+/// 不重新校验数据，故错误码须足够细以支撑诊断页二分排查。
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum ErrorCode {
     /// HID 句柄失效 / 设备从系统移除。
@@ -20,7 +18,7 @@ pub enum ErrorCode {
     EmptyPayload,
     /// 电量字节 > 100。
     PercentOutOfRange,
-    /// BLE 无 `0x180F`（O-2 负缓存触发条件）。
+    /// BLE 无 `0x180F`（负缓存的触发条件）。
     ServiceMissing,
     /// GATT 缓存命中被拒（读取一律 `Uncached`）。
     CachedValueRejected,
@@ -58,7 +56,7 @@ impl fmt::Display for ErrorCode {
 mod tests {
     use super::*;
 
-    /// 字符串是契约：既有字符串不得被改动，只能新增变体。
+    /// 字符串对外可见：既有值不得改动，只能新增变体。
     #[test]
     fn stable_strings() {
         let pairs = [
