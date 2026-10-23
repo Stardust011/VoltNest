@@ -7,19 +7,19 @@
  * `thresholdInputs` 画出来，业务规则全部在这里。
  *
  * 语义（与 Rust 侧一致）：`thresholds[0]` 是第一档（电量较高时先提醒），
- * `thresholds[1]` 是第二档（电量更低时再提醒），两档均在 5%～95%，
+ * `thresholds[1]` 是第二档（电量更低时再提醒），两档均在 0%～95%，
  * 且第一档必须比第二档至少高 1%。
  */
 
-/** 单档下限（含）。 */
-export const THRESHOLD_MIN = 5;
+/** 单档下限（含）。0 是用户要求的合法下限，由 `dto::clamp_thresholds` 同步放开。 */
+export const THRESHOLD_MIN = 0;
 /** 单档上限（含）。 */
 export const THRESHOLD_MAX = 95;
 /** 两档之间的最小间距。 */
 export const THRESHOLD_MIN_GAP = 1;
 
 /** 单档错误文案：空、非整数、越界共用一句，避免用户猜。 */
-export const RANGE_MESSAGE = "请输入 5～95 的整数";
+export const RANGE_MESSAGE = "请输入 0～95 的整数";
 /** 两档联动错误文案。 */
 export const ORDER_MESSAGE = "两档至少相差 1%";
 
@@ -77,7 +77,7 @@ export function validateThresholdPair(
     validateThresholdValue(raws[1]),
   ];
   if (errors[0] !== null || errors[1] !== null) return errors;
-  // 到这里两档都已确认是 5～95 的整数，可以断言非空。
+  // 到这里两档都已确认是 0～95 的整数，可以断言非空。
   if ((first as number) - (second as number) < THRESHOLD_MIN_GAP) {
     errors[0] = ORDER_MESSAGE;
     errors[1] = ORDER_MESSAGE;
@@ -86,14 +86,17 @@ export function validateThresholdPair(
 }
 
 /**
- * 把「某一档的新输入」落到两档正式值上，并保持既有的自动修正顺序：
+ * 把「某一档的新输入」落到两档正式值上，并在越界 / 顺序冲突时做兜底修正：
  *
  * - 编辑第一档：第一档让位，被抬到第二档之上（原实现 `next[0] = next[1] + 1`）；
  * - 编辑第二档：第二档让位，被压到第一档之下（原实现 `next[1] = next[0] - 1`）。
  *
- * 与原实现的**唯一**差别：当修正值撞到 5 / 95 边界时改为移动**另一档**，
+ * 与原实现的**唯一**差别：当修正值撞到 0 / 95 边界时改为移动**另一档**，
  * 而不是把结果推出区间。旧实现先夹紧再修正，遇到第二档已是 95
- * （或第一档已是 5）时会算出 96 / 4，把非法值直接写进设置。
+ * （或第一档已是下限）时会算出 96 / 4，把非法值直接写进设置。
+ *
+ * 注意：设置页现在**不会**在失焦时自动修正用户输入 —— 非法输入直接不提交。
+ * 这里的修正只作为写入口的兜底（例如盘上本来就是非法组合）。
  *
  * 输入不是整数时返回 `null`：调用方据此放弃这次提交，正式值保持不变。
  * 返回新数组，不修改传入的 `current`。
@@ -122,7 +125,7 @@ export function applyThresholdEdit(
       next[1] = next[0] - THRESHOLD_MIN_GAP;
     }
   } else {
-    // 第二档退到 5 还让不开第一档时，只能把第一档往上挪。
+    // 第二档退到 0 还让不开第一档时，只能把第一档往上挪。
     next[1] = Math.max(THRESHOLD_MIN, next[0] - THRESHOLD_MIN_GAP);
     if (next[0] - next[1] < THRESHOLD_MIN_GAP) {
       next[0] = next[1] + THRESHOLD_MIN_GAP;

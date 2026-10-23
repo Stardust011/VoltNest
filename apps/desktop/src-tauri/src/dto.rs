@@ -93,23 +93,27 @@ impl SettingsDto {
     }
 }
 
-/// 阈值必须是一对 `5..=95` 且严格递减的整数（AB-1）。
+/// 阈值必须是一对 `0..=95` 且严格递减的整数（AB-1）。
 ///
 /// 前端已经做过一次约束，但 IPC 是不可信边界：越界值若落盘，下次启动时
 /// `NotificationConfig::normalized()` 会静默改值，用户会看到「设置自己变了」。
+///
+/// 下界是 `0` 而不是 `5`：设置页的输入框允许填写 0%
+/// （`apps/desktop/src/lib/thresholds.ts` 的 `THRESHOLD_MIN`），
+/// 两侧必须一致，否则用户填的 0 会在保存瞬间被这里改成 5。
 fn clamp_thresholds(pair: [u8; 2]) -> [u8; 2] {
-    let a = pair[0].clamp(5, 95);
-    let b = pair[1].clamp(5, 95);
+    let a = pair[0].clamp(0, 95);
+    let b = pair[1].clamp(0, 95);
     let (high, low) = if a == b {
-        (a, a.saturating_sub(1).max(5))
+        (a, a.saturating_sub(1))
     } else {
         (a.max(b), a.min(b))
     };
     if high > low {
         [high, low]
     } else {
-        // 只可能是 a == b == 5：抬高高阈值而不是压低低阈值，避免出现 4%。
-        [6, 5]
+        // 只可能是 a == b == 0：抬高高阈值而不是压低低阈值，避免出现负数。
+        [1, 0]
     }
 }
 
@@ -268,11 +272,14 @@ mod tests {
         assert_eq!(clamp_thresholds([10, 20]), [20, 10]);
         // 相等：拆开一位，避免同一档重复触发。
         assert_eq!(clamp_thresholds([15, 15]), [15, 14]);
-        // 越界：夹到 5..=95 后重排。
-        assert_eq!(clamp_thresholds([200, 0]), [95, 5]);
-        assert_eq!(clamp_thresholds([0, 250]), [95, 5]);
-        // 下界崩坏：不能产生 4 或 0。
-        assert_eq!(clamp_thresholds([5, 5]), [6, 5]);
+        // 下界 0 合法：设置页允许填 0%。
+        assert_eq!(clamp_thresholds([0, 0]), [1, 0]);
+        assert_eq!(clamp_thresholds([1, 0]), [1, 0]);
+        // 越界：夹到 0..=95 后重排。
+        assert_eq!(clamp_thresholds([200, 5]), [95, 5]);
+        assert_eq!(clamp_thresholds([5, 250]), [95, 5]);
+        // 上界修正不能把值推出区间。
+        assert_eq!(clamp_thresholds([95, 95]), [95, 94]);
     }
 
     #[test]
@@ -309,6 +316,6 @@ mod tests {
         let mut dto = SettingsDto::from_settings(&disk);
         dto.notifications.low_thresholds = [0, 250];
         dto.apply_to(&mut disk);
-        assert_eq!(disk.notifications.low_thresholds, [95, 5]);
+        assert_eq!(disk.notifications.low_thresholds, [95, 0]);
     }
 }

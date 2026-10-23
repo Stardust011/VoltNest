@@ -16,8 +16,6 @@ import {
   applyThresholdEdit,
   parseThresholdInput,
   validateThresholdPair,
-  THRESHOLD_MAX,
-  THRESHOLD_MIN,
   type ThresholdIndex,
 } from "../lib/thresholds";
 import type { NotificationMode, Sensitivity, SettingsDto } from "../lib/types";
@@ -88,9 +86,6 @@ const thresholdInputs = ref<[string, string]>([
   String(thresholds.value[1]),
 ]);
 
-/** 当前聚焦的档位：用来避免宿主回传时把用户正在编辑的缓冲覆盖掉。 */
-const focused = ref<ThresholdIndex | null>(null);
-
 /** 实时校验结果：输入过程中就能变红，不用等失焦。 */
 const thresholdErrors = computed<[string | null, string | null]>(() =>
   validateThresholdPair(thresholdInputs.value),
@@ -99,16 +94,15 @@ const thresholdErrors = computed<[string | null, string | null]>(() =>
 /**
  * 宿主回传的正式值变化时校准缓冲。
  *
- * 正在聚焦且内容已被用户改过（与上一版正式值不同）时不覆盖，
- * 否则会在光标处打断输入；失焦提交时还会再对齐一次。
+ * 只同步「没被用户改过」的镜像值：用户输入过又没提交的内容一律不动，
+ * 免得宿主回传把红框里的半成品悄悄替换掉（那也是一种自动调整）。
  */
 watch(
   thresholds,
   (next, previous) => {
     const buffered: [string, string] = [thresholdInputs.value[0], thresholdInputs.value[1]];
     for (const index of [0, 1] as const) {
-      const untouched = buffered[index] === String(previous?.[index]);
-      if (focused.value === index && !untouched) continue;
+      if (buffered[index] !== String(previous?.[index])) continue;
       buffered[index] = String(next[index]);
     }
     thresholdInputs.value = buffered;
@@ -133,7 +127,7 @@ function setMode(mode: unknown) {
 }
 
 /**
- * 写正式阈值。自动修正顺序（含 5 / 95 边界）在 `applyThresholdEdit` 里，
+ * 写正式阈值。越界 / 顺序兜底在 `applyThresholdEdit` 里（0 / 95 边界会挪另一档），
  * 非整数直接放弃，正式值保持原样。
  */
 function setThreshold(index: ThresholdIndex, raw: string | number) {
@@ -148,43 +142,21 @@ function onThresholdInput(index: ThresholdIndex, value: string) {
   else thresholdInputs.value = [thresholdInputs.value[0], value];
 }
 
-/** 把缓冲恢复到某一档的正式值（提交被拒绝时用）。 */
-function resetThresholdInput(index: ThresholdIndex) {
-  const value = String(thresholds.value[index]);
-  onThresholdInput(index, value);
-}
-
 /**
- * 失焦提交。
+ * 失焦提交：**不做任何自动调整**。
  *
- * - 单档非法（空 / 非整数 / 越界）：不写正式值，缓冲退回正式值，
- *   否则红框里会长期停着一个从未生效过的数字；
- * - 单档合法但两档顺序不成立：交给 `setThreshold` 按原有顺序修正，
- *   修正结果立即回填到两个输入框，红框随之消失；
- * - 两档结果与正式值逐位相同：不产生多余的写盘。
+ * 值非法（空 / 非整数 / 越界 / 两档顺序不成立）时既不写正式值，
+ * 也不改写用户输入、不回退成旧值 —— 红框继续留着，等用户自己改。
+ * 只有整对值合法且与正式值不同才走 `setThreshold(index, raw)`。
  */
 function commitThreshold(index: ThresholdIndex) {
-  const raw = thresholdInputs.value[index];
-  const value = parseThresholdInput(raw);
-  if (value === null || value < THRESHOLD_MIN || value > THRESHOLD_MAX) {
-    resetThresholdInput(index);
-    return;
-  }
-  const next = applyThresholdEdit(thresholds.value, index, value);
-  if (!next) {
-    resetThresholdInput(index);
-    return;
-  }
-  // 逐位比较：自动修正可能只挪动了另一档（例如盘上本就是非法组合时）。
-  if (next[0] !== thresholds.value[0] || next[1] !== thresholds.value[1]) {
-    setThreshold(index, value);
-  }
-  // 立即按预期正式值对齐两档；宿主回传后由 watch 再校准一次。
-  thresholdInputs.value = [String(next[0]), String(next[1])];
+  if (thresholdErrors.value[index] !== null) return;
+  const value = parseThresholdInput(thresholdInputs.value[index]);
+  if (value === null || value === thresholds.value[index]) return;
+  setThreshold(index, value);
 }
 
 function onThresholdBlur(index: ThresholdIndex) {
-  focused.value = null;
   commitThreshold(index);
 }
 
@@ -193,8 +165,13 @@ function onThresholdEnter(event: KeyboardEvent) {
   (event.target as HTMLInputElement | null)?.blur();
 }
 
-function onThresholdFocus(index: ThresholdIndex) {
-  focused.value = index;
+/**
+ * 数字框仍允许键入 `e` / `+` / `-` / `.`，这里直接挡掉：只要整数百分比。
+ * 不拦组合键，Ctrl+A / Ctrl+V 之类照常。
+ */
+function onThresholdKeydown(event: KeyboardEvent) {
+  if (event.ctrlKey || event.metaKey || event.altKey) return;
+  if (["e", "E", "+", "-", ".", ","].includes(event.key)) event.preventDefault();
 }
 
 /** Checkbox 的 modelValue 还可能是 "indeterminate"，这里只认布尔。 */
@@ -251,8 +228,8 @@ function onCheckbox(value: boolean | "indeterminate", apply: (checked: boolean) 
         -->
         <div v-for="row in thresholdRows" :key="row.id" class="flex flex-col gap-1">
           <div class="flex items-start justify-between gap-3">
-            <div class="flex min-w-0 flex-1 items-start gap-2">
-              <component :is="row.icon" class="text-destructive/70 mt-0.5 size-4 shrink-0" />
+            <div class="flex min-w-0 flex-1 items-center gap-2">
+              <component :is="row.icon" class="size-4 shrink-0 text-foreground" />
               <div class="min-w-0">
                 <Label :for="row.id" class="text-xs font-medium">{{ row.label }}</Label>
                 <p class="text-muted-foreground mt-0.5 text-[11px] leading-snug">{{ row.hint }}</p>
@@ -261,7 +238,10 @@ function onCheckbox(value: boolean | "indeterminate", apply: (checked: boolean) 
             <div class="flex shrink-0 items-center gap-1.5">
               <Input
                 :id="row.id"
-                type="text"
+                type="number"
+                min="0"
+                max="95"
+                step="1"
                 inputmode="numeric"
                 autocomplete="off"
                 :aria-label="`${row.label}电量（百分比）`"
@@ -273,8 +253,8 @@ function onCheckbox(value: boolean | "indeterminate", apply: (checked: boolean) 
                   thresholdErrors[row.index] ? 'text-destructive' : '',
                 ]"
                 @update:model-value="(value) => onThresholdInput(row.index, String(value))"
-                @focus="onThresholdFocus(row.index)"
                 @blur="onThresholdBlur(row.index)"
+                @keydown="onThresholdKeydown"
                 @keydown.enter="onThresholdEnter"
               />
               <span class="text-muted-foreground text-xs" aria-hidden="true">%</span>
