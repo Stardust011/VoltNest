@@ -4361,6 +4361,7 @@ version = "0.1.0"
 dependencies = [
  "btleplug",
  "futures",
+ "log",
  "tokio",
  "uuid",
  "voltnest-provider",
