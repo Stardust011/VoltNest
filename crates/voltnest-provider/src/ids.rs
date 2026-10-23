@@ -1,4 +1,4 @@
-//! 设备标识与电量 newtype。`stableId` 只用最稳定的物理标识（Y-1..Y-6）：HID 不带 `mi`/`col`，
+//! 设备标识与电量 newtype。`stableId` 只用最稳定的物理标识：HID 不带 `mi`/`col`，
 //! BLE 取配对后的 identity address，绝不用设备名或注册表路径。
 
 use crate::transport::Transport;
@@ -7,17 +7,17 @@ use std::str::FromStr;
 
 /// 带 transport 前缀的稳定设备标识：`hid:7768:6426` / `ble:01:00:00:23:04:35`。
 ///
-/// 一旦落盘（`settings.tray.order` / `state.json`）即属用户数据键空间，改动须伴随 `schemaVersion` 迁移（Y-2）。
+/// 一旦落盘（`settings.tray.order` / `state.json`）即属用户数据键空间，改动须伴随 `schemaVersion` 迁移。
 #[derive(Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Debug)]
 pub struct StableId(String);
 
 impl StableId {
-    /// `hid:{vid:04x}:{pid:04x}`，小写十六进制，不含 `mi`/`col`（Y-2）。
+    /// `hid:{vid:04x}:{pid:04x}`，小写十六进制，不含 `mi`/`col`。
     pub fn hid(vid: u16, pid: u16) -> Self {
         Self(format!("hid:{vid:04x}:{pid:04x}"))
     }
 
-    /// `ble:{a:02x}:{b:02x}:...`，小写、冒号分隔（Y-4）。
+    /// `ble:{a:02x}:{b:02x}:...`，小写、冒号分隔。
     pub fn ble(mac: [u8; 6]) -> Self {
         let [a, b, c, d, e, f] = mac;
         Self(format!(
@@ -37,8 +37,8 @@ impl StableId {
             .and_then(|(p, _)| Transport::from_prefix(p))
     }
 
-    /// 严格解析（ADR-0010 契约细节）：只接受小写十六进制、`hid:` 后恰好两段 4 位、`ble:` 后恰好六段 2 位。
-    /// 不做大小写宽容——宽容会让 Y-3 冲突检测漏判（同一设备出现两条大小写不同的记录而不报警）。
+    /// 严格解析：只接受小写十六进制、`hid:` 后恰好两段 4 位、`ble:` 后恰好六段 2 位。
+    /// 不做大小写宽容——宽容会让冲突检测漏判（同一设备出现两条大小写不同的记录而不报警）。
     pub fn parse(raw: &str) -> Option<Self> {
         let (prefix, rest) = raw.split_once(':')?;
         let transport = Transport::from_prefix(prefix)?;
@@ -76,7 +76,7 @@ impl FromStr for StableId {
 }
 
 /// 电量百分比 newtype：`> 100` 在构造期被拒绝。`u8` 已让「负数」不可表达，
-/// 故规格里 `percent < 0` 在类型层消亡，实现侧只剩 `> 100` 与全零 payload 两种拒绝理由（ADR-0010）。
+/// 故实现侧只剩 `> 100` 与全零 payload 两种拒绝理由。
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
 pub struct Percent(u8);
 
@@ -127,7 +127,7 @@ mod tests {
 
     #[test]
     fn parse_is_strict_about_case_and_width() {
-        // Y-3 依赖严格解析；宽容会让冲突检测漏判。
+        // 冲突检测依赖严格解析；宽容会让同一设备被当成两台，或两台被当成一台。
         assert!(
             StableId::parse("hid:7768:6426:mi_01col02").is_none(),
             "不得带 mi/col"

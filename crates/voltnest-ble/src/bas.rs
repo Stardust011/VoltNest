@@ -27,7 +27,7 @@ pub fn parse_appearance(bytes: &[u8]) -> Option<u16> {
 
 /// 解析 `0x2A19` 读数：`[0x64]` → 100%，`[0x00]` → 0%。
 ///
-/// 单字节 `0x00` 是合法的 0% 而非「全零 payload」；规格 §5 的「全零 payload 判不可读」针对 HID 三字节 payload，
+/// 单字节 `0x00` 是合法的 0% 而非「全零 payload」；HID 侧「全零 payload 判不可读」针对三字节 payload，
 /// 套用在此会把真没电的设备判成不可读。长度 > 1 且全零才按不可读处理。
 pub fn parse_battery_level(bytes: &[u8]) -> Result<Percent, ErrorCode> {
     if bytes.is_empty() {
@@ -44,7 +44,7 @@ pub fn parse_battery_level(bytes: &[u8]) -> Result<Percent, ErrorCode> {
 }
 
 /// 解析 GAP `0x2A00` 设备名：去尾部 NUL 与首尾空白。
-/// `model_name_raw` 原文由 Provider 上报，`modelKey` 归一化只在宿主做（D4）；此处只为避免填充字节进入展示名。
+/// `model_name_raw` 原文由 Provider 上报，`modelKey` 归一化只在宿主做；此处只为避免填充字节进入展示名。
 pub fn parse_device_name(bytes: &[u8]) -> Option<String> {
     let text: String = bytes
         .iter()

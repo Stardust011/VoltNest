@@ -1,4 +1,4 @@
-//! 极简文件日志（`%APPDATA%\VoltNest\logs\voltnest.log`）。不引入 `tauri-plugin-log`：其目录 `%APPDATA%\<identifier>\logs` 会与规格 §11 的数据根分叉、多写一个目录。只需「出问题时拿到时间线」，三十行足够。时间戳一律走 `clock::now_utc_ms()`（Z-6：全仓唯一时间源）。
+//! 极简文件日志（`%APPDATA%\VoltNest\logs\voltnest.log`）。不引入 `tauri-plugin-log`：其目录 `%APPDATA%\<identifier>\logs` 会与本应用的数据根分叉、多写一个目录。只需「出问题时拿到时间线」，三十行足够。时间戳一律走 `clock::now_utc_ms()`（全仓唯一时间源）。
 
 use std::fs::{File, OpenOptions};
 use std::io::Write;

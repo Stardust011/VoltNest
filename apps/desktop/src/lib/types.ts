@@ -1,4 +1,4 @@
-// 与 Rust 侧 `voltnest_core::Snapshot` 一一对应的 DTO 类型（契约）：字段名须匹配 serde camelCase，前端不得加派生业务字段（W-1 / W-2）。
+// 与 Rust 侧 `voltnest_core::Snapshot` 一一对应的 DTO 类型：字段名须匹配 serde camelCase，前端不得加派生业务字段。
 
 export type DeviceState = "unknown" | "online" | "stale" | "unavailable" | "offline";
 
@@ -8,7 +8,7 @@ export interface DeviceDto {
   provider: string;
   displayName: string;
   modelKey: string | null;
-  // 设备类型（Rust 枚举小写）。`"unknown"`=证据不足；已判定结论，前端只翻译、不再推断（W-2）。
+  // 设备类型（Rust 枚举小写）。`"unknown"`=证据不足；已判定结论，前端只翻译、不再推断。
   deviceType: string;
   // 得出 `deviceType` 的方法，仅用于诊断溯源。
   classificationMethod: string;

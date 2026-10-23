@@ -1,4 +1,4 @@
-//! 宿主 → 前端的 DTO。快照直接复用 `Snapshot`（本身是契约）；设置与诊断另建 DTO 是因为：磁盘类型带 `extra`（未知字段保留，X-1）属磁盘契约不该进 IPC，诊断页还要拼装运行时状态（线程组/自启/AUMID）而这些不在任何 crate 里。
+//! 宿主 → 前端的 DTO。快照直接复用 `Snapshot`（本身就是传输格式）；设置与诊断另建 DTO 是因为：磁盘类型带 `extra`（未知字段保留）属于磁盘格式，不该进 IPC，诊断页还要拼装运行时状态（线程组/自启/AUMID），而这些不在任何 crate 里。
 
 use serde::{Deserialize, Serialize};
 use voltnest_core::{DiagEvent, NotificationEntry};
@@ -65,7 +65,7 @@ impl SettingsDto {
         }
     }
 
-    /// 写回磁盘设置。**只覆盖已知字段**：`schemaVersion`/`extra`/未来新增字段沿用磁盘值，否则「读-改-写保留未知字段」（X-1）会在 IPC 层被悄悄破坏。
+    /// 写回磁盘设置。**只覆盖已知字段**：`schemaVersion`/`extra`/未来新增字段沿用磁盘值，否则「读-改-写保留未知字段」会在 IPC 层被悄悄破坏。
     pub fn apply_to(&self, target: &mut Settings) {
         if let Some(sensitivity) = voltnest_provider::Sensitivity::parse(&self.sensitivity) {
             target.set_sensitivity(sensitivity);
@@ -83,7 +83,7 @@ impl SettingsDto {
     }
 }
 
-/// 阈值必须是一对 `0..=95` 且严格递减的整数（AB-1）。IPC 是不可信边界：越界值若落盘，`NotificationConfig::normalized()` 下次启动会静默改值，用户会看到「设置自己变了」。下界取 `0` 而非 `5`，须与设置页输入框的 `THRESHOLD_MIN`（`lib/thresholds.ts`）一致，否则用户填的 0 会在保存瞬间被改成 5。
+/// 阈值必须是一对 `0..=95` 且严格递减的整数。IPC 是不可信边界：越界值若落盘，`NotificationConfig::normalized()` 下次启动会静默改值，用户会看到「设置自己变了」。下界取 `0` 而非 `5`，须与设置页输入框的 `THRESHOLD_MIN`（`lib/thresholds.ts`）一致，否则用户填的 0 会在保存瞬间被改成 5。
 fn clamp_thresholds(pair: [u8; 2]) -> [u8; 2] {
     let a = pair[0].clamp(0, 95);
     let b = pair[1].clamp(0, 95);

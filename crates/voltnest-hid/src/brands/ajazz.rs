@@ -1,4 +1,4 @@
-//! 品牌：AJAZZ（W1 / 星闪代，VID `0x7768`）。协议事实来自本机实测（`docs/vbas-probe-report.md`、`docs/hid-rust-verification.md`）：
+//! 品牌：AJAZZ（W1 / 星闪代，VID `0x7768`）。协议事实来自本机实测：
 //! - 读通道 `UsagePage = 0xFFB2`（MI_01 / Col02），报告 ≥64 字节；
 //! - `0xFFB1` 是只写通道，读句柄持续报错 → v1 不打开；
 //! - 电量来自 `cmd = 0xFA` 推送帧，约 30s 一次，通常两帧一组：
@@ -14,7 +14,7 @@
 //!
 //! - `0xFFB3` 在验证设备上无数据 → v1 不实现。
 //!
-//! `request: None` 是**实测结论**而非缺省：该设备纯推送，不发任何报文也能拿到电量（P-3 / P-4）。若某固件只在被查询时才回帧，把 `request` 换成 [`crate::spec::RequestTemplate`] 即可，运行时无需改动。
+//! `request: None` 是**实测结论**而非缺省：该设备纯推送，不发任何报文也能拿到电量。若某固件只在被查询时才回帧，把 `request` 换成 [`crate::spec::RequestTemplate`] 即可，运行时无需改动。
 
 use crate::spec::{BatteryFields, BrandSpec, ChargingField, FrameLayout};
 

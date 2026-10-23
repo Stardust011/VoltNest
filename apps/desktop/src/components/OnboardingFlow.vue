@@ -25,7 +25,7 @@ import { Progress } from "@/components/ui/progress";
 import type { OnboardingChoice } from "../lib/types";
 
 /**
- * 首次引导（规格 §12「启动」）。
+ * 首次引导。
  * 判定只看 `settings.onboardingCompleted`，与 settings.json 是否存在无关——文件损坏被重建时 `recovered()` 置其为 `true`，避免用户反复见引导。
  * 开机自启默认关，须在此显式勾选；页面不写业务状态，只把选择交宿主落盘并注册 Run 项。
  * 头部共用「品牌行+步骤进度+标题」，两步只换标题与内容：一为产品介绍，二为两项启动设置。

@@ -1,6 +1,6 @@
 //! `hid-vbas` 的通用协议描述（**品牌无关**）。
 //!
-//! 一个品牌接入 = 一份 [`BrandSpec`]：怎么匹配、帧长什么样、电量与充电标志落在第几个字节、是否要主动查询。解析器（[`crate::frame`]）与运行时（[`crate::provider`]）只读这些字段，无 `match brand_id` 分支，新增品牌不改任何既有代码（ADR-0011）。
+//! 一个品牌接入 = 一份 [`BrandSpec`]：怎么匹配、帧长什么样、电量与充电标志落在第几个字节、是否要主动查询。解析器（[`crate::frame`]）与运行时（[`crate::provider`]）只读这些字段，无 `match brand_id` 分支，新增品牌不改任何既有代码。
 //!
 //! 两层：**家族**（`hid-vbas`，协议形状：HID 私有通道+定长报告+命令字，能力在 [`voltnest_provider::HID_VBAS`]）与**品牌**（[`BrandSpec`]，填充 VID/PID 表、UsagePage、字段下标、充电取值、查询报文）。差异只在数据。
 //!
@@ -43,14 +43,14 @@ pub struct BatteryFields {
     pub subtag: Option<(usize, u8)>,
     /// 电量百分比在 payload 内的下标（`0..=100`，越界即 `PercentOutOfRange`）。
     pub percent_index: usize,
-    /// 充电标志。`None` = 协议不提供充电状态 → 读数恒为 `None`（PC-5）。
+    /// 充电标志。`None` = 协议不提供充电状态 → 读数恒为 `None`。
     pub charging: Option<ChargingField>,
 }
 
 /// 主动查询模板：向写通道发送一条固定报文，把电量「问」出来。
 ///
 /// 这是与「被动监听推送帧」并列的另一条采集路径。是否启用由 [`BrandSpec`]
-/// 决定；已验证设备走纯推送（`request: None`），不向设备发任何报文（P-4）。
+/// 决定；已验证设备走纯推送（`request: None`），不向设备发任何报文。
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct RequestTemplate {
     /// 写通道的 UsagePage。
@@ -152,9 +152,9 @@ impl BrandSpec {
         }
     }
 
-    /// 构造期不变量（BV-1..BV-9）。进程内首次枚举前跑一次。
+    /// 构造期不变量。进程内首次枚举前跑一次。
     pub fn validate(&self) -> Result<(), SpecError> {
-        // BV-1：标识与展示名不得为空。
+        // 标识与展示名不得为空。
         if self.id.is_empty() {
             return Err(SpecError::EmptyBrandId);
         }
@@ -162,7 +162,7 @@ impl BrandSpec {
             return Err(SpecError::EmptyLabel { brand: self.id });
         }
 
-        // BV-2：命令字必须在 payload 之前 —— 否则「头」和「体」重叠，
+        // 命令字必须在 payload 之前 —— 否则「头」和「体」重叠，
         // 同一字节会被当成两种语义。
         if self.frame.cmd_index >= self.frame.payload_offset {
             return Err(SpecError::HeaderOverlap {
@@ -172,12 +172,12 @@ impl BrandSpec {
             });
         }
 
-        // BV-3：报告 ID 占首字节，此时 payload 不能从 0 开始。
+        // 报告 ID 占首字节，此时 payload 不能从 0 开始。
         if self.frame.report_id.is_some() && self.frame.payload_offset == 0 {
             return Err(SpecError::PayloadStartsAtReportId { brand: self.id });
         }
 
-        // BV-4：长度字段必须在头部。
+        // 长度字段必须在头部。
         if let Some(index) = self.frame.len_index
             && (index < self.frame.cmd_index || index >= self.frame.payload_offset)
         {
@@ -189,7 +189,7 @@ impl BrandSpec {
             });
         }
 
-        // BV-5：固定长度模式必须给出非零长度，否则所有帧都会被判坏帧。
+        // 固定长度模式必须给出非零长度，否则所有帧都会被判坏帧。
         if self.frame.len_index.is_none() && self.frame.fixed_payload_len < self.min_payload_len() {
             return Err(SpecError::FixedPayloadTooShort {
                 brand: self.id,
@@ -198,21 +198,21 @@ impl BrandSpec {
             });
         }
 
-        // BV-6：子标签不得与电量字段抢同一字节。
+        // 子标签不得与电量字段抢同一字节。
         if let Some((index, _)) = self.battery.subtag
             && index == self.battery.percent_index
         {
             return Err(SpecError::SubtagOverlapsPercent { brand: self.id });
         }
 
-        // BV-7：充电标志不得与电量字段抢同一字节。
+        // 充电标志不得与电量字段抢同一字节。
         if let Some(charging) = self.battery.charging
             && charging.index == self.battery.percent_index
         {
             return Err(SpecError::ChargingOverlapsPercent { brand: self.id });
         }
 
-        // BV-8：查询模板必须自洽，且声明了写通道。
+        // 查询模板必须自洽，且声明了写通道。
         if let Some(req) = self.request {
             if self.usage_page_write.is_none() {
                 return Err(SpecError::RequestWithoutWritePage { brand: self.id });
@@ -228,7 +228,7 @@ impl BrandSpec {
             }
         }
 
-        // BV-9：节奏必须为正，否则「期望间隔」失去意义。
+        // 节奏必须为正，否则「期望间隔」失去意义。
         if self.expected_interval_ms == 0 {
             return Err(SpecError::ZeroInterval { brand: self.id });
         }
@@ -236,11 +236,11 @@ impl BrandSpec {
         Ok(())
     }
 
-    /// 品牌节奏是否落在家族能力声明的预算内（BV-10）。
+    /// 品牌节奏是否落在家族能力声明的预算内。
     ///
     /// 家族只有一个 `stale` 阈值链；若某品牌的推送间隔慢到
     /// `1.5 × 间隔 > stale_ms`，它的正常上报会被判过期 —— 这类品牌必须先
-    /// 改家族声明的阈值链（走 ADR），不能靠加载顺序或特例绕开。
+    /// 改家族声明的阈值链，不能靠加载顺序或特例绕开。
     pub fn validate_against(&self, profile: &ProviderProfile) -> Result<(), SpecError> {
         self.validate()?;
         if profile.transport != voltnest_provider::Transport::Hid {
@@ -264,14 +264,14 @@ impl BrandSpec {
 /// 品牌描述的结构性错误。
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum SpecError {
-    /// BV-1：品牌标识为空。
+    /// 品牌标识为空。
     EmptyBrandId,
-    /// BV-1：展示名为空。
+    /// 展示名为空。
     EmptyLabel {
         /// 品牌标识。
         brand: &'static str,
     },
-    /// BV-2：命令字落在 payload 内（头体重叠）。
+    /// 命令字落在 payload 内（头体重叠）。
     HeaderOverlap {
         /// 品牌标识。
         brand: &'static str,
@@ -280,12 +280,12 @@ pub enum SpecError {
         /// payload 起始下标。
         payload_offset: usize,
     },
-    /// BV-3：带报告 ID，但 payload 从 0 开始。
+    /// 带报告 ID，但 payload 从 0 开始。
     PayloadStartsAtReportId {
         /// 品牌标识。
         brand: &'static str,
     },
-    /// BV-4：长度字段不在头部。
+    /// 长度字段不在头部。
     LengthFieldOutsideHeader {
         /// 品牌标识。
         brand: &'static str,
@@ -296,7 +296,7 @@ pub enum SpecError {
         /// payload 起始下标。
         payload_offset: usize,
     },
-    /// BV-5：固定 payload 长度不足以容纳必选字段。
+    /// 固定 payload 长度不足以容纳必选字段。
     FixedPayloadTooShort {
         /// 品牌标识。
         brand: &'static str,
@@ -305,32 +305,32 @@ pub enum SpecError {
         /// 需要的最小长度。
         need: usize,
     },
-    /// BV-6：子标签与电量字段重叠。
+    /// 子标签与电量字段重叠。
     SubtagOverlapsPercent {
         /// 品牌标识。
         brand: &'static str,
     },
-    /// BV-7：充电标志与电量字段重叠。
+    /// 充电标志与电量字段重叠。
     ChargingOverlapsPercent {
         /// 品牌标识。
         brand: &'static str,
     },
-    /// BV-8：声明了查询模板，却没有写通道 UsagePage。
+    /// 声明了查询模板，却没有写通道 UsagePage。
     RequestWithoutWritePage {
         /// 品牌标识。
         brand: &'static str,
     },
-    /// BV-8：查询模板越界。
+    /// 查询模板越界。
     RequestLayoutInvalid {
         /// 品牌标识。
         brand: &'static str,
     },
-    /// BV-9：期望间隔为 0。
+    /// 期望间隔为 0。
     ZeroInterval {
         /// 品牌标识。
         brand: &'static str,
     },
-    /// BV-10：品牌节奏超出家族 `stale` 预算。
+    /// 品牌节奏超出家族 `stale` 预算。
     CadenceExceedsProfile {
         /// 品牌标识。
         brand: &'static str,
@@ -339,12 +339,12 @@ pub enum SpecError {
         /// 家族声明的 `stale_ms`。
         stale_ms: u64,
     },
-    /// BV-10：家族不是 HID。
+    /// 家族不是 HID。
     ProfileTransportMismatch {
         /// 品牌标识。
         brand: &'static str,
     },
-    /// BV-10：品牌提供充电标志，但家族声明「不可得」。
+    /// 品牌提供充电标志，但家族声明「不可得」。
     ProfileChargingMismatch {
         /// 品牌标识。
         brand: &'static str,
@@ -377,20 +377,19 @@ pub enum SpecError {
 impl core::fmt::Display for SpecError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
-            Self::EmptyBrandId => write!(f, "BV-1 违反：品牌标识不得为空"),
-            Self::EmptyLabel { brand } => write!(f, "BV-1 违反：品牌 {brand} 的展示名为空"),
+            Self::EmptyBrandId => write!(f, "品牌标识不得为空"),
+            Self::EmptyLabel { brand } => write!(f, "品牌 {brand} 的展示名为空"),
             Self::HeaderOverlap {
                 brand,
                 cmd_index,
                 payload_offset,
             } => write!(
                 f,
-                "BV-2 违反：品牌 {brand} 的 cmd_index={cmd_index} 必须 < payload_offset={payload_offset}"
+                "品牌 {brand} 的 cmd_index={cmd_index} 必须 < payload_offset={payload_offset}"
             ),
-            Self::PayloadStartsAtReportId { brand } => write!(
-                f,
-                "BV-3 违反：品牌 {brand} 带报告 ID，payload 不得从 0 开始"
-            ),
+            Self::PayloadStartsAtReportId { brand } => {
+                write!(f, "品牌 {brand} 带报告 ID，payload 不得从 0 开始")
+            }
             Self::LengthFieldOutsideHeader {
                 brand,
                 len_index,
@@ -398,7 +397,7 @@ impl core::fmt::Display for SpecError {
                 payload_offset,
             } => write!(
                 f,
-                "BV-4 违反：品牌 {brand} 的长度字段下标 {len_index} 不在头部 [{cmd_index}, {payload_offset})"
+                "品牌 {brand} 的长度字段下标 {len_index} 不在头部 [{cmd_index}, {payload_offset})"
             ),
             Self::FixedPayloadTooShort {
                 brand,
@@ -406,26 +405,23 @@ impl core::fmt::Display for SpecError {
                 need,
             } => write!(
                 f,
-                "BV-5 违反：品牌 {brand} 固定 payload 长度 {fixed_payload_len} < 必需 {need}"
+                "品牌 {brand} 固定 payload 长度 {fixed_payload_len} < 必需 {need}"
             ),
             Self::SubtagOverlapsPercent { brand } => {
-                write!(f, "BV-6 违反：品牌 {brand} 的子标签与电量字段重叠")
+                write!(f, "品牌 {brand} 的子标签与电量字段重叠")
             }
             Self::ChargingOverlapsPercent { brand } => {
-                write!(f, "BV-7 违反：品牌 {brand} 的充电标志与电量字段重叠")
+                write!(f, "品牌 {brand} 的充电标志与电量字段重叠")
             }
             Self::RequestWithoutWritePage { brand } => write!(
                 f,
-                "BV-8 违反：品牌 {brand} 声明了查询模板，必须同时给出 usage_page_write"
+                "品牌 {brand} 声明了查询模板，必须同时给出 usage_page_write"
             ),
             Self::RequestLayoutInvalid { brand } => {
-                write!(f, "BV-8 违反：品牌 {brand} 的查询模板越界")
+                write!(f, "品牌 {brand} 的查询模板越界")
             }
             Self::ZeroInterval { brand } => {
-                write!(
-                    f,
-                    "BV-9 违反：品牌 {brand} 的 expected_interval_ms 不得为 0"
-                )
+                write!(f, "品牌 {brand} 的 expected_interval_ms 不得为 0")
             }
             Self::CadenceExceedsProfile {
                 brand,
@@ -433,15 +429,14 @@ impl core::fmt::Display for SpecError {
                 stale_ms,
             } => write!(
                 f,
-                "BV-10 违反：品牌 {brand} 期望间隔 {expected_interval_ms}ms 超出家族 stale={stale_ms}ms 预算（需 stale >= 1.5×间隔）"
+                "品牌 {brand} 期望间隔 {expected_interval_ms}ms 超出家族 stale={stale_ms}ms 预算（需 stale >= 1.5×间隔）"
             ),
             Self::ProfileTransportMismatch { brand } => {
-                write!(f, "BV-10 违反：品牌 {brand} 只能挂在 HID 家族上")
+                write!(f, "品牌 {brand} 只能挂在 HID 家族上")
             }
-            Self::ProfileChargingMismatch { brand } => write!(
-                f,
-                "BV-10 违反：品牌 {brand} 提供充电标志，但家族声明充电不可得"
-            ),
+            Self::ProfileChargingMismatch { brand } => {
+                write!(f, "品牌 {brand} 提供充电标志，但家族声明充电不可得")
+            }
             Self::DuplicateBrandId { brand } => {
                 write!(f, "品牌标识 {brand} 重复登记")
             }

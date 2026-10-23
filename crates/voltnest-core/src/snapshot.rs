@@ -1,8 +1,8 @@
-//! 前端契约 DTO（规格 §10 / W-1..W-10）。
+//! 前端 DTO。
 //!
-//! 全量快照，不含 UI 状态（选中项、滚动位置、弹窗开关）；命名、分组、排序全由 Rust 决定，前端不重复推导（W-2 / W-3）。
-//! 时间统一 UTC 毫秒整数，`serverNowMs` 供前端对齐本地单调计时器（W-4）；`battery == null` 表示无有效读数，绝不用 0 代替。
-//! `rev` 仅在进程内单调递增，重启归零，不持久化（W-6）。
+//! 全量快照，不含 UI 状态（选中项、滚动位置、弹窗开关）；命名、分组、排序全由 Rust 决定，前端不重复推导。
+//! 时间统一 UTC 毫秒整数，`serverNowMs` 供前端对齐本地单调计时器；`battery == null` 表示无有效读数，绝不用 0 代替。
+//! `rev` 仅在进程内单调递增，重启归零，不持久化。
 
 use crate::state::DeviceState;
 use serde::{Deserialize, Serialize};
@@ -15,16 +15,16 @@ pub struct Snapshot {
     pub rev: u64,
     /// 生成快照时的宿主 UTC 毫秒。
     pub server_now_ms: u64,
-    /// L1 设备记录（已按 `settings.tray.order` 排序）。
+    /// 设备记录（已按 `settings.tray.order` 排序）。
     pub devices: Vec<DeviceDto>,
-    /// L2 呈现分组卡片：仅满足分组谓词的两条记录才出现。未分组设备由前端直接渲染
+    /// 呈现分组卡片：仅满足分组谓词的两条记录才出现。未分组设备由前端直接渲染
     /// `devices` 中未被任何卡片引用的成员，不做二次归一化。
     pub cards: Vec<CardDto>,
     /// 托盘可见集合。
     pub tray: TrayDto,
 }
 
-/// 单台设备（L1）。
+/// 单台设备。
 #[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DeviceDto {
@@ -36,17 +36,17 @@ pub struct DeviceDto {
     pub provider: String,
     /// 型号名（Provider 表查得 / GAP 原文）。
     pub display_name: String,
-    /// 归一化型号键，参与 L2 分组。`null` = 未命中型号表。
+    /// 归一化型号键，参与呈现分组。`null` = 未命中型号表。
     pub model_key: Option<String>,
     /// 设备类型（应用层枚举小写，如 `mouse` / `keyboard`）。
     ///
-    /// `unknown` 表示证据不足，前端不得用型号名或链路推断类型（W-2）。
+    /// `unknown` 表示证据不足，前端不得用型号名或链路推断类型。
     pub device_type: String,
     /// 得出 `deviceType` 的方法（`hid_usage` / `ble_appearance` / `verified_device_mapping` / `unknown`），仅用于溯源。
     pub classification_method: String,
     /// 当前电量。`null` = 当前无有效读数。
     pub battery: Option<u8>,
-    /// 上次已知电量，仅副行展示，不参与状态与通知（W-9）。
+    /// 上次已知电量，仅副行展示，不参与状态与通知。
     pub last_known_battery: Option<u8>,
     /// 上次已知电量的时间。
     pub last_known_at_ms: Option<u64>,
@@ -54,7 +54,7 @@ pub struct DeviceDto {
     pub is_charging: Option<bool>,
     /// 五态。
     pub state: DeviceState,
-    /// 最后一次有效读数时间；退化判定的唯一依据（Z-2）。
+    /// 最后一次有效读数时间；退化判定的唯一依据。
     pub last_valid_at_ms: Option<u64>,
     /// 最后一次推送时间，仅诊断。
     pub last_push_at_ms: Option<u64>,
@@ -62,7 +62,7 @@ pub struct DeviceDto {
     pub last_error: Option<String>,
 }
 
-/// L2 合并卡（仅在 §9.2 三个条件同时满足时产生）。
+/// 合并卡（仅在三个条件同时满足时产生）。
 #[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CardDto {
@@ -82,7 +82,7 @@ pub struct CardDto {
     pub inactive_member_text: String,
 }
 
-/// 托盘可见集合与顺序（AA-5）。
+/// 托盘可见集合与顺序。
 #[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TrayDto {

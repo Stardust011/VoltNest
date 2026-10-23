@@ -1,4 +1,4 @@
-// 时间显示（W-4）。以快照 `serverNowMs` 为锚点、用本地单调计时器 `performance.now()` 推算时间，收到新快照即重新对齐。
+// 时间显示。以快照 `serverNowMs` 为锚点、用本地单调计时器 `performance.now()` 推算时间，收到新快照即重新对齐。
 // 禁止 `Date.now() - lastPushAt`：系统时钟跳变会让界面误显「3 小时前」，而那正是判断过期的依据。
 
 // 相对时间文案，分档与 Rust 侧 `humanize_ago` 一致。

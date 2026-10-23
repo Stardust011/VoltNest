@@ -1,8 +1,8 @@
-//! Provider → 宿主的事件分类（ADR-0010 D9）：Provider 对事件做分类，宿主不做数据校验。
+//! Provider → 宿主的事件分类：Provider 对事件做分类，宿主不做数据校验。
 //!
 //! 三点关键设计：① [`ValidReading::battery`] 是 `Percent`，越界值在类型上不可能出现。
 //! ② [`ProviderEvent::Unreadable`] 与 [`ProviderEvent::LinkLost`] 必须分开：前者「设备还在、数据不可信」→
-//! `Unavailable`，后者「链路没了」→ `Offline`；合并会让 P-1（≤120ms 判 Offline）与 E（解析失败判 Unavailable）互相打架。
+//! `Unavailable`，后者「链路没了」→ `Offline`；合并会让「链路消失立即 Offline」与「解析失败判 Unavailable」互相打架。
 //! ③ 事件不带时间戳；宿主收到时每批取一次 `now_utc_ms()` 向下透传，Provider 完全不参与状态判定的时间基准。
 
 use crate::classify::DeviceClassification;
@@ -24,7 +24,7 @@ pub struct DeviceFact {
     pub display_name: String,
     /// 未经归一化的型号原文。宿主用 `normalize()` 算 `modelKey`（D4）。
     pub model_name_raw: String,
-    /// 诊断用的设备路径（HID `open_path` 目标 / BLE 地址），不参与身份判定（Y-6）。
+    /// 诊断用的设备路径（HID `open_path` 目标 / BLE 地址），不参与身份判定。
     pub path: Option<String>,
     /// 设备类型识别结果（含证据）。默认 [`DeviceClassification::unknown`]：证据不足即 Unknown，
     /// 不得为好看填类型。与电量采集完全解耦：本字段只影响展示与诊断，不参与状态判定。
@@ -119,9 +119,9 @@ impl RemovalReason {
 /// `voltnest-core` 必须**穷尽匹配**（不得用 `_ =>` 兜底），新增变体必然编译失败。
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum ProviderEvent {
-    /// 设备出现 → 建 L1 记录，状态 `Unknown`。
+    /// 设备出现 → 建立设备记录，状态 `Unknown`。
     Arrived(DeviceFact),
-    /// 有效读数 → `Online`（Z-3，不经中间态）。
+    /// 有效读数 → 直接 `Online`，不经中间态。
     Reading(ValidReading),
     /// 设备还在但数据不可信 → `Unavailable`（保留 `lastValidAt`）。
     Unreadable {
@@ -135,28 +135,28 @@ pub enum ProviderEvent {
         /// `None` = 该情形无可用报文（例如打开句柄失败）。
         detail: Option<String>,
     },
-    /// 链路没了 → 立即 `Offline`（P-1 / O-8）。
+    /// 链路没了 → 立即 `Offline`。
     LinkLost {
         /// 设备标识。
         stable_id: StableId,
         /// 错误码。
         code: ErrorCode,
     },
-    /// 物理移除 → `Offline` + 销毁托盘图标（AA-2 唯一允许销毁的路径）。
+    /// 物理移除 → `Offline` + 销毁托盘图标（唯一允许销毁图标的路径）。
     Removed {
         /// 设备标识。
         stable_id: StableId,
         /// 移除原因（仅诊断）。
         reason: RemovalReason,
     },
-    /// 整个 transport 不可用（线程 panic、初始化失败）→ 该 transport 全部 L1 → `Offline`。
+    /// 整个 transport 不可用（线程 panic、初始化失败）→ 该 transport 全部设备转 `Offline`。
     TransportDown {
         /// 错误码。
         code: ErrorCode,
         /// 人类可读细节。
         detail: String,
     },
-    /// 同一轮发现重复 `stableId` → 只告警，不建第二条记录（Y-3）。
+    /// 同一轮发现重复 `stableId` → 只告警，不建第二条记录。
     BindingConflict {
         /// 设备标识。
         stable_id: StableId,

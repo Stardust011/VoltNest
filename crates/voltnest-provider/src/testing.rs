@@ -96,7 +96,7 @@ impl Provider for ScriptedProvider {
     }
 }
 
-/// 立即 panic，用于验证 RT-2 的 `catch_unwind` 隔离。
+/// 立即 panic，用于验证 `catch_unwind` 隔离。
 pub struct PanicProvider {
     profile: &'static ProviderProfile,
 }
@@ -129,7 +129,7 @@ impl Provider for PanicProvider {
     }
 }
 
-/// 循环到 `stop` 置位才退出，用于验证 RT-3/RT-4 的停止与 join 上限。
+/// 循环到 `stop` 置位才退出，用于验证停止与 join 上限。
 pub struct LoopProvider {
     profile: &'static ProviderProfile,
     ticks: Arc<AtomicUsize>,

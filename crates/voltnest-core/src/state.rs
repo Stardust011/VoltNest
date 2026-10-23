@@ -1,6 +1,6 @@
-//! 设备状态：五种，且只有五种（规格 §5）。
+//! 设备状态：五种，且只有五种。
 //!
-//! `Unknown` 与 `Unavailable` UI 必须可区分（E）：前者从未拿到数据，后者曾经拿到、当前拿不到。
+//! `Unknown` 与 `Unavailable` UI 必须可区分：前者从未拿到数据，后者曾经拿到、当前拿不到。
 
 use serde::{Deserialize, Serialize};
 
@@ -32,7 +32,7 @@ impl DeviceState {
         }
     }
 
-    /// L2 分组谓词之一（§9.2）：`Online` / `Stale` 仍有可展示读数；`Unavailable` 数据不可信，算非活跃。
+    /// 分组谓词之一：`Online` / `Stale` 仍有可展示读数；`Unavailable` 数据不可信，算非活跃。
     pub const fn is_active(self) -> bool {
         matches!(self, Self::Online | Self::Stale)
     }

@@ -27,8 +27,8 @@ jobs:
 
   clippy:
     name: clippy
-    # clippy.toml 把 SystemTime 列为禁用类型（Z-6），因此必须在能编译
-    # Windows 专有模块的 runner 上跑，否则 #[cfg(windows)] 的代码不会被检查。
+    # clippy.toml 把 SystemTime 列为禁用类型，因此必须在能编译 Windows
+    # 专有模块的 runner 上跑，否则 #[cfg(windows)] 的代码不会被检查。
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -49,7 +49,7 @@ jobs:
 
   coverage:
     name: coverage gate
-    # 覆盖率只对纯逻辑与解析器设门槛（§14.1）；platform / Tauri / 托盘光栅
+    # 覆盖率只对纯逻辑与解析器设门槛；platform / Tauri / 托盘光栅
     # 走手工验收，不在这里衡量。
     runs-on: ubuntu-latest
     steps:
@@ -79,16 +79,3 @@ jobs:
       - run: npm ci
       - run: npm run test
       - run: npm run build
-
-  matrix:
-    name: test matrix completeness
-    # §14.2：docs/test-matrix.md 必须把每条规则映射到测试函数。
-    # 具体校验逻辑在 scripts/check-test-matrix.ps1，本地可单独运行。
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - name: 校验测试矩阵
-        run: "& ./scripts/check-test-matrix.ps1"
-        shell: pwsh

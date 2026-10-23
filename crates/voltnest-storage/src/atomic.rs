@@ -1,4 +1,4 @@
-//! 原子写入：`.tmp` → `fsync` → `rename`（X-2）。
+//! 原子写入：`.tmp` → `fsync` → `rename`。
 //!
 //! 禁止「试写文件探测权限」：会被杀软当成可疑行为，且只在写入时才发现失败，等于把问题推迟到用户已改完设置之后。
 
@@ -61,7 +61,7 @@ pub fn archive_corrupt(from: &Path, to: &Path) -> io::Result<PathBuf> {
     Ok(target)
 }
 
-/// 读文件；不存在返回 `Ok(None)`（`state.json` 允许随时删除，X-5）。
+/// 读文件；不存在返回 `Ok(None)`（`state.json` 允许随时删除）。
 pub fn read_optional(path: &Path) -> io::Result<Option<Vec<u8>>> {
     match File::open(path) {
         Ok(mut f) => {

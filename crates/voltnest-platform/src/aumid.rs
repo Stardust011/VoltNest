@@ -3,7 +3,7 @@
 //! Toast 归属完全由发送方给的 AUMID 决定：系统拿它解析「显示名 + 图标」，解析失败则回落到 powershell 的 AUMID。
 //! 解析途径有二：开始菜单快捷方式携带 `System.AppUserModel.ID`（正常路径），或
 //! `HKCU\Software\Classes\AppUserModelId\<AUMID>` 下的 `DisplayName` + `IconUri`（兜底）。
-//! 兜底必须成对写：只写 `DisplayName` 时系统仍拿 powershell 图标填位，名字也未必生效（规格 §13）。
+//! 兜底必须成对写：只写 `DisplayName` 时系统仍拿 powershell 图标填位，名字也未必生效。
 
 use std::path::Path;
 

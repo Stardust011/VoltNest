@@ -59,8 +59,8 @@ const navItems: Array<{ id: View; label: string; icon: Component }> = [
 
 /**
  * 面板行：快照里的 `cards` 只覆盖「HID + BLE 同一型号」的合并对，
- * 其余设备各自成行。行的顺序直接沿用 `devices` 的数组顺序 —— 排序在
- * Rust 决定（W-3），前端不得重排。
+ * 其余设备各自成行。行的顺序直接沿用 `devices` 的数组顺序 —— 排序统一在
+ * Rust 决定，前端不得重排。
  *
  * 合并卡的非活跃成员不再单独出行，它的信息以副行文案出现在主成员卡上。
  */
@@ -147,7 +147,7 @@ function scheduleDiagnosticsRefresh() {
 /**
  * 建立诊断订阅并拉取首帧。
  *
- * 顺序与快照一致（W-6）：**先订阅 → 再拉全量**。反过来写会漏掉
+ * 顺序与快照一致：**先订阅 → 再拉全量**。反过来写会漏掉
  * 「拉取已返回、订阅尚未建立」这段时间内发生的线程组变化。
  */
 async function startDiagnosticsFeed() {

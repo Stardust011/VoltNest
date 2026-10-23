@@ -1,10 +1,10 @@
-//! 状态机与设备注册表（K-1..K-5 / Z-1..Z-10 / W-1..W-10）。
+//! 状态机与设备注册表。
 //!
 //! 三条不可协商的约束：
 //!
-//! 1. 显式时间：所有接口接收 `now_ms`，本模块不读时钟（K-2 / Z-6）。
-//! 2. 退化只由 `lastValidAt` 与阈值链驱动，且只在状态真变化时对外可见（Z-2 / Z-4）。
-//! 3. 坏帧不改变状态：`Unreadable` 只写诊断与 `lastError`，`Online/Stale/Unavailable` 之间的转移只依据时间（规格 §5 / D9）。
+//! 1. 显式时间：所有接口接收 `now_ms`，本模块不读时钟。
+//! 2. 退化只由 `lastValidAt` 与阈值链驱动，且只在状态真变化时对外可见。
+//! 3. 坏帧不改变状态：`Unreadable` 只写诊断与 `lastError`，`Online/Stale/Unavailable` 之间的转移只依据时间。
 
 use crate::diagnostics::{DiagLevel, Diagnostics};
 use crate::humanize::humanize_ago;
@@ -19,16 +19,16 @@ use voltnest_provider::{
     validate_registry,
 };
 
-/// 引擎配置。阈值不在其中：它只能来自 Provider 与档位（Z-1）。
+/// 引擎配置。阈值不在其中：它只能来自 Provider 与档位。
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct EngineConfig {
     /// 阈值档位。
     pub sensitivity: Sensitivity,
     /// 通知策略。
     pub notifications: NotificationConfig,
-    /// 托盘图标上限（规格 §12：最多 4 个）。
+    /// 托盘图标上限。
     pub tray_capacity: usize,
-    /// `tray.order` 条目上限（X-7：超过 32 条淘汰最久未出现项）。
+    /// `tray.order` 条目上限：超过后淘汰最久未出现的条目。
     pub tray_order_limit: usize,
 }
 
@@ -48,7 +48,7 @@ impl Default for EngineConfig {
 pub enum Transition {
     /// 无变化。
     None,
-    /// 新建了 L1 记录（`Unknown`）。
+    /// 新建了设备记录（`Unknown`）。
     Created,
     /// 状态发生转移。
     StateChanged {
@@ -59,9 +59,9 @@ pub enum Transition {
     },
     /// 收到有效读数，但状态本来就是 `Online`。
     Refreshed,
-    /// 读数被丢弃：时间戳早于 `lastValidAt`（时钟后跳后的回填，Z-10）。
+    /// 读数被丢弃：时间戳早于 `lastValidAt`（时钟后跳后的回填）。
     Backfilled,
-    /// 记录了 Y-3 冲突告警，未新建第二条记录。
+    /// 记录了冲突告警，未新建第二条记录。
     BindingConflictRecorded,
 }
 
@@ -72,7 +72,7 @@ impl Transition {
     }
 }
 
-/// `state.json` 回填所需的字段（D8 / Y-6）。
+/// `state.json` 回填所需的字段。
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct SeedEntry {
     /// 设备标识字符串。
@@ -172,7 +172,7 @@ impl Engine {
         &self.tray_order
     }
 
-    /// 设置托盘隐藏列表（`settings.tray.hidden`，AA-4）。
+    /// 设置托盘隐藏列表（`settings.tray.hidden`）。
     pub fn set_hidden(&mut self, hidden: Vec<String>) {
         self.hidden = hidden;
     }
@@ -228,12 +228,12 @@ impl Engine {
         std::mem::take(&mut self.pending_alerts)
     }
 
-    /// 导出通知状态用于持久化（AB-4 / AB-5）。
+    /// 导出通知状态用于持久化。
     pub fn notification_entries(&self) -> Vec<NotificationEntry> {
         self.notifications.entries()
     }
 
-    /// 回填一次通知的真实投递结果（AB-5）。
+    /// 回填一次通知的真实投递结果。
     ///
     /// `take_alerts()` 给出「应当发送」，宿主真正投递（或被模式关闭、被系统拒绝）后
     /// 用本方法覆盖 `last_result`，诊断页才不会把「打算发」显示成「已发送」。
@@ -245,8 +245,8 @@ impl Engine {
 
     /// 应用一个 Provider 事件。
     ///
-    /// `source` 只在 [`ProviderEvent::TransportDown`] 生效：该变体按契约不带 transport，而「只影响当前 transport」
-    /// 是 RT-1 的硬要求；其它变体忽略此参数。
+    /// `source` 只在 [`ProviderEvent::TransportDown`] 生效：该变体不带 transport，而「只影响当前 transport」
+    /// 是故障隔离的硬要求；其它变体忽略此参数。
     pub fn apply_event(
         &mut self,
         event: &ProviderEvent,
@@ -391,13 +391,13 @@ impl Engine {
         let display_name = self.records[idx].display_name.clone();
         let stable_id = self.records[idx].stable_id.as_str().to_string();
 
-        // PC-5：充电语义不可得的家族，任何 Some(bool) 都转成 None。
+        // 充电语义不可得的家族，任何 Some(bool) 都转成 None。
         let charging = self
             .profile_for(family)
             .map(|p| p.sanitize_charging(reading.charging))
             .unwrap_or(reading.charging);
 
-        // Z-10：时间戳早于 lastValidAt 的读数属于回填，丢弃。
+        // 时间戳早于 lastValidAt 的读数属于回填，丢弃。
         if let Some(last) = self.records[idx].last_valid_at_ms
             && now_ms < last
         {
@@ -424,7 +424,7 @@ impl Engine {
             // 故意不清空 `unreadable_kinds`：好坏帧交替时每帧清空会让同一条坏帧重新刷屏，种类只在重新出现时重置。
             rec.present = true;
             rec.last_seen_at_ms = now_ms;
-            // Z-3：任何有效读数直接 Online，不经过中间态。
+            // 任何有效读数直接 Online，不经过中间态。
             rec.state = DeviceState::Online;
         }
 
@@ -536,7 +536,7 @@ impl Engine {
             let rec = &mut self.records[idx];
             let from = rec.state;
             rec.state = DeviceState::Offline;
-            // AA-2：唯一的图标销毁路径。
+            // 唯一的图标销毁路径。
             rec.present = false;
             rec.battery = None;
             rec.charging = None;
@@ -568,7 +568,7 @@ impl Engine {
     ) -> Transition {
         let transports: Vec<Transport> = match source {
             Some(t) => vec![t],
-            // 契约上的兜底：调用方未告知来源时按全部 transport 处理，并留下诊断。
+            // 调用方未告知来源时按全部 transport 处理，并留下诊断。
             None => vec![Transport::Hid, Transport::Ble],
         };
         self.diagnostics.push(
@@ -617,9 +617,9 @@ impl Engine {
 
     // ---------- 退化 ----------
 
-    /// 1s tick：只比对时间戳，仅在状态真变化时返回 `true`（Z-4 / W-8）。
+    /// 1s tick：只比对时间戳，仅在状态真变化时返回 `true`。
     ///
-    /// 系统时间后跳（`now < last_now`）记录诊断、清除通知冷却并丢弃回填值；前跳则允许设备批量退化（Z-9）。
+    /// 系统时间后跳（`now < last_now`）记录诊断、清除通知冷却并丢弃回填值；前跳则允许设备批量退化。
     pub fn tick(&mut self, now_ms: u64) -> bool {
         if let Some(last) = self.last_now_ms {
             if now_ms < last {
@@ -675,7 +675,7 @@ impl Engine {
 
     // ---------- 回填 ----------
 
-    /// 用 `state.json` 回填：设备一律 `Unknown`，`lastKnownBattery` 供 UI 首屏显示缓存值（§11 / D8）。
+    /// 用 `state.json` 回填：设备一律 `Unknown`，`lastKnownBattery` 供 UI 首屏显示缓存值。
     pub fn seed(&mut self, entries: &[SeedEntry], now_ms: u64) {
         for entry in entries {
             let Some(stable_id) = StableId::parse(&entry.stable_id) else {
@@ -759,7 +759,7 @@ impl Engine {
         }
     }
 
-    /// L2 分组：三个条件必须同时满足（§9.2）：① 两条 `modelKey` 非空且严格相等；
+    /// 呈现分组：三个条件必须同时满足：① 两条 `modelKey` 非空且严格相等；
     /// ② 该 `modelKey` 下恰好一条活跃、一条非活跃；③ 只涉及 HID 与 BLE 两个 transport。
     fn build_cards(&self, order: &[usize], now_ms: u64) -> Vec<CardDto> {
         let mut groups: BTreeMap<String, Vec<usize>> = BTreeMap::new();
@@ -807,7 +807,7 @@ impl Engine {
                 inactive_member_text: age_text,
             });
         }
-        // 卡片顺序跟随主成员在面板中的位置（W-3：排序在 Rust 决定）。
+        // 卡片顺序跟随主成员在面板中的位置（排序统一由 Rust 决定）。
         let pos = |id: &str| {
             order
                 .iter()
@@ -876,7 +876,7 @@ impl Engine {
             .unwrap_or(usize::MAX)
     }
 
-    /// 面板 / 卡片 / 托盘的统一排序（W-3）：`tray.order` → 名称 → id。
+    /// 面板 / 卡片 / 托盘的统一排序：`tray.order` → 名称 → id。
     fn sorted_indices(&self) -> Vec<usize> {
         let mut idx: Vec<usize> = (0..self.records.len()).collect();
         idx.sort_by(|&a, &b| {
@@ -894,7 +894,7 @@ impl Engine {
         idx
     }
 
-    /// X-7：`tray.order` 超上限时淘汰「最久未出现」的条目，只在保存设置时收敛，
+    /// `tray.order` 超上限时淘汰「最久未出现」的条目，只在保存设置时收敛，
     /// 不因临时拔掉接收器而丢失用户设置。
     fn prune_tray_order(&mut self) {
         if self.tray_order.len() <= self.tray_order_limit {

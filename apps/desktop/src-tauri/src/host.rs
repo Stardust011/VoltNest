@@ -1,4 +1,4 @@
-//! 宿主事件循环：唯一持有 `Engine` 的地方（§5.2）。
+//! 宿主事件循环：唯一持有 `Engine` 的地方。
 //!
 //! 职责边界：唯一时钟调用点（每批只取一次 `now_utc_ms()` 向下透传）；1s tick 驱动退化且仅真变化才发布；250ms 合并窗口把多次变化合成一次快照（≤4Hz）；所有快照在同一把锁里生成保证 `rev` 单调。Provider 线程只往 `tx` 塞事件、永不碰 `Engine`；`state.json` 只在发布路径写，状态机里不做 I/O。
 
@@ -28,13 +28,13 @@ pub const SNAPSHOT_EVENT: &str = "state://snapshot";
 /// 诊断数据变更事件名（与前端 `DIAGNOSTICS_EVENT` 一字不差）。
 pub const DIAGNOSTICS_EVENT: &str = "state://diagnostics";
 
-/// 合并窗口：250ms 内的变化发一次快照（W-5）。
+/// 合并窗口：250ms 内的变化发一次快照。
 pub const SNAPSHOT_WINDOW_MS: u64 = 250;
 
 /// 状态退化 tick。
 pub const TICK_MS: u64 = 1_000;
 
-/// 队列深度告警阈值（§3.3：超过 64 条报警）。
+/// 队列深度告警阈值：超过 64 条报警。
 pub const QUEUE_ALERT_DEPTH: usize = 64;
 
 /// 宿主收到的三类唤醒。
@@ -81,7 +81,7 @@ pub struct Shared {
     pub shutting_down: AtomicBool,
 }
 
-/// 取锁并忽略「中毒」：Provider 侧 panic 不该让宿主跟着瘫痪（RT-2）。
+/// 取锁并忽略「中毒」：Provider 侧 panic 不该让宿主跟着瘫痪。
 pub fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
     match m.lock() {
         Ok(guard) => guard,
@@ -90,7 +90,7 @@ pub fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
 }
 
 impl Shared {
-    /// 组装共享状态并回填 `state.json`（D8 / Y-6）。
+    /// 组装共享状态并回填 `state.json`。
     pub fn new(
         paths: DataPaths,
         settings: Settings,
@@ -273,7 +273,7 @@ pub fn persist(shared: &Shared, now: u64, force: bool) {
     }
 }
 
-/// 由设置构造引擎配置。「阈值」一词两义：Z-1 的状态退化阈值来自 Provider/档位，用户的 `lowThresholds` 只影响通知、不参与退化。
+/// 由设置构造引擎配置。「阈值」一词两义：状态退化阈值来自 Provider/档位，用户的 `lowThresholds` 只影响通知、不参与退化。
 pub fn engine_config(settings: &Settings) -> EngineConfig {
     EngineConfig {
         sensitivity: settings.sensitivity(),

@@ -1,8 +1,8 @@
 //! 「VID:PID → 型号」快照表（品牌无关的加载器）。
 //!
-//! 每品牌一份 JSON 快照，由 [`crate::brands::BrandSpec::device_table_json`] 编译期嵌入（`include_str!`），安装目录无需带数据文件，也不会与二进制版本分叉（ADR-0010 D7）。新增品牌只加数据文件 + 注册项，本文件不变（ADR-0011）。
+//! 每品牌一份 JSON 快照，由 [`crate::brands::BrandSpec::device_table_json`] 编译期嵌入（`include_str!`），安装目录无需带数据文件，也不会与二进制版本分叉。新增品牌只加数据文件 + 注册项，本文件不变。
 //!
-//! 匹配必须**精确**：`0x6425 = AJ159 NL P`、`0x6426 = AJ159 NL`，只差一位，任何前缀/区间匹配都会搞错型号（§2「型号匹配须用表驱动的 Profile」）。
+//! 匹配必须**精确**：`0x6425 = AJ159 NL P`、`0x6426 = AJ159 NL`，只差一位，任何前缀/区间匹配都会搞错型号。
 
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -24,7 +24,7 @@ pub struct Entry {
 }
 
 impl Entry {
-    /// 从 `hid_interface` 取接口号：`MI_01` → `1`。集合选择须「VID/PID 精确 → 表内 MI_xx → UsagePage」三者齐全（`docs/hid-rust-verification.md` §集合选择）。
+    /// 从 `hid_interface` 取接口号：`MI_01` → `1`。集合选择须「VID/PID 精确 → 表内 MI_xx → UsagePage」三者齐全。
     pub fn interface_index(&self) -> Option<u8> {
         let tail = self.hid_interface.rsplit("MI_").next()?;
         u8::from_str_radix(tail, 16).ok()

@@ -1,4 +1,4 @@
-//! Provider 线程组监管：panic 隔离与退避重启（RT-1/RT-2/§3.3）。每个 transport 一个监管线程，自身不做 I/O，只做三件事：用 `catch_unwind` 包住 `Provider::run` 起采集线程；把上报事件原样转发宿主；采集线程异常结束时上报 `TransportDown` 并按 5s/15s/60s 退避重启，连续 5 次失败标记「不可用」等手动重启。**panic 不得跨 transport 传播**：HID 解析器崩溃时蓝牙必须照常，故隔离在采集线程边界而非宿主里 catch。
+//! Provider 线程组监管：panic 隔离与退避重启。每个 transport 一个监管线程，自身不做 I/O，只做三件事：用 `catch_unwind` 包住 `Provider::run` 起采集线程；把上报事件原样转发宿主；采集线程异常结束时上报 `TransportDown` 并按 5s/15s/60s 退避重启，连续 5 次失败标记「不可用」等手动重启。**panic 不得跨 transport 传播**：HID 解析器崩溃时蓝牙必须照常，故隔离在采集线程边界而非宿主里 catch。
 
 use std::panic::AssertUnwindSafe;
 use std::sync::Arc;
@@ -26,7 +26,7 @@ pub enum SupervisorCmd {
     Stop,
 }
 
-/// 一个 transport 的采集规格。
+/// 一个 transport 的采集参数。
 pub struct Spec {
     /// 传输层。
     pub transport: Transport,
@@ -238,7 +238,7 @@ fn run_once(shared: &Arc<Shared>, spec: &Spec, cmd_rx: &Receiver<SupervisorCmd>)
     let worker = std::thread::Builder::new()
         .name(format!("voltnest-{}", spec.transport.as_str()))
         .spawn(move || {
-            // RT-2：panic 必须在采集线程边界被吞掉，转成一条结构化失败原因。
+            // panic 必须在采集线程边界被吞掉，转成一条结构化失败原因。
             let result = std::panic::catch_unwind(AssertUnwindSafe(|| {
                 provider.run(event_tx, stop_for_worker)
             }));
@@ -301,7 +301,7 @@ fn forward(shared: &Arc<Shared>, transport: Transport, event: ProviderEvent) {
     }
 }
 
-/// 上报 `TransportDown`：该 transport 的 L1 全部转 `Offline`，但不动别的 transport。
+/// 上报 `TransportDown`：该 transport 的全部设备转 `Offline`，但不动别的 transport。
 fn push_down(shared: &Arc<Shared>, spec: &Spec, detail: &str) {
     forward(
         shared,

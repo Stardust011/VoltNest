@@ -1,4 +1,4 @@
-//! 快照、排序、L2 分组与 rev（W 系列 / §9.2）。
+//! 快照、排序、呈现分组与 rev。
 
 mod common;
 
@@ -62,7 +62,7 @@ fn devices_follow_tray_order_then_name() {
     assert_eq!(snap.devices[0].display_name, "Alpha");
     assert_eq!(snap.devices[1].display_name, "Zeta");
 
-    // 设置 order 后按 order 排序（W-3：排序在 Rust 决定）。
+    // 设置 order 后按 order 排序（排序统一由 Rust 决定）。
     e.set_tray_order(vec![a.as_str().to_string()]);
     let snap = e.snapshot(T0);
     assert_eq!(snap.devices[0].stable_id, a.as_str());
@@ -98,12 +98,12 @@ fn tray_respects_capacity_presence_and_hidden() {
     );
     assert_eq!(snap.tray.visible_device_ids[0], ids[0].as_str());
 
-    // 隐藏是用户显式动作（AA-4）。
+    // 隐藏是用户显式动作。
     e.set_hidden(vec![ids[0].as_str().to_string()]);
     let snap = e.snapshot(T0);
     assert_eq!(snap.tray.visible_device_ids[0], ids[1].as_str());
 
-    // 物理消失后不再有图标（AA-2）。
+    // 物理消失后不再有图标。
     let removed = ProviderEvent::Removed {
         stable_id: ids[1].clone(),
         reason: voltnest_provider::RemovalReason::Unplugged,

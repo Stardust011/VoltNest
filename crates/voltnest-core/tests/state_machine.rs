@@ -1,4 +1,4 @@
-//! 状态机测试：五种状态、完整转换表、三个阈值边界、时钟异常（K / Z 系列）。
+//! 状态机测试：五种状态、完整转换表、三个阈值边界与时钟异常。
 
 mod common;
 
@@ -24,7 +24,7 @@ fn arrived_creates_unknown_without_battery() {
 
 #[test]
 fn first_reading_goes_straight_to_online() {
-    // Z-3：任何有效读数直接 Online，不经过中间态。
+    // 任何有效读数直接 Online，不经过中间态。
     let mut e = engine();
     feed(&mut e, &hid_arrived(), Transport::Hid, T0);
     let t = e.apply_event(&hid_reading(90), Some(Transport::Hid), T0 + 1_000);
@@ -94,7 +94,7 @@ fn unavailable_and_offline_boundaries() {
 
 #[test]
 fn tick_only_reports_true_on_real_change() {
-    // Z-4 / W-8：状态真变化才 emit。
+    // 状态真变化才发布快照。
     let mut e = engine();
     feed(&mut e, &hid_arrived(), Transport::Hid, T0);
     feed(&mut e, &hid_reading(90), Transport::Hid, T0);
@@ -225,7 +225,7 @@ fn unreadable_does_not_override_offline() {
 
 #[test]
 fn link_lost_is_immediate_offline_without_percent() {
-    // P-1 / Z-5：链路消失立即 Offline，不等下一个周期。
+    // 链路消失立即 Offline，不等下一个周期。
     let mut e = engine();
     feed(&mut e, &hid_arrived(), Transport::Hid, T0);
     feed(&mut e, &hid_reading(90), Transport::Hid, T0);
@@ -242,7 +242,7 @@ fn link_lost_is_immediate_offline_without_percent() {
         }
     );
     let rec = e.record("hid:7768:6426").unwrap();
-    assert!(rec.present, "LinkLost 不销毁托盘图标（AA-2）");
+    assert!(rec.present, "LinkLost 不销毁托盘图标");
     assert!(rec.battery.is_none(), "离线期间不得继续展示电流量");
     assert_eq!(rec.last_known_battery.map(Percent::get), Some(90));
 }
@@ -266,14 +266,14 @@ fn removed_drops_presence_and_tray_membership() {
     let snap = e.snapshot(T0 + 2_000);
     assert!(
         snap.tray.visible_device_ids.is_empty(),
-        "AA-2：物理消失才销毁图标"
+        "物理消失才销毁图标"
     );
     assert_eq!(snap.devices[0].state, DeviceState::Offline);
 }
 
 #[test]
 fn transport_down_only_affects_its_own_transport() {
-    // RT-1：一处挂死只影响当前 transport。
+    // 一处挂死只影响当前 transport。
     let mut e = engine();
     feed(&mut e, &hid_arrived(), Transport::Hid, T0);
     feed(&mut e, &hid_reading(90), Transport::Hid, T0);
@@ -297,7 +297,7 @@ fn transport_down_only_affects_its_own_transport() {
 
 #[test]
 fn binding_conflict_does_not_create_second_record() {
-    // Y-3：保留先发现的一条，第二台只告警。
+    // 保留先发现的一条，第二台只告警。
     let mut e = engine();
     feed(&mut e, &hid_arrived(), Transport::Hid, T0);
     let conflict = ProviderEvent::BindingConflict {
@@ -326,7 +326,7 @@ fn duplicate_arrival_does_not_duplicate_records() {
 
 #[test]
 fn clock_backward_does_not_underflow_and_clears_cooldown() {
-    // Z-8 / Z-9：u64 下溢不得变成天文数字，冷却必须清除。
+    // u64 下溢不得变成天文数字，冷却必须清除。
     let mut e = engine();
     feed(&mut e, &hid_arrived(), Transport::Hid, T0);
     feed(&mut e, &hid_reading(15), Transport::Hid, T0);
@@ -347,7 +347,7 @@ fn clock_backward_does_not_underflow_and_clears_cooldown() {
 
 #[test]
 fn backfilled_reading_is_dropped() {
-    // Z-10：时钟后跳产生的回填值必须丢弃，不得改写 lastValidAt / battery。
+    // 时钟后跳产生的回填值必须丢弃，不得改写 lastValidAt / battery。
     let mut e = engine();
     feed(&mut e, &hid_arrived(), Transport::Hid, T0);
     feed(&mut e, &hid_reading(90), Transport::Hid, T0);
@@ -440,7 +440,7 @@ fn ble_uses_its_own_thresholds() {
 
 #[test]
 fn ble_charging_is_always_unknown() {
-    // PC-5：BLE 不得显示「未充电」。
+    // BLE 不得显示「未充电」。
     let mut e = engine();
     feed(&mut e, &ble_arrived(), Transport::Ble, T0);
     let event = ProviderEvent::Reading(ValidReading::new(
@@ -473,7 +473,7 @@ fn reading_before_arrival_is_not_lost() {
 
 #[test]
 fn seed_backfills_unknown_with_last_known_only() {
-    // §11 / D8：回填后主电量「—」，副行上次 X%。
+    // 回填后主电量「—」，副行上次 X%。
     let mut e = engine();
     e.seed(
         &[voltnest_core::SeedEntry {
@@ -536,7 +536,7 @@ fn seed_ignores_malformed_ids() {
 
 #[test]
 fn tray_order_is_pruned_to_limit_keeping_recent() {
-    // X-7：超过 32 条淘汰最久未出现项（无记录的按「从未出现」处理）。
+    // 超过 32 条淘汰最久未出现项（无记录的按「从未出现」处理）。
     let mut e = engine();
     let mut order: Vec<String> = (0..35).map(|i| format!("hid:{i:04x}:0001")).collect();
     let fresh_id = StableId::hid(0x0034, 0x0001);

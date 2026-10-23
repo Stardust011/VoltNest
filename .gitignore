@@ -26,8 +26,5 @@ Thumbs.db
 # 本地产物
 *.tmp
 
-# 测试矩阵校验脚本的中间产物
-actual-tests.txt
-
 # WorkBuddy 本地项目数据
 .workbuddy/

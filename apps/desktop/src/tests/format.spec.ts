@@ -174,7 +174,7 @@ describe("visibleDiagEvents", () => {
 });
 
 describe("transportLabel / batteryText", () => {
-  it("链路名称与规格一致", () => {
+  it("链路名称保持稳定", () => {
     expect(transportLabel("hid")).toBe("2.4G");
     expect(transportLabel("ble")).toBe("蓝牙");
   });
