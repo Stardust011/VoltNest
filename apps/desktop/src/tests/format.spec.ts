@@ -124,9 +124,9 @@ describe("secondaryLine", () => {
 
 describe("displayedBattery", () => {
   it("启动回填（unknown + 缓存值）时用缓存值填主读数", () => {
-    expect(displayedBattery(device({ battery: null, state: "unknown", lastKnownBattery: 90 }))).toBe(
-      90,
-    );
+    expect(
+      displayedBattery(device({ battery: null, state: "unknown", lastKnownBattery: 90 })),
+    ).toBe(90);
   });
 
   it("实时读数优先于缓存", () => {
@@ -136,9 +136,9 @@ describe("displayedBattery", () => {
   });
 
   it("确定读不到的退化状态不借用缓存", () => {
-    expect(displayedBattery(device({ battery: null, state: "offline", lastKnownBattery: 90 }))).toBe(
-      null,
-    );
+    expect(
+      displayedBattery(device({ battery: null, state: "offline", lastKnownBattery: 90 })),
+    ).toBe(null);
     expect(
       displayedBattery(device({ battery: null, state: "unavailable", lastKnownBattery: 90 })),
     ).toBe(null);

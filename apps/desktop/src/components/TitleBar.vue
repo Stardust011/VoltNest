@@ -82,11 +82,11 @@ onBeforeUnmount(() => {
 <template>
   <header
     data-tauri-drag-region
-    class="bg-background/70 relative z-50 flex h-10 shrink-0 items-center pl-3 backdrop-blur-md dark:bg-white/[0.03]"
+    class="relative z-50 flex h-10 shrink-0 items-center bg-background/70 pl-3 backdrop-blur-md dark:bg-white/[0.03]"
   >
     <div data-tauri-drag-region class="pointer-events-none flex min-w-0 items-center gap-2">
       <span
-        class="bg-primary text-primary-foreground grid size-[18px] shrink-0 place-items-center rounded-[6px]"
+        class="grid size-[18px] shrink-0 place-items-center rounded-[6px] bg-primary text-primary-foreground"
       >
         <Zap :size="11" :stroke-width="2.5" aria-hidden="true" />
       </span>
@@ -98,7 +98,7 @@ onBeforeUnmount(() => {
         type="button"
         variant="ghost"
         size="icon"
-        class="text-muted-foreground h-full w-[42px] rounded-none hover:bg-transparent hover:text-foreground dark:hover:bg-transparent [html:not(.pointer-stale)_&]:hover:bg-neutral-900/[0.07] [html:not(.pointer-stale)_&]:active:bg-neutral-900/[0.12] dark:[html:not(.pointer-stale)_&]:hover:bg-white/[0.09] dark:[html:not(.pointer-stale)_&]:active:bg-white/[0.14]"
+        class="h-full w-[42px] rounded-none text-muted-foreground hover:bg-transparent hover:text-foreground dark:hover:bg-transparent [html:not(.pointer-stale)_&]:hover:bg-neutral-900/[0.07] [html:not(.pointer-stale)_&]:active:bg-neutral-900/[0.12] dark:[html:not(.pointer-stale)_&]:hover:bg-white/[0.09] dark:[html:not(.pointer-stale)_&]:active:bg-white/[0.14]"
         title="最小化"
         aria-label="最小化"
         @click="minimize"
@@ -109,7 +109,7 @@ onBeforeUnmount(() => {
         type="button"
         variant="ghost"
         size="icon"
-        class="text-muted-foreground h-full w-[42px] rounded-none hover:bg-transparent hover:text-foreground dark:hover:bg-transparent [html:not(.pointer-stale)_&]:hover:bg-[#c42b1c] [html:not(.pointer-stale)_&]:hover:text-white [html:not(.pointer-stale)_&]:active:bg-[#b0261a] [html:not(.pointer-stale)_&]:active:text-white"
+        class="h-full w-[42px] rounded-none text-muted-foreground hover:bg-transparent hover:text-foreground dark:hover:bg-transparent [html:not(.pointer-stale)_&]:hover:bg-[#c42b1c] [html:not(.pointer-stale)_&]:hover:text-white [html:not(.pointer-stale)_&]:active:bg-[#b0261a] [html:not(.pointer-stale)_&]:active:text-white"
         title="关闭到托盘"
         aria-label="关闭到托盘"
         @click="closeToTray"

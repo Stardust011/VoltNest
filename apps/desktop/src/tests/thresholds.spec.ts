@@ -99,10 +99,7 @@ describe("两档联动校验", () => {
       FIRST_BELOW_MESSAGE,
       SECOND_ABOVE_MESSAGE,
     ]);
-    expect(validateThresholdPair(["0", "95"])).toEqual([
-      FIRST_BELOW_MESSAGE,
-      SECOND_ABOVE_MESSAGE,
-    ]);
+    expect(validateThresholdPair(["0", "95"])).toEqual([FIRST_BELOW_MESSAGE, SECOND_ABOVE_MESSAGE]);
     // 只差 1% 也算「第二档更高」，不能报成「至少相差 1%」。
     expect(validateThresholdPair(["19", "20"])).toEqual([
       FIRST_BELOW_MESSAGE,

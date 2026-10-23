@@ -82,11 +82,7 @@ export function applyThresholdEdit(
   raw: string | number,
 ): Thresholds | null {
   const parsed =
-    typeof raw === "number"
-      ? Number.isInteger(raw)
-        ? raw
-        : null
-      : parseThresholdInput(raw);
+    typeof raw === "number" ? (Number.isInteger(raw) ? raw : null) : parseThresholdInput(raw);
   if (parsed === null) return null;
 
   const next: Thresholds = [current[0], current[1]];

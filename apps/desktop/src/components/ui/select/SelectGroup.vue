@@ -15,7 +15,7 @@ const forwardedProps = useForwardProps(delegatedProps);
   <SelectGroup
     data-slot="select-group"
     v-bind="forwardedProps"
-    :class="cn('p-1 w-full', props.class)"
+    :class="cn('w-full p-1', props.class)"
   >
     <slot />
   </SelectGroup>
