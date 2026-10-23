@@ -57,6 +57,14 @@ function statusClass(status: string) {
     ? "font-normal"
     : "border-destructive/40 text-destructive font-normal";
 }
+
+/**
+ * 坏帧诊断的 detail 是「成因 + 原始字节」（`cmd_mismatch(...) · 6B: 06 FA …`），
+ * 属于机器数据：按等宽字体渲染，字节间距才对得齐、好逐位核对。
+ */
+function detailClass(code: string) {
+  return code === "reading_unreadable" ? "font-mono text-[11px]" : "";
+}
 </script>
 
 <template>
@@ -290,6 +298,7 @@ function statusClass(status: string) {
 
             <p
               class="mt-2 min-w-0 text-xs leading-5 text-foreground/90 break-all whitespace-pre-wrap select-text"
+              :class="detailClass(event.code)"
             >
               <span v-if="event.deviceId" class="text-muted-foreground font-mono">
                 {{ event.deviceId }} ·

@@ -135,6 +135,11 @@ pub enum ProviderEvent {
         stable_id: StableId,
         /// 错误码。
         code: ErrorCode,
+        /// **诊断细节**：哪一条校验失败 + 被拒的原始字节（HID 坏帧）或失败上下文。
+        ///
+        /// 只写诊断页与日志，**不参与任何状态判定**：状态机看到的仍然只有 `code`。
+        /// `None` = 该情形没有可复核的数据（例如打开句柄失败且无可用报文）。
+        detail: Option<String>,
     },
     /// 链路没了 → 立即 `Offline`（P-1 / O-8）。
     LinkLost {
@@ -229,6 +234,7 @@ mod tests {
             ProviderEvent::Unreadable {
                 stable_id: id.clone(),
                 code: ErrorCode::MalformedFrame,
+                detail: Some("cmd_mismatch(want=0x03 got=0x23) · 6B: 06 FA 23 00 5A 01".into()),
             },
             ProviderEvent::LinkLost {
                 stable_id: id.clone(),
