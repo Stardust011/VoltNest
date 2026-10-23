@@ -14,5 +14,6 @@ voltnest-provider.workspace = true
 [target.'cfg(windows)'.dependencies]
 btleplug = { version = "~0.13", features = ["serde"] }
 futures = "0.3"
+log = { workspace = true }
 tokio = { version = "1", features = ["rt-multi-thread", "time", "sync", "macros"] }
 uuid = "1"
