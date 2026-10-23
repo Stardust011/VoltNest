@@ -39,6 +39,9 @@ pub fn update_settings(
 ) -> Result<SettingsDto, String> {
     let next = write_settings(&shared, |current| settings.apply_to(current))?;
     notify_wake(&shared);
+    // 改阈值会重建通知触发节点（旧档位丢弃、新档位建出来），诊断页必须重拉，
+    // 否则它还停在改之前的列表上，看起来像「新阈值没生效」。
+    notify_diagnostics(&shared);
     Ok(SettingsDto::from_settings(&next))
 }
 
@@ -153,6 +156,11 @@ pub fn show_panel(app: AppHandle) {
 
 fn notify_wake(shared: &Shared) {
     let _ = shared.tx.send(HostEvent::Wake);
+}
+
+/// 提示前端「诊断数据已变」。
+fn notify_diagnostics(shared: &Shared) {
+    let _ = shared.tx.send(HostEvent::Diagnostics);
 }
 
 fn apply_autostart(enabled: bool) -> Result<bool, String> {
