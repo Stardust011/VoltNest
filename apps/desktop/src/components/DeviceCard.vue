@@ -4,6 +4,7 @@ import { Zap } from "@lucide/vue";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
+import { deviceTypeIcon } from "../lib/device-icon";
 import {
   batteryColor,
   deviceTypeLabel,
@@ -38,10 +39,23 @@ const color = computed(() =>
 );
 
 /**
- * 类型标签：只有 Rust 判定出具体类型时才显示（`unknown` → `null` → 不渲染）。
+ * 类型文案：只有 Rust 判定出具体类型时才存在（`unknown` → `null`）。
+ *
+ * 卡片上不再显示这段文字（已换成图标），只留下给图标的无障碍标签用；
  * 判定来源见诊断页的 `device_classified` 记录，界面不重复解释。
  */
 const typeLabel = computed(() => deviceTypeLabel(props.device.deviceType));
+
+/**
+ * 类型图标：取代原来的「键盘 / 鼠标 / 耳机」文字标签。
+ *
+ * 类型不可知时按链路兜底（2.4G → `Link`、蓝牙 → `BluetoothConnected`），
+ * 规则集中在 `lib/device-icon.ts`，这里只做渲染。
+ */
+const typeIcon = computed(() => deviceTypeIcon(props.device.deviceType, props.device.transport));
+
+/** 图标没有可见文字，用无障碍标签补回语义（类型已知说类型，否则说链路）。 */
+const typeIconLabel = computed(() => typeLabel.value ?? transportLabel(props.device.transport));
 
 /**
  * 副行：
@@ -63,7 +77,17 @@ const secondary = computed(() => {
 <template>
 
 <Card class="group py-3 transition-shadow hover:shadow-md">
-  <CardContent class="flex items-center gap-4 px-4">
+  <CardContent class="flex items-center gap-3 px-4">
+
+    <!-- 类型图标（最左侧）：类型不可知时退化为链路图标 -->
+    <div
+      class="bg-muted text-muted-foreground flex size-8 shrink-0 items-center justify-center rounded-md"
+      role="img"
+      :aria-label="typeIconLabel"
+      data-testid="device-type-icon"
+    >
+      <component :is="typeIcon" class="size-4" aria-hidden="true" />
+    </div>
 
     <!-- 电量区域 -->
     <div class="flex w-16 shrink-0 flex-col gap-2">
@@ -104,15 +128,6 @@ const secondary = computed(() => {
           class="shrink-0 px-1.5 py-0 text-[10px] font-normal"
         >
           {{ transportLabel(device.transport) }}
-        </Badge>
-
-        <Badge
-          v-if="typeLabel"
-          variant="outline"
-          class="shrink-0 px-1.5 py-0 text-[10px] font-normal"
-          data-testid="device-type"
-        >
-          {{ typeLabel }}
         </Badge>
       </div>
 
