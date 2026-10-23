@@ -2,8 +2,9 @@
 import { onBeforeUnmount, onMounted } from "vue";
 import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow, type Window as TauriWindow } from "@tauri-apps/api/window";
-import { Minus, X, Zap } from "@lucide/vue";
+import { Minus, X } from "@lucide/vue";
 import { Button } from "@/components/ui/button";
+import BrandMark from "@/components/BrandMark.vue";
 
 /**
  * 自绘标题栏（`decorations:false`，系统边框不画）。约束：
@@ -11,7 +12,7 @@ import { Button } from "@/components/ui/button";
  * 2. 窗口按钮须落在拖拽区外（`<header>` 内 `ml-auto` 一组），否则「点了没反应」。
  * 3. 关闭=收托盘：真正隐藏由宿主 `prevent_close`+`hide` 完成，前端只发请求，不自己调 `hide()`（会绕开落盘）。
  * 4. 指针状态需主动作废（见 `POINTER_STALE`）。
- * 无最大化（配置 `maximizable:false`，双击标题栏最大化亦失效），仅最小化与关闭。图标用 lucide 的 `Minus`/`X`，徽标 `Zap`。
+ * 无最大化（配置 `maximizable:false`，双击标题栏最大化亦失效），仅最小化与关闭。窗口按钮用 lucide 的 `Minus`/`X`，品牌徽标为 `BrandMark`（与应用图标同源）。
  */
 
 /**
@@ -85,11 +86,7 @@ onBeforeUnmount(() => {
     class="relative z-50 flex h-10 shrink-0 items-center bg-background/70 pl-3 backdrop-blur-md dark:bg-white/[0.03]"
   >
     <div data-tauri-drag-region class="pointer-events-none flex min-w-0 items-center gap-2">
-      <span
-        class="grid size-[18px] shrink-0 place-items-center rounded-[6px] bg-primary text-primary-foreground"
-      >
-        <Zap :size="11" :stroke-width="2.5" aria-hidden="true" />
-      </span>
+      <BrandMark class="size-[18px] shrink-0" />
       <span class="truncate text-xs font-semibold tracking-tight">VoltNest</span>
     </div>
 

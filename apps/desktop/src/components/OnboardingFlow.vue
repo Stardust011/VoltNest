@@ -1,15 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, type Component } from "vue";
-import {
-  Headphones,
-  Layers,
-  LoaderCircle,
-  Mouse,
-  PanelTop,
-  Power,
-  ShieldCheck,
-  Zap,
-} from "@lucide/vue";
+import { Headphones, Layers, LoaderCircle, Mouse, PanelTop, Power, ShieldCheck } from "@lucide/vue";
+import BrandMark from "@/components/BrandMark.vue";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -87,12 +79,8 @@ function finish() {
       <CardHeader class="gap-0 px-6 pt-4 pb-4">
         <div class="flex items-center justify-between gap-3">
           <div class="flex min-w-0 items-center gap-2">
-            <!-- 品牌标识复用标题栏方块徽标，强化「同一应用」连续性。 -->
-            <span
-              class="grid size-6 shrink-0 place-items-center rounded-md bg-primary text-primary-foreground"
-            >
-              <Zap :size="13" :stroke-width="2.5" aria-hidden="true" />
-            </span>
+            <!-- 品牌标识与应用图标同源（BrandMark），强化「同一应用」连续性。 -->
+            <BrandMark class="size-6 shrink-0" />
             <span class="text-xs font-semibold tracking-tight">VoltNest</span>
             <span class="truncate text-[11px] text-muted-foreground">外设电量监控</span>
           </div>
