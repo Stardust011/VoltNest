@@ -3,7 +3,7 @@
 mod common;
 
 use common::*;
-use voltnest_core::{DeviceState, EngineConfig, Transition};
+use voltnest_core::{DeviceState, EngineConfig, Transition, UNREADABLE_KINDS_MAX};
 use voltnest_provider::Percent;
 use voltnest_provider::{
     ErrorCode, ProviderEvent, RemovalReason, Sensitivity, StableId, Transport, ValidReading,
@@ -169,6 +169,7 @@ fn unreadable_on_unknown_stays_unknown_but_records_error() {
     let event = ProviderEvent::Unreadable {
         stable_id: hid_id(),
         code: ErrorCode::MalformedFrame,
+        detail: Some("cmd_mismatch(want=0x03 got=0x23) · 6B: 06 FA 23 00 5A 01".into()),
     };
     let t = e.apply_event(&event, Some(Transport::Hid), T0 + 1);
     assert_eq!(t, Transition::None, "从未有读数 → 保持 Unknown");
@@ -185,6 +186,7 @@ fn unreadable_after_reading_is_unavailable_and_keeps_last_valid() {
     let event = ProviderEvent::Unreadable {
         stable_id: hid_id(),
         code: ErrorCode::PercentOutOfRange,
+        detail: None,
     };
     let t = e.apply_event(&event, Some(Transport::Hid), T0 + 5_000);
     assert_eq!(
@@ -212,6 +214,7 @@ fn unreadable_does_not_override_offline() {
     let bad = ProviderEvent::Unreadable {
         stable_id: hid_id(),
         code: ErrorCode::EmptyPayload,
+        detail: None,
     };
     e.apply_event(&bad, Some(Transport::Hid), T0 + 2);
     assert_eq!(
@@ -553,4 +556,143 @@ fn tray_order_is_pruned_to_limit_keeping_recent() {
     assert_eq!(kept.len(), 32, "超过 32 条必须淘汰");
     assert_eq!(kept[0], fresh, "最近出现的条目必须保留且位置不变");
     assert_eq!(e.records().len(), 1);
+}
+
+// ---------- 诊断：坏帧数据 ----------
+
+/// 一帧被判 `malformed_frame` 时，诊断行必须带上**成因与原始字节**，
+/// 而不是只有一个错误码（否则诊断页回答不了「为什么坏」）。
+fn unreadable_frame(detail: &str) -> ProviderEvent {
+    ProviderEvent::Unreadable {
+        stable_id: hid_id(),
+        code: ErrorCode::MalformedFrame,
+        detail: Some(detail.into()),
+    }
+}
+
+#[test]
+fn malformed_frame_detail_reaches_diagnostics() {
+    let mut e = engine();
+    feed(&mut e, &hid_arrived(), Transport::Hid, T0);
+    let detail = "cmd_mismatch(want=0x03 got=0x23) · 6B: 06 FA 23 00 5A 01";
+    feed(&mut e, &unreadable_frame(detail), Transport::Hid, T0 + 1);
+
+    let events = e.diagnostics().recent();
+    let event = events
+        .iter()
+        .find(|d| d.code == "reading_unreadable")
+        .expect("坏帧必须留一条诊断");
+    assert_eq!(event.level.as_str(), "warn");
+    assert_eq!(event.device_id.as_deref(), Some("hid:7768:6426"));
+    assert_eq!(event.detail, format!("malformed_frame · {detail}"));
+}
+
+#[test]
+fn unreadable_without_detail_stays_bare_code() {
+    // 没有可复核数据的错误（打开句柄失败等）退化成只有错误码，行为与改动前一致。
+    let mut e = engine();
+    feed(&mut e, &hid_arrived(), Transport::Hid, T0);
+    let event = ProviderEvent::Unreadable {
+        stable_id: hid_id(),
+        code: ErrorCode::AccessDenied,
+        detail: None,
+    };
+    feed(&mut e, &event, Transport::Hid, T0 + 1);
+    let events = e.diagnostics().recent();
+    let diag = events
+        .iter()
+        .find(|d| d.code == "reading_unreadable")
+        .expect("失败必须留一条诊断");
+    assert_eq!(diag.detail, "access_denied");
+}
+
+#[test]
+fn identical_malformed_frames_are_coalesced() {
+    // 坏帧以 20ms 节奏刷屏时，同一条内容不得把 200 条环形缓冲刷掉。
+    let mut e = engine();
+    feed(&mut e, &hid_arrived(), Transport::Hid, T0);
+    let same = "cmd_mismatch(want=0x03 got=0x23) · 6B: 06 FA 23 00 5A 01";
+    for i in 0..5 {
+        feed(&mut e, &unreadable_frame(same), Transport::Hid, T0 + i);
+    }
+    assert_eq!(unreadable_count(&e), 1, "完全相同的坏帧只留一条");
+
+    // 字节变了 → 新的一条：诊断要能看出「帧内容在变」。
+    let other = "cmd_mismatch(want=0x03 got=0x24) · 6B: 06 FA 24 00 5A 01";
+    feed(&mut e, &unreadable_frame(other), Transport::Hid, T0 + 6);
+    assert_eq!(unreadable_count(&e), 2);
+
+    // 有效读数**不**重置种类：好坏帧交替上报时，每帧清空会让同一条坏帧重新刷屏。
+    feed(&mut e, &hid_reading(90), Transport::Hid, T0 + 1_000);
+    feed(&mut e, &unreadable_frame(same), Transport::Hid, T0 + 1_001);
+    assert_eq!(unreadable_count(&e), 2, "有效读数不得让同一条坏帧重新留痕");
+    // 去重只作用于诊断行，状态机照旧退化。
+    assert_eq!(
+        e.record("hid:7768:6426").unwrap().state,
+        DeviceState::Unavailable
+    );
+}
+
+#[test]
+fn alternating_malformed_frames_each_get_one_line() {
+    // 设备轮流发出两种非电量报文（命令字不同）：只比「上一条是否相同」时
+    // 相邻两条永远不同，20ms 一次就会把环形缓冲刷空。
+    let mut e = engine();
+    feed(&mut e, &hid_arrived(), Transport::Hid, T0);
+    let a = "cmd_mismatch(want=0x03 got=0x23) · 6B: 06 FA 23 00 5A 01";
+    let b = "cmd_mismatch(want=0x03 got=0x24) · 6B: 06 FA 24 00 5A 01";
+    for i in 0..20 {
+        let text = if i % 2 == 0 { a } else { b };
+        feed(&mut e, &unreadable_frame(text), Transport::Hid, T0 + i);
+    }
+    assert_eq!(unreadable_count(&e), 2, "每种坏帧各留一条，不随次数增长");
+}
+
+#[test]
+fn distinct_malformed_kinds_are_capped() {
+    // 帧里带计数器时「每帧都不同」：上限内逐条留痕，超过上限不再刷屏。
+    let mut e = engine();
+    feed(&mut e, &hid_arrived(), Transport::Hid, T0);
+    for i in 0..(UNREADABLE_KINDS_MAX + 5) {
+        let text = format!("cmd_mismatch(want=0x03 got=0x{i:02X}) · 6B: 06 FA 00 00 5A 01");
+        feed(
+            &mut e,
+            &unreadable_frame(&text),
+            Transport::Hid,
+            T0 + i as u64,
+        );
+    }
+    assert_eq!(unreadable_count(&e), UNREADABLE_KINDS_MAX);
+}
+
+/// 设备重新出现是新的「一次出现」：种类集合清空，坏帧重新留痕。
+#[test]
+fn kinds_reset_when_device_reappears() {
+    let mut e = engine();
+    feed(&mut e, &hid_arrived(), Transport::Hid, T0);
+    let same = "cmd_mismatch(want=0x03 got=0x23) · 6B: 06 FA 23 00 5A 01";
+    feed(&mut e, &unreadable_frame(same), Transport::Hid, T0);
+    assert_eq!(unreadable_count(&e), 1);
+
+    // 掉线 → 重新出现 → 同样的坏帧必须重新留痕。
+    feed(
+        &mut e,
+        &ProviderEvent::Removed {
+            stable_id: hid_id(),
+            reason: RemovalReason::EnumerationGone,
+        },
+        Transport::Hid,
+        T0 + 1_000,
+    );
+    feed(&mut e, &hid_arrived(), Transport::Hid, T0 + 2_000);
+    feed(&mut e, &unreadable_frame(same), Transport::Hid, T0 + 2_001);
+    assert_eq!(unreadable_count(&e), 2);
+}
+
+fn unreadable_count(e: &voltnest_core::Engine) -> usize {
+    e.diagnostics()
+        .recent()
+        .iter()
+        .filter(|d| d.code == "reading_unreadable")
+        .count()
 }

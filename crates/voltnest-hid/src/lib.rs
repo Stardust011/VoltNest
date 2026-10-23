@@ -57,5 +57,5 @@ pub const READ_TIMEOUT_MS: i32 = 120;
 pub const READ_BUFFER_LEN: usize = 65;
 
 pub use brands::Registry;
-pub use frame::BatteryReading;
+pub use frame::{BatteryReading, FrameReject, RejectReason};
 pub use spec::{BrandSpec, FrameLayout};
