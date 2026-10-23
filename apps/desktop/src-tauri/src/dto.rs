@@ -1,7 +1,7 @@
 //! 宿主 → 前端的 DTO。快照直接复用 `Snapshot`（本身就是传输格式）；设置与诊断另建 DTO 是因为：磁盘类型带 `extra`（未知字段保留）属于磁盘格式，不该进 IPC，诊断页还要拼装运行时状态（线程组/自启/AUMID），而这些不在任何 crate 里。
 
 use serde::{Deserialize, Serialize};
-use voltnest_core::{DiagEvent, NotificationEntry};
+use voltnest_core::{DiagEvent, NotificationNode};
 use voltnest_provider::Transport;
 use voltnest_storage::{NotificationMode, Settings, TraySettings};
 
@@ -170,8 +170,8 @@ pub struct TransportStatusDto {
 #[derive(Clone, PartialEq, Eq, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NotificationStateDto {
-    /// 设备标识。
-    pub stable_id: String,
+    /// 节点覆盖的设备标识（合并卡的主成员在前）。
+    pub device_ids: Vec<String>,
     /// 阈值。
     pub threshold: u8,
     /// 是否处于可触发状态。
@@ -182,14 +182,14 @@ pub struct NotificationStateDto {
     pub last_result: Option<String>,
 }
 
-impl From<NotificationEntry> for NotificationStateDto {
-    fn from(e: NotificationEntry) -> Self {
+impl From<NotificationNode> for NotificationStateDto {
+    fn from(n: NotificationNode) -> Self {
         Self {
-            stable_id: e.stable_id,
-            threshold: e.threshold,
-            armed: e.armed,
-            last_notified_at_ms: e.last_notified_at_ms,
-            last_result: e.last_result,
+            device_ids: n.device_ids,
+            threshold: n.threshold,
+            armed: n.armed,
+            last_notified_at_ms: n.last_notified_at_ms,
+            last_result: n.last_result,
         }
     }
 }

@@ -21,7 +21,9 @@ pub use diagnostics::{DiagEvent, DiagLevel, Diagnostics};
 pub use engine::{Engine, EngineConfig, SeedEntry, Transition};
 pub use humanize::humanize_ago;
 pub use normalize::normalize;
-pub use notify::{LowBatteryAlert, NotificationBook, NotificationConfig, NotificationEntry};
+pub use notify::{
+    LowBatteryAlert, NotificationBook, NotificationConfig, NotificationEntry, NotificationNode,
+};
 pub use record::{Record, UNREADABLE_KINDS_MAX};
 pub use snapshot::{CardDto, DeviceDto, Snapshot, TrayDto};
 pub use state::DeviceState;

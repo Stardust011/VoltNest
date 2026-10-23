@@ -74,6 +74,21 @@ pub struct NotificationEntry {
     pub last_result: Option<String>,
 }
 
+/// 诊断页的一个通知触发节点：同一台设备的多条链路合成一条。
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct NotificationNode {
+    /// 该节点覆盖的设备标识（主成员在前）。
+    pub device_ids: Vec<String>,
+    /// 阈值。
+    pub threshold: u8,
+    /// 是否全部成员都可触发。
+    pub armed: bool,
+    /// 最近一次通知时间（取成员中最新）。
+    pub last_notified_at_ms: Option<u64>,
+    /// 最近一次通知结果。
+    pub last_result: Option<String>,
+}
+
 #[derive(Clone, Debug)]
 struct EntryState {
     armed: bool,
