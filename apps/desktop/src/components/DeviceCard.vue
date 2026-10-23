@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from "vue";
+import { Zap } from "@lucide/vue";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
@@ -53,43 +54,78 @@ const secondary = computed(() => {
 </script>
 
 <template>
-  <Card class="gap-0 py-3.5 transition-shadow hover:shadow-md">
-    <CardContent class="flex items-center gap-3.5 px-4">
-      <!-- 电量读数：数值 + Progress，颜色沿用 batteryColor 的语义（充电 / 低电 / 状态）。 -->
-      <div class="flex w-14 shrink-0 flex-col gap-1.5">
-        <span class="text-lg leading-none font-semibold tabular-nums" :style="{ color }">
+
+<Card class="group py-3 transition-shadow hover:shadow-md">
+  <CardContent class="flex items-center gap-4 px-4">
+
+    <!-- 电量区域 -->
+    <div class="flex w-16 shrink-0 flex-col gap-2">
+      <div
+        class="flex h-6 items-center gap-1 whitespace-nowrap text-lg font-semibold leading-none tabular-nums"
+        :style="{ color }"
+      >
+        <span>
           {{ shownBattery === null ? "—" : shownBattery
-          }}<span v-if="shownBattery !== null" class="text-[0.6em] font-medium">%</span>
+          }}<span v-if="shownBattery !== null" class="text-xs font-medium">%</span>
         </span>
-        <Progress
-          :model-value="progress"
-          class="h-1.5 [&>div]:bg-current"
-          :style="{ color }"
-          :aria-label="shownBattery === null ? '电量未知' : `电量 ${shownBattery}%`"
+
+        <Zap
+          v-if="device.isCharging === true"
+          class="size-3.5 shrink-0"
+          aria-hidden="true"
+          data-testid="charging-bolt"
         />
       </div>
 
-      <div class="min-w-0 flex-1">
-        <div class="flex items-center gap-2">
-          <h2 class="truncate text-sm font-semibold">{{ device.displayName }}</h2>
-          <Badge variant="secondary" class="shrink-0 font-normal">
-            {{ transportLabel(device.transport) }}
-          </Badge>
-        </div>
-        <p class="text-muted-foreground mt-1 truncate text-xs">{{ secondary }}</p>
+      <Progress
+        :model-value="progress"
+        class="h-1.5 [&>div]:bg-current"
+        :style="{ color }"
+        :aria-label="shownBattery === null ? '电量未知' : `电量 ${shownBattery}%`"
+      />
+    </div>
+
+    <!-- 设备信息 -->
+    <div class="min-w-0 flex-1 self-center">
+      <div class="flex min-w-0 items-center gap-2">
+        <h2 class="truncate text-sm font-semibold leading-5">
+          {{ device.displayName }}
+        </h2>
+
+        <Badge
+          variant="secondary"
+          class="shrink-0 px-1.5 py-0 text-[10px] font-normal"
+        >
+          {{ transportLabel(device.transport) }}
+        </Badge>
       </div>
 
-      <div class="flex flex-col items-end gap-1.5">
-        <Badge variant="secondary" :class="[tone.chip, 'rounded-full']">
-          <span class="size-1.5 rounded-full" :class="tone.dot" />
-          {{ stateLabel(device.state) }}
-        </Badge>
+      <p class="mt-1 truncate text-xs leading-4 text-muted-foreground">
+        {{ secondary }}
+      </p>
+    </div>
+
+    <!-- 状态区域 -->
+    <div class="flex max-w-[8rem] shrink-0 flex-col items-end gap-1.5">
+      <Badge
+        variant="secondary"
+        :class="[tone.chip, 'rounded-full whitespace-nowrap']"
+      >
         <span
-          v-if="device.lastError"
-          class="max-w-[7rem] truncate font-mono text-[10px] text-orange-600 select-text dark:text-orange-400"
-          :title="device.lastError"
-        >{{ device.lastError }}</span>
-      </div>
-    </CardContent>
-  </Card>
+          class="mr-1.5 size-1.5 shrink-0 rounded-full"
+          :class="tone.dot"
+        />
+        {{ stateLabel(device.state) }}
+      </Badge>
+
+      <span
+        v-if="device.lastError"
+        class="max-w-full truncate text-right font-mono text-[10px] leading-3 text-orange-600 dark:text-orange-400"
+        :title="device.lastError"
+      >{{ device.lastError }}</span>
+    </div>
+
+  </CardContent>
+</Card>
+
 </template>
