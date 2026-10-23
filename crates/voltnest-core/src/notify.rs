@@ -140,11 +140,14 @@ impl NotificationBook {
                 .entries
                 .retain(|threshold, _| thresholds.contains(threshold));
             for threshold in &thresholds {
-                device.entries.entry(*threshold).or_insert_with(|| EntryState {
-                    armed: true,
-                    last_notified_at_ms: None,
-                    last_result: None,
-                });
+                device
+                    .entries
+                    .entry(*threshold)
+                    .or_insert_with(|| EntryState {
+                        armed: true,
+                        last_notified_at_ms: None,
+                        last_result: None,
+                    });
             }
             device.last_battery = None;
         }
@@ -579,7 +582,9 @@ mod tests {
         kept.sort_unstable();
         assert_eq!(kept, vec![25, 30], "只应有新配置里的档位");
         assert!(
-            entries.iter().all(|e| e.armed && e.last_notified_at_ms.is_none()),
+            entries
+                .iter()
+                .all(|e| e.armed && e.last_notified_at_ms.is_none()),
             "新档位不能继承旧档位的通知历史"
         );
 
@@ -606,11 +611,7 @@ mod tests {
             cooldown_ms: 0,
             ..NotificationConfig::default()
         });
-        let entry = b
-            .entries()
-            .into_iter()
-            .find(|e| e.threshold == 20)
-            .unwrap();
+        let entry = b.entries().into_iter().find(|e| e.threshold == 20).unwrap();
         assert!(!entry.armed, "阈值没变，不得重新武装");
         assert!(entry.last_notified_at_ms.is_some());
     }
