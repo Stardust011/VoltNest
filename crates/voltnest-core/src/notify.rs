@@ -271,13 +271,17 @@ impl NotificationBook {
     }
 
     /// 导出全部 `(device, threshold)` 状态用于持久化与诊断页（AB-5）。
+    ///
+    /// 排序：设备按 `stable_id` 升序，同一设备内**阈值从高到低**。
+    /// 档位本身是有先后语义的（第一档电量较高时先提醒），诊断页若按
+    /// `BTreeMap` 的自然升序展示，第二档会排在第一条，和设置页的顺序反着。
     pub fn entries(&self) -> Vec<NotificationEntry> {
         let mut out = Vec::new();
         let mut ids: Vec<&String> = self.devices.keys().collect();
         ids.sort();
         for id in ids {
             let device = &self.devices[id];
-            for (threshold, entry) in &device.entries {
+            for (threshold, entry) in device.entries.iter().rev() {
                 out.push(NotificationEntry {
                     stable_id: id.clone(),
                     threshold: *threshold,
@@ -505,6 +509,16 @@ mod tests {
         assert_eq!(
             entries[0].stable_id, "a",
             "按 stableId 排序，便于诊断页展示"
+        );
+        // 同一设备内档位从高到低：第一档在上，和设置页的列表顺序一致。
+        let order: Vec<(&str, u8)> = entries
+            .iter()
+            .map(|e| (e.stable_id.as_str(), e.threshold))
+            .collect();
+        assert_eq!(
+            order,
+            vec![("a", 20), ("a", 10), ("b", 20), ("b", 10)],
+            "设备升序、同一设备内阈值降序"
         );
         // 只有被跌破的那一档写了结果；未跌破的 10% 档保持未武装过的空结果。
         assert!(
