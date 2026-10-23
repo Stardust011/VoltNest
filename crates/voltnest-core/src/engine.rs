@@ -15,8 +15,9 @@ use crate::snapshot::{CardDto, DeviceDto, Snapshot, TrayDto};
 use crate::state::DeviceState;
 use std::collections::BTreeMap;
 use voltnest_provider::{
-    DeviceFact, ErrorCode, Percent, ProfileError, ProviderEvent, ProviderProfile, RemovalReason,
-    Sensitivity, StableId, Thresholds, Transport, ValidReading, validate_registry,
+    ClassificationMethod, DeviceFact, DeviceType, ErrorCode, Percent, ProfileError, ProviderEvent,
+    ProviderProfile, RemovalReason, Sensitivity, StableId, Thresholds, Transport, ValidReading,
+    validate_registry,
 };
 
 /// 引擎配置。阈值不在其中：它只能来自 Provider 与档位（Z-1）。
@@ -319,9 +320,8 @@ impl Engine {
                     format!("{old} -> {new}"),
                 );
             }
-            if let Some((old, new)) = reclassified {
-                let prefix = format!("{old} -> {}", new.device_type);
-                self.push_classification(now_ms, fact, &prefix);
+            if let Some((old, _)) = reclassified {
+                self.push_classification(now_ms, fact, Some(old));
             }
             let to = self.records[idx].state;
             if from == to {
@@ -348,29 +348,32 @@ impl Engine {
                 Some(fact.stable_id.as_str().to_string()),
                 format!("{} via {}", fact.display_name, fact.provider),
             );
-            self.push_classification(now_ms, fact, "首次识别");
+            self.push_classification(now_ms, fact, None);
             Transition::Created
         }
     }
 
-    /// 把一次「设备类型识别」写进诊断：**成功与失败都记**，未判定时记清原因。
+    /// 把一次「设备类型识别」写进诊断：**成功与失败都记**。
     ///
-    /// 这是规范 §6「可追溯」的落点：诊断页能回答「这台设备为什么是 / 不是某个类型」，
-    /// 而不是只有 `deviceType` 一个结果。分类文本由
-    /// [`voltnest_provider::DeviceClassification::evidence_text`] 提供。
+    /// 分两级写，边界是「结论需不需要它」：
     ///
-    /// 分两级写：结论（含真正起作用的证据与冲突）走 `info`；「字段存在但本项目
-    /// 不支持、因而没参与判定」的逐条清单走 `debug`（`device_classification_skipped`）。
-    /// 实测一台复合 HID 能报 7 个集合，混在结论行里会把证据淹掉。
-    fn push_classification(&mut self, now_ms: u64, fact: &DeviceFact, prefix: &str) {
+    /// - `info`（`device_classified`）：**只有结论**，形如
+    ///   `mouse via verified_device_mapping` / `unknown -> mouse via …`。
+    ///   设备是谁由诊断行的 `deviceId` 给出，不在正文里重复。
+    /// - `debug`（`device_classification_evidence`）：逐条证据、冲突说明与
+    ///   「未支持组合」清单。一台复合 HID 能报 7 个集合，这些细节只该在
+    ///   排查时看，不该占结论行的位置。
+    fn push_classification(&mut self, now_ms: u64, fact: &DeviceFact, from: Option<DeviceType>) {
         let c = &fact.classification;
-        let device_id = Some(fact.stable_id.as_str().to_string());
-        let evidence = c.evidence_text();
-        let detail = if evidence.is_empty() {
-            format!("{prefix} · {}（无可用证据）", c.device_type)
-        } else {
-            format!("{prefix} · {} via {} · {evidence}", c.device_type, c.method)
+        let mut detail = match from {
+            Some(old) => format!("{old} -> {}", c.device_type),
+            None => c.device_type.to_string(),
         };
+        if c.method != ClassificationMethod::Unknown {
+            detail.push_str(" via ");
+            detail.push_str(c.method.as_str());
+        }
+        let device_id = Some(fact.stable_id.as_str().to_string());
         self.diagnostics.push(
             now_ms,
             DiagLevel::Info,
@@ -378,13 +381,15 @@ impl Engine {
             device_id.clone(),
             detail,
         );
-        if !c.skipped.is_empty() {
+
+        let evidence = c.debug_text();
+        if !evidence.is_empty() {
             self.diagnostics.push(
                 now_ms,
                 DiagLevel::Debug,
-                "device_classification_skipped",
+                "device_classification_evidence",
                 device_id,
-                format!("{prefix} · 未参与判定：{}", c.skipped_text()),
+                evidence,
             );
         }
     }
