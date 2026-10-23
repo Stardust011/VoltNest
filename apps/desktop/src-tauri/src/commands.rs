@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Manager, State};
 
 use voltnest_core::{DiagLevel, Snapshot};
 use voltnest_provider::{Transport, clock};
@@ -145,6 +145,24 @@ pub fn complete_onboarding(
 #[tauri::command]
 pub fn show_panel(app: AppHandle) {
     tray::show_main(&app);
+}
+
+/// 收进托盘：隐藏主窗口，进程与采集线程照旧。前端不自己调 `hide()` —— 那样会绕开落盘，最后几秒的电量变化可能丢。
+#[tauri::command]
+pub fn hide_to_tray(app: AppHandle, shared: State<'_, Arc<Shared>>) -> Result<(), String> {
+    let Some(window) = app.get_webview_window("main") else {
+        return Err("主窗口不存在".to_string());
+    };
+    window.hide().map_err(|e| format!("隐藏窗口失败：{e}"))?;
+    host::persist(&shared, clock::now_utc_ms(), true);
+    Ok(())
+}
+
+/// 退出程序：交给 `app.exit(0)`，由 `RunEvent::Exit` 统一停监管线程并强制落盘。前端不能走 `close()` —— 宿主的 `prevent_close` 把它截成「收托盘」。
+#[tauri::command]
+pub fn quit_app(app: AppHandle) {
+    log::info!("用户从标题栏退出");
+    app.exit(0);
 }
 
 fn notify_wake(shared: &Shared) {
