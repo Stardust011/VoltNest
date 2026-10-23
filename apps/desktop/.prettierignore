@@ -1,0 +1,11 @@
+# 依赖与构建产物
+node_modules/
+dist/
+
+# 锁文件由 npm 生成，格式不归 Prettier 管
+package-lock.json
+
+# Tauri 侧：Rust 代码由 rustfmt 负责，target / gen 是构建产物
+src-tauri/target/
+src-tauri/gen/
+src-tauri/**/*.rs
