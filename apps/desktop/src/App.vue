@@ -100,10 +100,10 @@ const deviceById = computed(() => {
   return map;
 });
 
-/** 顶部状态条：只在真的连上宿主后才显示版本号等信息。 */
+/** 顶部状态条：只在真的连上宿主后才显示版本号等信息；台数按面板行算（合并卡算一台）。 */
 const statusText = computed(() => {
   if (!connected.value) return "正在连接…";
-  const count = snapshot.value?.devices.length ?? 0;
+  const count = rows.value.length;
   return count === 0 ? "尚未发现设备" : `正在监控 ${count} 台设备`;
 });
 

@@ -184,16 +184,90 @@ fn no_group_when_both_active() {
 }
 
 #[test]
-fn no_group_when_both_inactive() {
+fn groups_at_startup_before_any_reading() {
+    // 刚启动：两条链路都到位但都还没读数，仍必须只有一张卡。
+    let mut e = engine();
+    common::feed(&mut e, &hid_arrived(), Transport::Hid, T0);
+    common::feed(&mut e, &ble_arrived(), Transport::Ble, T0);
+    let snap = e.snapshot(T0);
+    assert_eq!(snap.cards.len(), 1, "启动瞬间也必须合并成一台");
+    let card = &snap.cards[0];
+    assert_eq!(card.primary_device_id, "hid:7768:6426", "无读数时取 2.4G");
+    assert_eq!(card.state, DeviceState::Unknown);
+    assert_eq!(card.battery, None);
+    assert_eq!(card.inactive_member_text, "蓝牙 链路 · 未活动");
+}
+
+#[test]
+fn groups_when_both_inactive_prefers_fresher_reading() {
     let mut e = engine();
     common::feed(&mut e, &hid_arrived(), Transport::Hid, T0);
     common::feed(&mut e, &hid_reading(90), Transport::Hid, T0);
-    common::feed(&mut e, &ble_arrived(), Transport::Ble, T0);
-    common::feed(&mut e, &ble_reading(80), Transport::Ble, T0);
+    common::feed(&mut e, &ble_arrived(), Transport::Ble, T0 + 100_000);
+    common::feed(&mut e, &ble_reading(80), Transport::Ble, T0 + 100_000);
     e.tick(T0 + 400_000);
+
+    let snap = e.snapshot(T0 + 400_000);
+    assert_eq!(snap.cards.len(), 1, "两条都不活跃也要合并成一张卡");
+    assert_eq!(
+        snap.cards[0].primary_device_id, "ble:01:00:00:23:04:35",
+        "无活跃成员时取读数更新的一条"
+    );
     assert!(
-        e.snapshot(T0 + 400_000).cards.is_empty(),
-        "两条都不活跃 → 不合并"
+        snap.cards[0]
+            .inactive_member_text
+            .starts_with("2.4G 链路 · 未活动（")
+    );
+}
+
+#[test]
+fn notification_nodes_merge_and_follow_grouping() {
+    let mut e = engine();
+    common::feed(&mut e, &hid_arrived(), Transport::Hid, T0);
+    common::feed(&mut e, &hid_reading(15), Transport::Hid, T0);
+    common::feed(&mut e, &ble_arrived(), Transport::Ble, T0);
+    common::feed(&mut e, &ble_reading(14), Transport::Ble, T0);
+    e.take_alerts();
+    // 两条链路都退场后合并成一台设备。
+    e.tick(T0 + 400_000);
+
+    let nodes = e.notification_nodes(T0 + 400_000);
+    assert_eq!(nodes.len(), 2, "两条链路的两档阈值合成两个节点");
+    let high = &nodes[0];
+    assert_eq!(high.threshold, 20);
+    assert_eq!(
+        high.device_ids,
+        vec![
+            "hid:7768:6426".to_string(),
+            "ble:01:00:00:23:04:35".to_string()
+        ]
+    );
+    assert!(!high.armed, "任一链路已通知即视为已触发");
+    assert_eq!(high.last_result.as_deref(), Some("sent"));
+    assert!(nodes[1].armed, "10% 档两条链路都还没跌破");
+}
+
+#[test]
+fn groups_are_independent_of_sensitivity() {
+    let mut loose = engine_with(EngineConfig {
+        sensitivity: Sensitivity::Loose,
+        ..EngineConfig::default()
+    });
+    let mut sensitive = engine_with(EngineConfig {
+        sensitivity: Sensitivity::Sensitive,
+        ..EngineConfig::default()
+    });
+    for e in [&mut loose, &mut sensitive] {
+        common::feed(e, &hid_arrived(), Transport::Hid, T0);
+        common::feed(e, &hid_reading(90), Transport::Hid, T0);
+        common::feed(e, &ble_arrived(), Transport::Ble, T0);
+        common::feed(e, &ble_reading(70), Transport::Ble, T0);
+        e.tick(T0 + 1_000_000);
+    }
+    assert_eq!(
+        loose.snapshot(T0 + 1_000_000).cards,
+        sensitive.snapshot(T0 + 1_000_000).cards,
+        "档位只影响阈值，不得影响呈现分组"
     );
 }
 
@@ -291,20 +365,6 @@ fn stale_counts_as_active_for_grouping() {
     assert_eq!(e.record("hid:7768:6426").unwrap().state, DeviceState::Stale);
     assert_eq!(snap.cards.len(), 1);
     assert_eq!(snap.cards[0].primary_device_id, "hid:7768:6426");
-}
-
-#[test]
-fn sensitivity_does_not_change_grouping() {
-    let mut e = engine_with(EngineConfig {
-        sensitivity: Sensitivity::Loose,
-        ..EngineConfig::default()
-    });
-    common::feed(&mut e, &hid_arrived(), Transport::Hid, T0);
-    common::feed(&mut e, &hid_reading(90), Transport::Hid, T0);
-    common::feed(&mut e, &ble_arrived(), Transport::Ble, T0);
-    common::feed(&mut e, &ble_reading(70), Transport::Ble, T0);
-    e.tick(T0 + 400_000);
-    assert!(e.snapshot(T0 + 400_000).cards.is_empty());
 }
 
 #[test]

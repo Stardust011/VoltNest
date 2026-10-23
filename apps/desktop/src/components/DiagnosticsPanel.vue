@@ -214,7 +214,7 @@ function detailClass(code: string) {
         <div class="flex items-center justify-between gap-3">
           <CardTitle class="text-sm font-semibold">通知触发节点</CardTitle>
           <span class="text-xs text-muted-foreground">
-            {{ diagnostics.notifications.length }} 条记录
+            {{ diagnostics.notifications.length }} 个节点
           </span>
         </div>
       </CardHeader>
@@ -224,19 +224,23 @@ function detailClass(code: string) {
           v-if="diagnostics.notifications.length === 0"
           class="rounded-lg border border-dashed px-3 py-6 text-center text-xs text-muted-foreground"
         >
-          暂无通知记录
+          暂无通知节点
         </div>
 
         <ul v-else class="flex flex-col gap-2">
           <li
             v-for="n in diagnostics.notifications"
-            :key="`${n.stableId}-${n.threshold}`"
+            :key="`${n.deviceIds.join('|')}-${n.threshold}`"
             class="min-w-0 rounded-lg border bg-card/50 p-3"
           >
-            <div class="flex min-w-0 items-start justify-between gap-3">
-              <span class="min-w-0 flex-1 font-mono text-xs break-all select-text">
-                {{ n.stableId }}
-              </span>
+            <div class="flex min-w-0 items-center justify-between gap-3">
+              <div class="min-w-0 flex-1">
+                <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
+                  <span class="font-mono text-xs break-all whitespace-pre-line select-text">
+                    {{ n.deviceIds.join("\n") }}
+                  </span>
+                </div>
+              </div>
 
               <div class="flex shrink-0 items-center gap-2">
                 <span class="font-mono text-sm font-semibold tabular-nums">

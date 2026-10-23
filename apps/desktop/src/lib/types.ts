@@ -72,7 +72,8 @@ export interface TransportStatusDto {
 }
 
 export interface NotificationStateDto {
-  stableId: string;
+  // 节点覆盖的设备标识：合并卡的多条链路合成一个节点，主成员在前。
+  deviceIds: string[];
   threshold: number;
   armed: boolean;
   lastNotifiedAtMs: number | null;
