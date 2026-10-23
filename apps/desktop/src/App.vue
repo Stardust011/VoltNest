@@ -31,6 +31,14 @@ const diagnostics = ref<DiagnosticsDto | null>(null);
 const busy = ref(false);
 const error = ref<string | null>(null);
 
+/**
+ * 调试重放开关：诊断页点「重现首次引导」时置 true，只让遮罩重新出现。
+ *
+ * 这是纯 UI 状态，**不碰** `settings.onboardingCompleted` —— 关掉遮罩后
+ * 首次引导的生命周期判定仍与磁盘上的设置一致。
+ */
+const replayOnboarding = ref(false);
+
 /** 诊断刷新的合并窗口：一串线程组状态变化只拉一次。 */
 const DIAGNOSTICS_REFRESH_MS = 120;
 
@@ -209,6 +217,20 @@ async function finishOnboarding(choice: OnboardingChoice) {
   }
 }
 
+/**
+ * 引导结束。
+ *
+ * 正常路径仍交给宿主落盘（`complete_onboarding`：写设置 + 注册 Run 项）。
+ * 调试重放只收起遮罩：调试入口一旦落盘，等于隔三差五改用户的启动项。
+ */
+function onOnboardingDone(choice: OnboardingChoice) {
+  if (replayOnboarding.value) {
+    replayOnboarding.value = false;
+    return;
+  }
+  void finishOnboarding(choice);
+}
+
 watch(view, (next) => {
   if (next !== "diagnostics") return;
   // 进页时立即拉一次全量，同时取消已排队的合并刷新，避免接连两次请求。
@@ -290,15 +312,16 @@ onBeforeUnmount(() => {
         :diagnostics="diagnostics"
         :now-ms="nowMs"
         @restart="doRestart"
+        @replay-onboarding="replayOnboarding = true"
       />
 
       <div v-else class="text-muted-foreground py-16 text-center text-sm">正在读取…</div>
     </main>
 
     <OnboardingFlow
-      v-if="settings && !settings.onboardingCompleted"
+      v-if="settings && (!settings.onboardingCompleted || replayOnboarding)"
       :busy="busy"
-      @done="finishOnboarding"
+      @done="onOnboardingDone"
     />
 
     <Alert
