@@ -20,6 +20,8 @@ PNG / ICO 容器即可。渐变在同一像素内按子采样点取色，所以�
     128x128.png         资源管理器 / Toast 头图
     128x128@2x.png      256×256，高 DPI
     icon.ico            多尺寸 ICO（16/24/32/48/64/128/256）
+    ../../src/assets/brand-mark.png
+                        256×256，界面内的品牌徽标（BrandMark.vue 直接引这张图）
 
 所有几何量都是 0..1 的归一化坐标（原点左上，y 向下），改尺寸不需要改数字。
 """
@@ -32,6 +34,8 @@ import struct
 import zlib
 
 HERE = pathlib.Path(__file__).resolve().parent
+# 界面内的徽标与安装包图标共用同一个位图：要整体替换品牌形象时只改图，不动组件。
+EMBED_ASSET = HERE.parent.parent / "src" / "assets" / "brand-mark.png"
 
 # ---------- 配色 ----------
 TILE = (0x14, 0x15, 0x18)        # 近黑底
@@ -243,6 +247,12 @@ def main() -> None:
         images.append((size, blob))
     (HERE / "icon.ico").write_bytes(ico(images))
     print(f"{'icon.ico':20s} {ico_sizes}  {(HERE / 'icon.ico').stat().st_size:>7} bytes")
+
+    # 界面徽标取 256px：18–24px 的展示尺寸在 3× 屏上仍有余量，体积也只有几 KB。
+    EMBED_ASSET.parent.mkdir(parents=True, exist_ok=True)
+    blob = cache.get(256) or png(256, render(256))
+    EMBED_ASSET.write_bytes(blob)
+    print(f"{'brand-mark.png':20s} {256:>4}px  {len(blob):>7} bytes  ->  {EMBED_ASSET}")
 
 
 if __name__ == "__main__":
