@@ -112,8 +112,30 @@ impl NotificationBook {
     }
 
     /// 更新配置（设置页改动）。
+    ///
+    /// 阈值列表变化时必须同步清理每个设备的条目：`entries()` 既是诊断页
+    /// 「通知触发节点」的数据源，也是 `state.json` 的持久化来源。不清的话
+    /// 用户改完阈值仍会看到已经不存在的档位，重启后还会被 [`Self::seed`] 读回来。
+    ///
+    /// 同时清空跌破判定基线：电量本来就低于新阈值时（例如从 20 改成 30，
+    /// 当前 15%），基线一直停在 15%，永远等不到「跌破」，新档位一次也不会触发。
+    /// 清空后按「首次获得读数」处理，新档位立刻有机会按当前电量判定一次；
+    /// 已被跌破且尚未回升的档位仍是未武装状态，不会重复提醒。
     pub fn set_config(&mut self, config: NotificationConfig) {
-        self.config = config.normalized();
+        let next = config.normalized();
+        let thresholds_changed = next.thresholds != self.config.thresholds;
+        self.config = next;
+        if !thresholds_changed {
+            return;
+        }
+        let thresholds = self.config.thresholds.clone();
+        for device in self.devices.values_mut() {
+            // 保留下来的档位沿用原有 armed / 冷却历史。
+            device
+                .entries
+                .retain(|threshold, _| thresholds.contains(threshold));
+            device.last_battery = None;
+        }
     }
 
     /// 用 `state.json` 回填：重启后不得重复通知（AB-4）。
@@ -508,5 +530,82 @@ mod tests {
         b.mark_result("nope", 20, "failed");
         b.mark_result("a", 7, "failed");
         assert_eq!(pick(&b, 20).as_deref(), Some("suppressed_mode_off"));
+    }
+
+    fn with_thresholds(thresholds: Vec<u8>) -> NotificationConfig {
+        NotificationConfig {
+            thresholds,
+            ..NotificationConfig::default()
+        }
+    }
+
+    #[test]
+    fn config_change_drops_stale_entries() {
+        let mut b = book();
+        // 20% 档已通知，10% 档还没跌破；两条都会进诊断页与 state.json。
+        assert!(b.observe("d", "Dev", 15, Some(false), T0).is_some());
+        assert_eq!(b.entries().len(), 2);
+
+        // 改成 30 / 25：20 / 10 的条目必须随之消失。
+        b.set_config(with_thresholds(vec![30, 25]));
+        assert!(b.entries().is_empty(), "旧档位不得残留");
+
+        // 下一次读数只为当前配置里的档位重新建条目。
+        assert!(b.observe("d", "Dev", 15, Some(false), T0 + 1).is_some());
+        let mut kept: Vec<u8> = b.entries().iter().map(|e| e.threshold).collect();
+        kept.sort_unstable();
+        assert_eq!(kept, vec![25, 30], "只应有新配置里的档位");
+        let raised = b
+            .entries()
+            .into_iter()
+            .find(|e| e.threshold == 30)
+            .unwrap();
+        assert_eq!(
+            raised.last_notified_at_ms,
+            Some(T0 + 1),
+            "新档位的通知时间应是这次读数，不是旧档位留下的历史"
+        );
+        assert!(!raised.armed, "已通知的档位必须解除武装");
+    }
+
+    #[test]
+    fn unchanged_thresholds_keep_entry_state() {
+        let mut b = book();
+        assert!(b.observe("d", "Dev", 15, Some(false), T0).is_some());
+
+        // 只改通知模式（阈值列表不变）时，已通知的档位不得被重新武装，
+        // 否则同一次低电量会重复提醒。
+        b.set_config(NotificationConfig {
+            thresholds: vec![20, 10],
+            cooldown_ms: 0,
+            ..NotificationConfig::default()
+        });
+        let entry = b
+            .entries()
+            .into_iter()
+            .find(|e| e.threshold == 20)
+            .unwrap();
+        assert!(!entry.armed, "阈值没变，不得重新武装");
+        assert!(entry.last_notified_at_ms.is_some());
+    }
+
+    #[test]
+    fn raising_threshold_alerts_on_current_reading() {
+        let mut b = book();
+        // 电量稳定在 15%：20% 档已通知，10% 档没跌破。
+        assert!(b.observe("d", "Dev", 15, Some(false), T0).is_some());
+
+        // 用户把第一档抬到 30：15% 已经低于新阈值。基线若不清空，
+        // 「上次 15 >= 30」永远不成立，新档位一次也不会触发。
+        b.set_config(with_thresholds(vec![30, 10]));
+        let alert = b
+            .observe("d", "Dev", 15, Some(false), T0 + 1)
+            .expect("抬高一档后应按当前电量提醒");
+        assert_eq!(alert.threshold, 30);
+        // 低的那一档没被跨过，不得连带触发。
+        assert!(
+            b.observe("d", "Dev", 15, Some(false), T0 + 2).is_none(),
+            "同一读数不得重复提醒"
+        );
     }
 }
