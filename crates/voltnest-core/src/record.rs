@@ -5,6 +5,12 @@
 use crate::state::DeviceState;
 use voltnest_provider::{DeviceClassification, ErrorCode, Percent, StableId, Transport};
 
+/// 单台设备在一次「出现」里最多记住多少种坏帧（见 [`Record::unreadable_kinds`]）。
+///
+/// 上限的作用是兜住「每帧字节都不同」的极端情况（例如帧里带计数器）：
+/// 达到上限后新的种类不再留痕，宁可少一条诊断，也不让环形缓冲被刷空。
+pub const UNREADABLE_KINDS_MAX: usize = 32;
+
 /// 一个 transport 上的一台设备。
 #[derive(Clone, Debug)]
 pub struct Record {
@@ -39,6 +45,14 @@ pub struct Record {
     pub last_push_at_ms: Option<u64>,
     /// 最近一次结构化错误。
     pub last_error: Option<ErrorCode>,
+    /// 本次「出现」以来已经记录过的坏帧诊断文本（错误码 + 成因 + 原始字节）。
+    ///
+    /// **只用于去重**：坏帧可能每 20ms 一条，重复内容进环形缓冲会把其它线索
+    /// （到达、识别、链路）挤掉。按「不同种类各留一条」而不是「与上一条比」，
+    /// 是因为同一台设备常轮流发出几种非电量报文：交替刷屏时相邻两条永远不同，
+    /// 只比上一条挡不住。读到有效帧**不**清空（好坏帧交替同理），
+    /// 只有设备重新出现（`Offline` → `Unknown`）才清空，让新一段坏帧重新留痕。
+    pub unreadable_kinds: Vec<String>,
     /// 物理存在（AA）。只由 `Arrived` / `Removed` 改变，**不随 `state` 变化**。
     pub present: bool,
     /// 诊断用设备路径（Y-6）。
@@ -79,6 +93,7 @@ impl Record {
             last_valid_at_ms: None,
             last_push_at_ms: None,
             last_error: None,
+            unreadable_kinds: Vec::new(),
             present: true,
             path: None,
             first_seen_at_ms: now_ms,

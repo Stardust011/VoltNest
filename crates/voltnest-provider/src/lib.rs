@@ -21,6 +21,7 @@
 
 pub mod classify;
 pub mod clock;
+pub mod diag;
 pub mod error;
 pub mod event;
 pub mod ids;
@@ -29,9 +30,10 @@ pub mod testing;
 pub mod transport;
 
 pub use classify::{
-    BleEvidence, ClassificationMethod, DeviceClassification, DeviceType, HidCollection, HidEvidence,
-    VerifiedMapping, appearance_type, classify_ble, classify_hid, usage_type,
+    BleEvidence, ClassificationMethod, DeviceClassification, DeviceType, HidCollection,
+    HidEvidence, VerifiedMapping, appearance_type, classify_ble, classify_hid, usage_type,
 };
+pub use diag::{DIAG_BYTES, hex_bytes};
 pub use error::ErrorCode;
 pub use event::{DeviceFact, ProviderEvent, RemovalReason, ValidReading};
 pub use ids::{Percent, StableId};
