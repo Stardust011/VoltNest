@@ -6,7 +6,7 @@
 mod common;
 
 use common::*;
-use voltnest_core::{DeviceState, Transition};
+use voltnest_core::{DeviceState, DiagLevel, Transition};
 use voltnest_provider::testing::{ble_fact, hid_fact};
 use voltnest_provider::{
     ClassificationMethod, DeviceClassification, DeviceFact, DeviceType, ProviderEvent, Transport,
@@ -177,6 +177,48 @@ fn conflict_evidence_is_surfaced_without_a_type() {
         diag.detail.contains("证据冲突"),
         "诊断必须保留冲突原因：{}",
         diag.detail
+    );
+}
+
+#[test]
+fn unsupported_usages_only_reach_debug_level() {
+    // 只解析已支持的组合：未收录的 Usage 属于排查细节，走 debug；结论行必须干净。
+    let mut e = engine();
+    let mut c = DeviceClassification::new(
+        DeviceType::Mouse,
+        ClassificationMethod::VerifiedDeviceMapping,
+        vec!["可核验映射 → mouse（来源：config.xml 1.0.7.6）".to_string()],
+    );
+    c.skipped
+        .push("HID Usage 0x000c/0x0001 不在已支持组合内，不映射".to_string());
+    c.skipped
+        .push("HID Usage 0xffb2/0x0001 不在已支持组合内，不映射".to_string());
+    let fact = hid_fact("AJ159 NL").with_classification(c);
+    e.apply_event(&ProviderEvent::Arrived(fact), Some(Transport::Hid), T0);
+
+    let recent = e.diagnostics().recent();
+    let info = recent
+        .iter()
+        .find(|d| d.code == "device_classified")
+        .expect("结论行必须存在");
+    assert_eq!(info.level, DiagLevel::Info);
+    assert!(
+        !info.detail.contains("不在已支持组合内"),
+        "结论行只留参与判定的证据：{}",
+        info.detail
+    );
+
+    let debug = recent
+        .iter()
+        .find(|d| d.code == "device_classification_skipped")
+        .expect("未参与判定的条目必须留 debug 记录");
+    assert_eq!(debug.level, DiagLevel::Debug);
+    assert_eq!(debug.device_id.as_deref(), Some("hid:7768:6426"));
+    assert_eq!(
+        debug.detail.matches("不在已支持组合内").count(),
+        2,
+        "逐条都要留痕：{}",
+        debug.detail
     );
 }
 

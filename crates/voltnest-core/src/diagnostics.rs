@@ -5,9 +5,15 @@
 
 use std::collections::VecDeque;
 
-/// 诊断级别，对应诊断页的红条 / 黄条 / 普通行。
+/// 诊断级别，对应诊断页的红条 / 黄条 / 普通行 / 折叠的调试行。
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum DiagLevel {
+    /// 调试信息：讲「哪些字段存在但没参与判定」这类排查细节，前端默认隐藏。
+    ///
+    /// 与 [`Self::Info`] 的分界是**结论是否需要它**：`Info` 放要用户知情的结论
+    /// 与原因，`Debug` 放逐条枚举噪音（例如一台复合 HID 报了 7 个集合，其中 5 个
+    /// 本项目不支持）。级别越低噪声越大，不会挤掉关键行。
+    Debug,
     /// 普通信息。
     Info,
     /// 需要用户知情但不阻塞。
@@ -20,6 +26,7 @@ impl DiagLevel {
     /// 稳定字符串。
     pub const fn as_str(self) -> &'static str {
         match self {
+            Self::Debug => "debug",
             Self::Info => "info",
             Self::Warn => "warn",
             Self::Error => "error",

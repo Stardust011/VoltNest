@@ -120,6 +120,20 @@ export function transportLabel(transport: "hid" | "ble"): string {
 }
 
 /**
+ * 诊断列表默认折叠 `debug` 级事件。
+ *
+ * 级别只决定「默认是否展示」，不决定「是否记录」：未参与判定的逐条字段
+ * （一台复合 HID 能报 5~7 条）一条不少地留在环形缓冲里，展开就能核对，
+ * 但不会把结论行挤出视野。过滤是纯展示，不改数据（W-2）。
+ */
+export function visibleDiagEvents<T extends { level: string }>(
+  events: readonly T[],
+  showDebug: boolean,
+): T[] {
+  return showDebug ? [...events] : events.filter((e) => e.level !== "debug");
+}
+
+/**
  * 设备类型 → 中文短标签。
  *
  * `unknown` 与未知字符串都返回 `null`：识别不出来就**什么都不显示**，
