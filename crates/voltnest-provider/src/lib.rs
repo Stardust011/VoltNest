@@ -10,11 +10,16 @@
 //! - [`ProviderProfile::charging`] 为 [`ChargingSupport::Unavailable`] 时，
 //!   [`ProviderProfile::sanitize_charging`] 会把任何 `Some(bool)` 压成 `None`
 //!   → BLE 不会被渲染成「未充电」（PC-5）。
+//!
+//! 设备类型识别（[`classify`]）同样是纯类型 + 纯函数：Provider 只负责把
+//! **实际取到的标准字段**填进 [`HidEvidence`] / [`BleEvidence`]，判定规则与
+//! 冲突处理不依赖任何 I/O，也不会反过来影响电量采集。
 
 #![forbid(unsafe_code)]
 #![deny(clippy::disallowed_types)]
 #![warn(missing_docs)]
 
+pub mod classify;
 pub mod clock;
 pub mod error;
 pub mod event;
@@ -23,6 +28,10 @@ pub mod profile;
 pub mod testing;
 pub mod transport;
 
+pub use classify::{
+    BleEvidence, ClassificationMethod, DeviceClassification, DeviceType, HidCollection, HidEvidence,
+    VerifiedMapping, appearance_type, classify_ble, classify_hid, usage_type,
+};
 pub use error::ErrorCode;
 pub use event::{DeviceFact, ProviderEvent, RemovalReason, ValidReading};
 pub use ids::{Percent, StableId};

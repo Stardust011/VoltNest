@@ -40,6 +40,13 @@ pub struct DeviceDto {
     pub display_name: String,
     /// 归一化型号键，参与 L2 分组。`null` = 未命中型号表。
     pub model_key: Option<String>,
+    /// 设备类型（应用层枚举的小写形式，如 `mouse` / `keyboard`）。
+    ///
+    /// `unknown` = 当前证据不足，前端**不得**用型号名或链路推断类型（W-2）。
+    pub device_type: String,
+    /// 得出 `deviceType` 的方法（`hid_usage` / `ble_appearance` /
+    /// `verified_device_mapping` / `unknown`），仅用于诊断与展示溯源。
+    pub classification_method: String,
     /// 当前电量。`null` = 当前无有效读数。
     pub battery: Option<u8>,
     /// 上次已知电量，仅副行展示，不参与状态与通知（W-9）。
@@ -101,6 +108,8 @@ mod tests {
                 provider: "hid-vbas".into(),
                 display_name: "AJ159 NL".into(),
                 model_key: Some("aj159 nl".into()),
+                device_type: "mouse".into(),
+                classification_method: "verified_device_mapping".into(),
                 battery: None,
                 last_known_battery: Some(90),
                 last_known_at_ms: Some(1_792_631_200_000),
@@ -124,6 +133,8 @@ mod tests {
         );
         assert!(json.contains("\"lastKnownBattery\":90"));
         assert!(json.contains("\"isCharging\":true"));
+        assert!(json.contains("\"deviceType\":\"mouse\""));
+        assert!(json.contains("\"classificationMethod\":\"verified_device_mapping\""));
         assert!(json.contains("\"state\":\"unknown\""));
         assert!(json.contains("\"inactiveMemberText\"") || json.contains("\"cards\":[]"));
     }

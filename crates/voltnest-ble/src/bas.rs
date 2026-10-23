@@ -1,4 +1,4 @@
-//! Battery Service 特征 UUID 与解析。
+//! Battery Service / GAP 特征 UUID 与解析。
 
 use voltnest_provider::{ErrorCode, Percent};
 
@@ -10,8 +10,26 @@ pub const CHAR_BATTERY_LEVEL: u16 = 0x2A19;
 pub const SERVICE_GENERIC_ACCESS: u16 = 0x1800;
 /// GAP Device Name。
 pub const CHAR_GAP_DEVICE_NAME: u16 = 0x2A00;
+/// GAP Appearance：**只用于设备类型识别**，不参与电量与状态判定。
+pub const CHAR_GAP_APPEARANCE: u16 = 0x2A01;
 /// Battery Level Status：**只用于诊断展示**，失真，不进入状态机。
 pub const CHAR_BATTERY_LEVEL_STATUS: u16 = 0x2BED;
+
+/// 解析 GAP `0x2A01` Appearance。
+///
+/// Appearance 是 16 位枚举（`category << 6 | subcategory`），按小端序传输。
+/// 只有**恰好两个字节**才算取得有效值；长度不符、读取失败都返回 `None`，
+/// 调用方据此走「未取得 Appearance」的分支，绝不补默认值。
+///
+/// 这里只做长度与字节序的机械解析，**不做**语义映射——映射表在
+/// [`voltnest_provider::classify`] 里集中维护，保证「标准数值」与「应用层分类」
+/// 两件事分开可核对。
+pub fn parse_appearance(bytes: &[u8]) -> Option<u16> {
+    match bytes.len() {
+        2 => Some(u16::from_le_bytes([bytes[0], bytes[1]])),
+        _ => None,
+    }
+}
 
 /// 解析 `0x2A19` 读数。
 ///
@@ -121,6 +139,19 @@ mod tests {
         assert_eq!(CHAR_BATTERY_LEVEL, 0x2A19);
         assert_eq!(SERVICE_GENERIC_ACCESS, 0x1800);
         assert_eq!(CHAR_GAP_DEVICE_NAME, 0x2A00);
+        assert_eq!(CHAR_GAP_APPEARANCE, 0x2A01);
         assert_eq!(CHAR_BATTERY_LEVEL_STATUS, 0x2BED);
+    }
+
+    #[test]
+    fn appearance_is_little_endian_and_length_checked() {
+        // HID Mouse 0x03C2 → 线上字节 [0xC2, 0x03]。
+        assert_eq!(parse_appearance(&[0xC2, 0x03]), Some(0x03C2));
+        assert_eq!(parse_appearance(&[0x00, 0x00]), Some(0x0000));
+        assert_eq!(parse_appearance(&[0x41, 0x08]), Some(0x0841));
+        // 长度不符：不补零、不截断。
+        assert_eq!(parse_appearance(&[]), None);
+        assert_eq!(parse_appearance(&[0xC2]), None);
+        assert_eq!(parse_appearance(&[0xC2, 0x03, 0x00]), None);
     }
 }

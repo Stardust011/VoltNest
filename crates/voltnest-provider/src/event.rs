@@ -9,6 +9,7 @@
 //! 3. 事件**不带时间戳**。宿主在收到事件时每批取一次 `now_utc_ms()` 并向下透传，
 //!    因此 Provider 完全不参与状态判定的时间基准。
 
+use crate::classify::DeviceClassification;
 use crate::error::ErrorCode;
 use crate::ids::{Percent, StableId};
 use crate::transport::Transport;
@@ -29,6 +30,11 @@ pub struct DeviceFact {
     pub model_name_raw: String,
     /// 诊断用的设备路径（HID `open_path` 目标 / BLE 地址），不参与身份判定（Y-6）。
     pub path: Option<String>,
+    /// 设备类型识别结果（含证据）。默认 [`DeviceClassification::unknown`]：
+    /// 证据不足就是 `Unknown`，**不得**为了好看填一个类型。
+    ///
+    /// 与电量采集完全解耦：本字段只影响展示与诊断，不参与任何状态判定。
+    pub classification: DeviceClassification,
 }
 
 impl DeviceFact {
@@ -47,12 +53,19 @@ impl DeviceFact {
             display_name: display_name.into(),
             model_name_raw: model_name_raw.into(),
             path: None,
+            classification: DeviceClassification::unknown(),
         }
     }
 
     /// 追加诊断路径。
     pub fn with_path(mut self, path: impl Into<String>) -> Self {
         self.path = Some(path.into());
+        self
+    }
+
+    /// 附带设备类型识别结果。
+    pub fn with_classification(mut self, classification: DeviceClassification) -> Self {
+        self.classification = classification;
         self
     }
 }
@@ -272,5 +285,29 @@ mod tests {
         );
         assert!(f.path.is_none());
         assert!(f.with_path("ble:010000230435").path.is_some());
+    }
+
+    #[test]
+    fn fact_defaults_to_unknown_classification() {
+        let f = DeviceFact::new(
+            StableId::hid(0x7768, 0x6426),
+            Transport::Hid,
+            "hid-vbas",
+            "AJ159 NL",
+            "AJ159 NL",
+        );
+        assert!(f.classification.is_unknown());
+        assert_eq!(f.classification.device_type, crate::DeviceType::Unknown);
+
+        let classified = f.with_classification(DeviceClassification::new(
+            crate::DeviceType::Mouse,
+            crate::ClassificationMethod::VerifiedDeviceMapping,
+            vec!["可核验映射".into()],
+        ));
+        assert_eq!(
+            classified.classification.device_type,
+            crate::DeviceType::Mouse
+        );
+        assert_eq!(classified.classification.evidence.len(), 1);
     }
 }
