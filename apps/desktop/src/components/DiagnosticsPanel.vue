@@ -5,6 +5,8 @@ import { computed, ref } from "vue";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { humanizeAgo } from "../lib/time";
 import { visibleDiagEvents } from "../lib/format";
 import type { DiagnosticsDto } from "../lib/types";
@@ -34,12 +36,46 @@ const levelLabel: Record<string, string> = {
   debug: "调试",
 };
 
-/** `debug` 默认折叠：逐条枚举细节，展开才看。 */
+/**
+ * `debug` 默认折叠：逐条枚举细节，展开才看。
+ *
+ * 这是**纯前端展示状态**（不落盘、不影响宿主采集），开关放在页面底部「调试区」，
+ * 与「重现首次引导页」同处一块，避免把调试开关混进正常诊断信息里。
+ */
 const showDebug = ref(false);
 const visibleEvents = computed(() =>
   visibleDiagEvents(props.diagnostics.events, showDebug.value),
 );
-const debugCount = computed(() => props.diagnostics.events.length - visibleEvents.value.length);
+
+/**
+ * `debug` 级记录总数。
+ *
+ * 只依赖原始事件列表，**不随开关变化**：早先按「总数 - 可见数」算，
+ * 展开后差值归零，按钮会自己消失（再也关不回去）。开关必须两种状态都能拨。
+ */
+const debugCount = computed(
+  () => props.diagnostics.events.filter((event) => event.level === "debug").length,
+);
+
+/**
+ * 事件卡标题右侧的计数。
+ *
+ * 折叠状态下必须把「还有多少条调试没展开」说出来：开关已经挪到页面底部的调试区，
+ * 这里若只报可见条数，列表看起来就像少了记录。
+ */
+const eventCountText = computed(() => {
+  const shown = visibleEvents.value.length;
+  return !showDebug.value && debugCount.value > 0
+    ? `${shown} 条事件 · 另有 ${debugCount.value} 条调试未展开`
+    : `${shown} 条事件`;
+});
+
+/** 调试区开关的说明文案（没有调试记录时说明为什么拨了也没变化）。 */
+const debugHint = computed(() =>
+  debugCount.value > 0
+    ? `「诊断事件」中一并展开 ${debugCount.value} 条 debug 级记录（逐条枚举证据，噪声较大）。`
+    : "当前没有 debug 级记录。",
+);
 
 const statusLabel: Record<string, string> = {
   running: "运行中",
@@ -270,20 +306,9 @@ function detailClass(code: string) {
       <CardHeader class="px-4 pb-0">
         <div class="flex items-center justify-between gap-3">
           <CardTitle class="text-sm font-semibold">诊断事件</CardTitle>
-          <div class="flex items-center gap-2">
-            <span class="text-muted-foreground text-xs">
-              {{ visibleEvents.length }} 条事件
-            </span>
-            <Button
-              v-if="debugCount > 0"
-              variant="ghost"
-              size="sm"
-              class="h-6 px-2 text-xs font-normal"
-              @click="showDebug = !showDebug"
-            >
-              {{ showDebug ? "隐藏调试" : `显示调试（${debugCount}）` }}
-            </Button>
-          </div>
+          <span class="text-muted-foreground text-xs">
+            {{ eventCountText }}
+          </span>
         </div>
       </CardHeader>
 
@@ -346,12 +371,36 @@ function detailClass(code: string) {
         </div>
       </CardHeader>
 
-      <CardContent class="px-4">
+      <CardContent class="flex flex-col gap-3 px-4">
+        <!--
+          调试开关（原「显示调试」按钮的位置在诊断事件卡里，现挪到调试区并改成开关）：
+          它控制的是上方「诊断事件」是否展开 debug 级记录，纯前端状态、不落盘。
+        -->
+        <div
+          class="border-destructive/30 bg-destructive/5 flex items-start justify-between gap-3 rounded-lg border p-3"
+        >
+          <div class="min-w-0 flex-1">
+            <Label for="show-debug-events" class="cursor-pointer text-xs font-medium">
+              显示调试信息
+            </Label>
+            <p class="text-muted-foreground mt-1 text-[11px] leading-snug">
+              {{ debugHint }}
+            </p>
+          </div>
+
+          <Switch
+            id="show-debug-events"
+            v-model="showDebug"
+            aria-label="显示调试信息"
+            class="data-[state=checked]:bg-destructive mt-0.5 shrink-0"
+          />
+        </div>
+
         <Button
           type="button"
           variant="outline"
           size="sm"
-          class="border-destructive/50 text-destructive hover:bg-destructive/10 hover:text-destructive mt-3 w-full"
+          class="border-destructive/50 text-destructive hover:bg-destructive/10 hover:text-destructive w-full"
           @click="emit('replayOnboarding')"
         >
           <RotateCcw aria-hidden="true" />
