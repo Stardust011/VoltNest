@@ -7,8 +7,10 @@ import {
   validateThresholdValue,
   THRESHOLD_MAX,
   THRESHOLD_MIN,
+  FIRST_BELOW_MESSAGE,
   ORDER_MESSAGE,
   RANGE_MESSAGE,
+  SECOND_ABOVE_MESSAGE,
   type Thresholds,
 } from "../lib/thresholds";
 
@@ -18,7 +20,7 @@ function isValidPair(raws: [string, string]): boolean {
   return first === null && second === null;
 }
 
-/** 正式值必须始终满足业务约束：5～95 且第一档比第二档至少高 1%。 */
+/** 正式值必须始终满足业务约束：0～95 且第一档比第二档至少高 1%。 */
 function expectInvariant(pair: Thresholds) {
   for (const value of pair) {
     expect(Number.isInteger(value)).toBe(true);
@@ -92,9 +94,25 @@ describe("两档联动校验", () => {
     expect(validateThresholdPair(["20", "20"])).toEqual([ORDER_MESSAGE, ORDER_MESSAGE]);
   });
 
-  it("间距不足 1%（第一档不高于第二档）报顺序错误", () => {
-    expect(validateThresholdPair(["10", "20"])).toEqual([ORDER_MESSAGE, ORDER_MESSAGE]);
-    expect(validateThresholdPair(["0", "95"])).toEqual([ORDER_MESSAGE, ORDER_MESSAGE]);
+  it("第二档高于第一档时提示方向反了，而不是「至少相差 1%」", () => {
+    expect(validateThresholdPair(["10", "20"])).toEqual([
+      FIRST_BELOW_MESSAGE,
+      SECOND_ABOVE_MESSAGE,
+    ]);
+    expect(validateThresholdPair(["0", "95"])).toEqual([
+      FIRST_BELOW_MESSAGE,
+      SECOND_ABOVE_MESSAGE,
+    ]);
+    // 只差 1% 也算「第二档更高」，不能报成「至少相差 1%」。
+    expect(validateThresholdPair(["19", "20"])).toEqual([
+      FIRST_BELOW_MESSAGE,
+      SECOND_ABOVE_MESSAGE,
+    ]);
+  });
+
+  it("两档相等仍报「至少相差 1%」", () => {
+    expect(validateThresholdPair(["0", "0"])).toEqual([ORDER_MESSAGE, ORDER_MESSAGE]);
+    expect(validateThresholdPair(["95", "95"])).toEqual([ORDER_MESSAGE, ORDER_MESSAGE]);
   });
 
   it("单档本身非法时只报该档，不掺顺序错误", () => {

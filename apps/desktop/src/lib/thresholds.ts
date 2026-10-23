@@ -20,8 +20,12 @@ export const THRESHOLD_MIN_GAP = 1;
 
 /** 单档错误文案：空、非整数、越界共用一句，避免用户猜。 */
 export const RANGE_MESSAGE = "请输入 0～95 的整数";
-/** 两档联动错误文案。 */
+/** 两档相等时的错误文案：分不清该改哪一档，两档共用。 */
 export const ORDER_MESSAGE = "两档至少相差 1%";
+/** 第二档高于第一档：直接说反了，比「至少相差 1%」更容易照着改。 */
+export const SECOND_ABOVE_MESSAGE = "第二档不能高于第一档";
+/** 第一档低于第二档：与上一句是同一冲突的两侧描述。 */
+export const FIRST_BELOW_MESSAGE = "第一档不能低于第二档";
 
 /** 档位下标：0 = 第一档，1 = 第二档。 */
 export type ThresholdIndex = 0 | 1;
@@ -64,8 +68,9 @@ export function validateThresholdValue(raw: string): string | null {
 /**
  * 两档联动校验：先逐档校验，两档都合法后再检查顺序。
  *
- * 顺序不满足时**两档一起**标红：这不是某一档单方面写错，
- * 而是这一对值不成立（谁高谁低由用户决定，界面不该替它选边）。
+ * 顺序不成立时两档一起标红 —— 这一对值不成立，界面不替用户选边；
+ * 但两侧的文案不同：反了就说「第二档不能高于第一档」，相等才说「至少相差 1%」。
+ * 只说「至少相差 1%」时用户得自己算差值，反了的情况下也不容易看出是方向错了。
  */
 export function validateThresholdPair(
   raws: readonly [string, string],
@@ -78,9 +83,17 @@ export function validateThresholdPair(
   ];
   if (errors[0] !== null || errors[1] !== null) return errors;
   // 到这里两档都已确认是 0～95 的整数，可以断言非空。
-  if ((first as number) - (second as number) < THRESHOLD_MIN_GAP) {
+  const gap = (first as number) - (second as number);
+  if (gap >= THRESHOLD_MIN_GAP) return errors;
+  if (gap >= 0) {
+    // 差距为正但不足 `THRESHOLD_MIN_GAP`：两档太近（当前配置下即相等），
+    // 两侧都说得通，给同一句。
     errors[0] = ORDER_MESSAGE;
     errors[1] = ORDER_MESSAGE;
+  } else {
+    // 差距为负：第二档比第一档还高，方向反了。
+    errors[0] = FIRST_BELOW_MESSAGE;
+    errors[1] = SECOND_ABOVE_MESSAGE;
   }
   return errors;
 }
