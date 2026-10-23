@@ -277,12 +277,17 @@ impl Engine {
 
     fn apply_arrived(&mut self, fact: &DeviceFact, now_ms: u64) -> Transition {
         if let Some(idx) = self.index_of(&fact.stable_id) {
-            let (renamed, from) = {
+            let (renamed, reclassified, from) = {
                 let rec = &mut self.records[idx];
                 let from = rec.state;
                 // D8：Provider 是名称唯一真值，快照只做对照。
                 let renamed = (rec.display_name != fact.display_name)
                     .then(|| (rec.display_name.clone(), fact.display_name.clone()));
+                // 类型识别同样以 Provider 上报为唯一真值；只在真的变了时留痕，
+                // 避免每次重枚举都刷一条诊断。
+                let reclassified = (rec.classification != fact.classification)
+                    .then(|| (rec.classification.device_type, fact.classification.clone()));
+                rec.classification.clone_from(&fact.classification);
                 rec.model_name_raw.clone_from(&fact.model_name_raw);
                 rec.model_key = crate::normalize::normalize(&fact.model_name_raw);
                 if fact.path.is_some() {
@@ -299,7 +304,7 @@ impl Engine {
                     rec.charging = None;
                     rec.last_error = None;
                 }
-                (renamed, from)
+                (renamed, reclassified, from)
             };
             if let Some((old, new)) = renamed {
                 self.records[idx].display_name = new.clone();
@@ -310,6 +315,10 @@ impl Engine {
                     Some(fact.stable_id.as_str().to_string()),
                     format!("{old} -> {new}"),
                 );
+            }
+            if let Some((old, new)) = reclassified {
+                let prefix = format!("{old} -> {}", new.device_type);
+                self.push_classification(now_ms, fact, &prefix);
             }
             let to = self.records[idx].state;
             if from == to {
@@ -327,6 +336,7 @@ impl Engine {
                 now_ms,
             );
             rec.path = fact.path.clone();
+            rec.classification.clone_from(&fact.classification);
             self.records.push(rec);
             self.diagnostics.push(
                 now_ms,
@@ -335,8 +345,31 @@ impl Engine {
                 Some(fact.stable_id.as_str().to_string()),
                 format!("{} via {}", fact.display_name, fact.provider),
             );
+            self.push_classification(now_ms, fact, "首次识别");
             Transition::Created
         }
+    }
+
+    /// 把一次「设备类型识别」写进诊断：**成功与失败都记**，未判定时记清原因。
+    ///
+    /// 这是规范 §6「可追溯」的落点：诊断页能回答「这台设备为什么是 / 不是某个类型」，
+    /// 而不是只有 `deviceType` 一个结果。分类文本由
+    /// [`voltnest_provider::DeviceClassification::evidence_text`] 提供。
+    fn push_classification(&mut self, now_ms: u64, fact: &DeviceFact, prefix: &str) {
+        let c = &fact.classification;
+        let evidence = c.evidence_text();
+        let detail = if evidence.is_empty() {
+            format!("{prefix} · {}（无可用证据）", c.device_type)
+        } else {
+            format!("{prefix} · {} via {} · {evidence}", c.device_type, c.method)
+        };
+        self.diagnostics.push(
+            now_ms,
+            DiagLevel::Info,
+            "device_classified",
+            Some(fact.stable_id.as_str().to_string()),
+            detail,
+        );
     }
 
     fn apply_reading(&mut self, reading: &ValidReading, now_ms: u64) -> Transition {
@@ -688,6 +721,8 @@ impl Engine {
             provider: r.provider.to_string(),
             display_name: r.display_name.clone(),
             model_key: r.model_key.clone(),
+            device_type: r.classification.device_type.as_str().to_string(),
+            classification_method: r.classification.method.as_str().to_string(),
             battery: r.battery.map(Percent::get),
             last_known_battery: r.last_known_battery.map(Percent::get),
             last_known_at_ms: r.last_known_at_ms,

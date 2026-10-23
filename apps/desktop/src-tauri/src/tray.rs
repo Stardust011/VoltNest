@@ -610,6 +610,8 @@ mod tests {
             provider: "hid-vbas".into(),
             display_name: "AJ159 NL".into(),
             model_key: Some("aj159 nl".into()),
+            device_type: "mouse".into(),
+            classification_method: "verified_device_mapping".into(),
             battery,
             last_known_battery: battery,
             last_known_at_ms: None,

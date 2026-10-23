@@ -3,7 +3,7 @@
 //! L1 持有身份、读数、状态与新鲜度；L2 只是渲染分组，不改变这里的任何字段。
 
 use crate::state::DeviceState;
-use voltnest_provider::{ErrorCode, Percent, StableId, Transport};
+use voltnest_provider::{DeviceClassification, ErrorCode, Percent, StableId, Transport};
 
 /// 一个 transport 上的一台设备。
 #[derive(Clone, Debug)]
@@ -20,6 +20,9 @@ pub struct Record {
     pub model_name_raw: String,
     /// 宿主计算的归一化键（D4）。`None` = 查表未命中 / 名称为空。
     pub model_key: Option<String>,
+    /// 设备类型识别结果（含证据）。默认 `Unknown`：**不参与**任何状态判定，
+    /// 只影响展示与诊断；重启后未收到 `Arrived` 前恒为 `Unknown`（不落盘）。
+    pub classification: DeviceClassification,
     /// 当前有效电量。`None` 表示当前无有效读数，**绝不**用 0 代替。
     pub battery: Option<Percent>,
     /// 上次已知电量，仅用于启动后的副行展示（W-9）。
@@ -67,6 +70,7 @@ impl Record {
             display_name: display_name.into(),
             model_name_raw: raw,
             model_key,
+            classification: DeviceClassification::unknown(),
             battery: None,
             last_known_battery: None,
             last_known_at_ms: None,

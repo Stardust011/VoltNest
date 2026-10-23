@@ -13,6 +13,14 @@ export interface DeviceDto {
   provider: string;
   displayName: string;
   modelKey: string | null;
+  /**
+   * 设备类型（Rust 侧枚举的小写形式）。`"unknown"` = 证据不足。
+   *
+   * 这是**已判定的结论**，前端只负责翻译成文案，不得据型号名/链路再推断一次（W-2）。
+   */
+  deviceType: string;
+  /** 得出 `deviceType` 的方法，仅用于诊断溯源。 */
+  classificationMethod: string;
   battery: number | null;
   lastKnownBattery: number | null;
   lastKnownAtMs: number | null;

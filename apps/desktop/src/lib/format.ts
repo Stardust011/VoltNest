@@ -119,6 +119,35 @@ export function transportLabel(transport: "hid" | "ble"): string {
   return transport === "hid" ? "2.4G" : "蓝牙";
 }
 
+/**
+ * 设备类型 → 中文短标签。
+ *
+ * `unknown` 与未知字符串都返回 `null`：识别不出来就**什么都不显示**，
+ * 不用「未知设备」占位，更不能由前端猜一个类型（W-2）。
+ */
+export function deviceTypeLabel(deviceType: string): string | null {
+  switch (deviceType) {
+    case "keyboard":
+      return "键盘";
+    case "mouse":
+      return "鼠标";
+    case "gamepad":
+      return "手柄";
+    case "headset":
+      return "头戴耳机";
+    case "headphones":
+      return "耳机";
+    case "speaker":
+      return "音箱";
+    case "controller":
+      return "控制器";
+    case "other":
+      return "其他";
+    default:
+      return null;
+  }
+}
+
 export function batteryText(device: DeviceDto): string {
   return device.battery === null ? "—" : `${device.battery}%`;
 }

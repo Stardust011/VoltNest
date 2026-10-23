@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   batteryColor,
   batteryText,
+  deviceTypeLabel,
   displayedBattery,
   ringProgress,
   secondaryLine,
@@ -18,6 +19,8 @@ function device(overrides: Partial<DeviceDto> = {}): DeviceDto {
     provider: "hid-vbas",
     displayName: "AJ159 NL",
     modelKey: "aj159 nl",
+    deviceType: "mouse",
+    classificationMethod: "verified_device_mapping",
     battery: 90,
     lastKnownBattery: 90,
     lastKnownAtMs: 1_000,
@@ -29,6 +32,22 @@ function device(overrides: Partial<DeviceDto> = {}): DeviceDto {
     ...overrides,
   };
 }
+
+describe("deviceTypeLabel", () => {
+  it("已知类型给出短标签", () => {
+    expect(deviceTypeLabel("mouse")).toBe("鼠标");
+    expect(deviceTypeLabel("keyboard")).toBe("键盘");
+    expect(deviceTypeLabel("headset")).toBe("头戴耳机");
+    expect(deviceTypeLabel("headphones")).toBe("耳机");
+    expect(deviceTypeLabel("speaker")).toBe("音箱");
+  });
+
+  it("unknown 与未知字符串都返回 null（前端不得自己猜类型）", () => {
+    for (const value of ["unknown", "", "MX-Master", "some_future_type"]) {
+      expect(deviceTypeLabel(value)).toBeNull();
+    }
+  });
+});
 
 describe("toneFor / stateLabel", () => {
   it("五种状态各有独立文案", () => {
