@@ -1,17 +1,33 @@
+
 <script setup lang="ts">
+import { RotateCcw } from "@lucide/vue";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { humanizeAgo } from "../lib/time";
 import type { DiagnosticsDto } from "../lib/types";
 
-const props = defineProps<{ diagnostics: DiagnosticsDto; nowMs: number }>();
-const emit = defineEmits<{ (e: "restart", transport: "hid" | "ble"): void }>();
+const props = defineProps<{
+  diagnostics: DiagnosticsDto;
+  nowMs: number;
+}>();
+
+const emit = defineEmits<{
+  (e: "restart", transport: "hid" | "ble"): void;
+  /** 调试用：把首次引导遮罩重新叫出来（宿主决定是否落盘）。 */
+  (e: "replayOnboarding"): void;
+}>();
 
 const levelClass: Record<string, string> = {
-  error: "text-destructive",
-  warn: "text-amber-600 dark:text-amber-400",
+  error: "text-destructive font-medium",
+  warn: "text-amber-600 dark:text-amber-400 font-medium",
   info: "text-muted-foreground",
+};
+
+const levelLabel: Record<string, string> = {
+  error: "错误",
+  warn: "警告",
+  info: "信息",
 };
 
 const statusLabel: Record<string, string> = {
@@ -24,128 +40,292 @@ function ago(atMs: number) {
   return humanizeAgo(Math.max(0, props.nowMs - atMs));
 }
 
-function transportName(t: string) {
-  return t === "hid" ? "2.4G" : "蓝牙";
+function transportName(transport: string) {
+  return transport === "hid" ? "2.4G" : "蓝牙";
 }
 
-/**
- * 家族 ID 直接用作展示名：`hid-vbas` / `ble-bas` 本身是协议名，不含品牌，
- * 新增品牌不新增家族（ADR-0011），因此这里不再需要「ID → 简称」的收敛表。
- */
 function familyLabel(family: string) {
   return family;
+}
+
+function statusVariant(status: string) {
+  return status === "running" ? "secondary" : "outline";
+}
+
+function statusClass(status: string) {
+  return status === "running"
+    ? "font-normal"
+    : "border-destructive/40 text-destructive font-normal";
 }
 </script>
 
 <template>
-  <div class="flex flex-col gap-4 pb-4">
-    <Card class="gap-3 py-4">
-      <CardHeader class="px-4">
-        <CardTitle class="text-sm">采集线程组</CardTitle>
+  <div class="flex w-full min-w-0 flex-col gap-4 pb-4">
+    <!-- 采集线程 -->
+    <Card class="min-w-0 py-4">
+      <CardHeader class="px-4 pb-0">
+        <div class="flex items-center justify-between gap-3">
+          <CardTitle class="text-sm font-semibold">采集线程组</CardTitle>
+          <span class="text-muted-foreground text-xs">
+            {{ diagnostics.transports.length }} 个线程
+          </span>
+        </div>
       </CardHeader>
+
       <CardContent class="px-4">
-        <ul class="flex flex-col gap-2">
+        <div
+          v-if="diagnostics.transports.length === 0"
+          class="text-muted-foreground rounded-lg border border-dashed px-3 py-6 text-center text-xs"
+        >
+          暂无采集线程
+        </div>
+
+        <ul v-else class="flex flex-col gap-3">
           <li
             v-for="t in diagnostics.transports"
             :key="t.transport"
-            class="rounded-lg border px-3 py-2"
+            class="min-w-0 rounded-lg border bg-card/50 p-3"
           >
-            <div class="flex items-center justify-between gap-2">
-              <div class="min-w-0">
-                <p class="flex items-baseline gap-1.5 text-sm font-medium">
-                  {{ transportName(t.transport) }}
-                  <span class="text-muted-foreground font-mono text-[11px]">{{ familyLabel(t.family) }}</span>
-                </p>
-                <p class="text-muted-foreground mt-1 flex flex-wrap items-center gap-1.5 text-xs">
+            <div class="flex min-w-0 items-start justify-between gap-3">
+              <div class="min-w-0 flex-1">
+                <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
+                  <span class="text-sm font-semibold">
+                    {{ transportName(t.transport) }}
+                  </span>
+                  <span class="text-muted-foreground font-mono text-[11px] break-all">
+                    {{ familyLabel(t.family) }}
+                  </span>
+                </div>
+
+                <div class="mt-2 flex flex-wrap items-center gap-2">
                   <Badge
-                    :variant="t.status === 'running' ? 'secondary' : 'outline'"
-                    :class="t.status === 'running' ? 'font-normal' : 'border-destructive/40 text-destructive font-normal'"
+                    :variant="statusVariant(t.status)"
+                    :class="statusClass(t.status)"
                   >
                     {{ statusLabel[t.status] ?? t.status }}
                   </Badge>
-                  <span>重启 {{ t.restarts }} 次 · 队列 {{ t.queuedEvents }}</span>
-                </p>
+                  <span class="text-muted-foreground text-xs">
+                    重启 {{ t.restarts }} 次
+                  </span>
+                  <span class="text-muted-foreground text-xs">
+                    队列 {{ t.queuedEvents }}
+                  </span>
+                </div>
               </div>
-              <Button type="button" variant="outline" size="sm" @click="emit('restart', t.transport)">
+
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                class="shrink-0"
+                @click="emit('restart', t.transport)"
+              >
                 重启
               </Button>
             </div>
-            <p
+
+            <div
               v-if="t.lastError"
-              class="text-destructive mt-1 font-mono text-[11px] break-all select-text"
+              class="mt-3 rounded-md border border-destructive/20 bg-destructive/5 p-2.5"
             >
-              {{ t.lastError }}
+              <p class="text-destructive mb-1 text-[11px] font-medium">
+                最近错误
+              </p>
+              <p
+                class="text-destructive font-mono text-xs break-all whitespace-pre-wrap select-text"
+              >
+                {{ t.lastError }}
+              </p>
+            </div>
+          </li>
+        </ul>
+      </CardContent>
+    </Card>
+
+    <!-- 运行环境 -->
+    <Card class="min-w-0 py-4">
+      <CardHeader class="px-4 pb-0">
+        <CardTitle class="text-sm font-semibold">运行环境</CardTitle>
+      </CardHeader>
+
+      <CardContent class="px-4">
+        <dl class="flex flex-col divide-y divide-border/50 text-xs">
+          <div class="grid grid-cols-[5rem_minmax(0,1fr)] gap-3 py-2 first:pt-0 last:pb-0">
+            <dt class="text-muted-foreground">版本</dt>
+            <dd class="font-mono break-all select-text">
+              {{ diagnostics.version }}
+            </dd>
+          </div>
+
+          <div class="grid grid-cols-[5rem_minmax(0,1fr)] gap-3 py-2">
+            <dt class="text-muted-foreground">数据目录</dt>
+            <dd class="font-mono break-all select-text">
+              {{ diagnostics.dataRoot }}
+            </dd>
+          </div>
+
+          <div class="grid grid-cols-[5rem_minmax(0,1fr)] gap-3 py-2 last:pb-0">
+            <dt class="text-muted-foreground">开机自启</dt>
+            <dd>
+              <Badge
+                :variant="diagnostics.autostartRegistered ? 'secondary' : 'outline'"
+                :class="
+                  diagnostics.autostartRegistered
+                    ? 'font-normal'
+                    : 'font-normal text-muted-foreground'
+                "
+              >
+                {{ diagnostics.autostartRegistered ? "已注册" : "未注册" }}
+              </Badge>
+            </dd>
+          </div>
+        </dl>
+      </CardContent>
+    </Card>
+
+    <!-- 通知触发节点 -->
+    <Card class="min-w-0 py-4">
+      <CardHeader class="px-4 pb-0">
+        <div class="flex items-center justify-between gap-3">
+          <CardTitle class="text-sm font-semibold">通知触发节点</CardTitle>
+          <span class="text-muted-foreground text-xs">
+            {{ diagnostics.notifications.length }} 条记录
+          </span>
+        </div>
+      </CardHeader>
+
+      <CardContent class="px-4">
+        <div
+          v-if="diagnostics.notifications.length === 0"
+          class="text-muted-foreground rounded-lg border border-dashed px-3 py-6 text-center text-xs"
+        >
+          暂无通知记录
+        </div>
+
+        <ul v-else class="flex flex-col gap-2">
+          <li
+            v-for="n in diagnostics.notifications"
+            :key="`${n.stableId}-${n.threshold}`"
+            class="min-w-0 rounded-lg border bg-card/50 p-3"
+          >
+            <div class="flex min-w-0 items-start justify-between gap-3">
+              <span class="min-w-0 flex-1 font-mono text-xs break-all select-text">
+                {{ n.stableId }}
+              </span>
+
+              <div class="flex shrink-0 items-center gap-2">
+                <span class="font-mono text-sm font-semibold tabular-nums">
+                  {{ n.threshold }}%
+                </span>
+                <Badge
+                  :variant="n.armed ? 'secondary' : 'outline'"
+                  :class="
+                    n.armed
+                      ? 'font-normal'
+                      : 'border-amber-500/40 text-amber-600 font-normal dark:text-amber-400'
+                  "
+                >
+                  {{ n.armed ? "待触发" : "已触发" }}
+                </Badge>
+              </div>
+            </div>
+
+            <div
+              v-if="n.lastNotifiedAtMs || n.lastResult"
+              class="text-muted-foreground mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs"
+            >
+              <span v-if="n.lastNotifiedAtMs">
+                通知时间：{{ ago(n.lastNotifiedAtMs) }}
+              </span>
+              <span v-if="n.lastResult" class="break-all">
+                结果：{{ n.lastResult }}
+              </span>
+            </div>
+          </li>
+        </ul>
+      </CardContent>
+    </Card>
+
+    <!-- 诊断事件 -->
+    <Card class="min-w-0 py-4">
+      <CardHeader class="px-4 pb-0">
+        <div class="flex items-center justify-between gap-3">
+          <CardTitle class="text-sm font-semibold">诊断事件</CardTitle>
+          <span class="text-muted-foreground text-xs">
+            {{ diagnostics.events.length }} 条事件
+          </span>
+        </div>
+      </CardHeader>
+
+      <CardContent class="px-4">
+        <div
+          v-if="diagnostics.events.length === 0"
+          class="text-muted-foreground rounded-lg border border-dashed px-3 py-6 text-center text-xs"
+        >
+          暂无诊断事件
+        </div>
+
+        <ul v-else class="flex flex-col">
+          <li
+            v-for="(event, index) in diagnostics.events"
+            :key="`${event.atMs}-${index}`"
+            class="min-w-0 border-b border-border/50 py-3 first:pt-0 last:border-b-0 last:pb-0"
+          >
+            <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
+              <span class="text-muted-foreground text-xs tabular-nums">
+                {{ ago(event.atMs) }}
+              </span>
+
+              <Badge
+                variant="outline"
+                :class="levelClass[event.level] ?? 'text-muted-foreground'"
+              >
+                {{ levelLabel[event.level] ?? event.level }}
+              </Badge>
+
+              <span class="font-mono text-xs break-all" :class="levelClass[event.level]">
+                {{ event.code }}
+              </span>
+            </div>
+
+            <p
+              class="mt-2 min-w-0 text-xs leading-5 text-foreground/90 break-all whitespace-pre-wrap select-text"
+            >
+              <span v-if="event.deviceId" class="text-muted-foreground font-mono">
+                {{ event.deviceId }} ·
+              </span>
+              {{ event.detail }}
             </p>
           </li>
         </ul>
       </CardContent>
     </Card>
 
-    <Card class="gap-3 py-4">
-      <CardHeader class="px-4">
-        <CardTitle class="text-sm">通知触发节点</CardTitle>
-      </CardHeader>
-      <CardContent class="px-4">
-        <div v-if="diagnostics.notifications.length === 0" class="text-muted-foreground text-xs">
-          暂无记录
-        </div>
-        <ul v-else class="flex flex-col gap-1.5">
-          <li
-            v-for="n in diagnostics.notifications"
-            :key="`${n.stableId}-${n.threshold}`"
-            class="bg-muted/60 flex items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-xs"
+    <!-- 调试区（红色边框）：只做前端重放，不写设置、不动启动项 -->
+    <Card class="border-destructive/60 min-w-0 py-4">
+      <CardHeader class="px-4 pb-0">
+        <div class="flex items-center justify-between gap-3">
+          <CardTitle class="text-destructive text-sm font-semibold">调试区</CardTitle>
+          <Badge
+            variant="outline"
+            class="border-destructive/40 text-destructive px-1.5 py-0 text-[10px] font-normal"
           >
-            <span class="min-w-0 truncate font-mono">{{ n.stableId }}</span>
-            <span class="text-muted-foreground flex shrink-0 items-center gap-1.5">
-              {{ n.threshold }}%
-              <Badge v-if="!n.armed" variant="outline" class="font-normal">已触发</Badge>
-              <template v-if="n.lastNotifiedAtMs"> · {{ ago(n.lastNotifiedAtMs) }}</template>
-              <template v-if="n.lastResult"> · {{ n.lastResult }}</template>
-            </span>
-          </li>
-        </ul>
-      </CardContent>
-    </Card>
-
-    <Card class="gap-3 py-4">
-      <CardHeader class="px-4">
-        <CardTitle class="text-sm">运行环境</CardTitle>
-      </CardHeader>
-      <CardContent class="px-4">
-        <dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
-          <dt class="text-muted-foreground">版本</dt>
-          <dd class="font-mono select-text">{{ diagnostics.version }}</dd>
-          <dt class="text-muted-foreground">数据目录</dt>
-          <dd class="font-mono break-all select-text">{{ diagnostics.dataRoot }}</dd>
-          <dt class="text-muted-foreground">开机自启</dt>
-          <dd>{{ diagnostics.autostartRegistered ? "已注册" : "未注册" }}</dd>
-        </dl>
-      </CardContent>
-    </Card>
-
-    <Card class="gap-3 py-4">
-      <CardHeader class="px-4">
-        <CardTitle class="text-sm">诊断事件</CardTitle>
-      </CardHeader>
-      <CardContent class="px-4">
-        <div v-if="diagnostics.events.length === 0" class="text-muted-foreground text-xs">
-          暂无事件
+            请明白你要做什么
+          </Badge>
         </div>
-        <ul v-else class="flex flex-col gap-1">
-          <li
-            v-for="(event, index) in diagnostics.events"
-            :key="`${event.atMs}-${index}`"
-            class="flex items-start gap-2 text-xs"
-          >
-            <span class="text-muted-foreground w-14 shrink-0 tabular-nums">{{ ago(event.atMs) }}</span>
-            <span class="w-[9.5rem] shrink-0 font-mono break-all" :class="levelClass[event.level]">
-              {{ event.code }}
-            </span>
-            <span class="min-w-0 break-all select-text">
-              {{ event.deviceId ? `${event.deviceId} · ` : "" }}{{ event.detail }}
-            </span>
-          </li>
-        </ul>
+      </CardHeader>
+
+      <CardContent class="px-4">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          class="border-destructive/50 text-destructive hover:bg-destructive/10 hover:text-destructive mt-3 w-full"
+          @click="emit('replayOnboarding')"
+        >
+          <RotateCcw aria-hidden="true" />
+          重现首次引导页
+        </Button>
       </CardContent>
     </Card>
   </div>

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch, type Component } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch, type Component } from "vue";
 import { Activity, BatteryMedium, CircleAlert, Settings } from "@lucide/vue";
 import DeviceCard from "./components/DeviceCard.vue";
 import DiagnosticsPanel from "./components/DiagnosticsPanel.vue";
@@ -16,6 +16,7 @@ import {
   getSettings,
   restartTransport,
   setAutostart,
+  subscribeDiagnostics,
   updateSettings,
 } from "./lib/ipc";
 import type { CardDto, DiagnosticsDto, OnboardingChoice, SettingsDto } from "./lib/types";
@@ -29,6 +30,26 @@ const settings = ref<SettingsDto | null>(null);
 const diagnostics = ref<DiagnosticsDto | null>(null);
 const busy = ref(false);
 const error = ref<string | null>(null);
+
+/**
+ * 调试重放开关：诊断页点「重现首次引导」时置 true，只让遮罩重新出现。
+ *
+ * 这是纯 UI 状态，**不碰** `settings.onboardingCompleted` —— 关掉遮罩后
+ * 首次引导的生命周期判定仍与磁盘上的设置一致。
+ */
+const replayOnboarding = ref(false);
+
+/** 诊断刷新的合并窗口：一串线程组状态变化只拉一次。 */
+const DIAGNOSTICS_REFRESH_MS = 120;
+
+/**
+ * 诊断拉取序号。`get_diagnostics` 是异步往返，先发的请求可能后返回；
+ * 只有最后一次请求的响应允许落到界面上，避免旧数据把新数据盖回去。
+ */
+let diagnosticsSeq = 0;
+let diagnosticsTimer: number | undefined;
+let unlistenDiagnostics: (() => void) | undefined;
+let disposed = false;
 
 const navItems: Array<{ id: View; label: string; icon: Component }> = [
   { id: "devices", label: "设备", icon: BatteryMedium },
@@ -99,11 +120,48 @@ async function loadSettings() {
 }
 
 async function loadDiagnostics() {
+  const seq = ++diagnosticsSeq;
   try {
-    diagnostics.value = await getDiagnostics();
+    const next = await getDiagnostics();
+    if (seq === diagnosticsSeq) diagnostics.value = next;
   } catch (e) {
     fail(e);
   }
+}
+
+/**
+ * 收到宿主的「诊断数据已变」信号后重新拉取。
+ *
+ * 重启次数由监管线程异步推进（后台退避重启、手动重启都在那边完成），
+ * 以前只有切到诊断页时才拉一次，所以数值变化在界面上是看不见的。
+ * 同一串变化合并成一次请求，且只在诊断页可见时拉，不为看不见的页面做无谓 IPC。
+ */
+function scheduleDiagnosticsRefresh() {
+  if (view.value !== "diagnostics" || diagnosticsTimer !== undefined) return;
+  diagnosticsTimer = window.setTimeout(() => {
+    diagnosticsTimer = undefined;
+    void loadDiagnostics();
+  }, DIAGNOSTICS_REFRESH_MS);
+}
+
+/**
+ * 建立诊断订阅并拉取首帧。
+ *
+ * 顺序与快照一致（W-6）：**先订阅 → 再拉全量**。反过来写会漏掉
+ * 「拉取已返回、订阅尚未建立」这段时间内发生的线程组变化。
+ */
+async function startDiagnosticsFeed() {
+  try {
+    const off = await subscribeDiagnostics(scheduleDiagnosticsRefresh);
+    if (disposed) {
+      off();
+      return;
+    }
+    unlistenDiagnostics = off;
+  } catch (e) {
+    fail(e);
+  }
+  await loadDiagnostics();
 }
 
 async function applySettings(next: SettingsDto) {
@@ -159,13 +217,39 @@ async function finishOnboarding(choice: OnboardingChoice) {
   }
 }
 
+/**
+ * 引导结束。
+ *
+ * 正常路径仍交给宿主落盘（`complete_onboarding`：写设置 + 注册 Run 项）。
+ * 调试重放只收起遮罩：调试入口一旦落盘，等于隔三差五改用户的启动项。
+ */
+function onOnboardingDone(choice: OnboardingChoice) {
+  if (replayOnboarding.value) {
+    replayOnboarding.value = false;
+    return;
+  }
+  void finishOnboarding(choice);
+}
+
 watch(view, (next) => {
-  if (next === "diagnostics") void loadDiagnostics();
+  if (next !== "diagnostics") return;
+  // 进页时立即拉一次全量，同时取消已排队的合并刷新，避免接连两次请求。
+  if (diagnosticsTimer !== undefined) {
+    window.clearTimeout(diagnosticsTimer);
+    diagnosticsTimer = undefined;
+  }
+  void loadDiagnostics();
 });
 
 onMounted(() => {
   void loadSettings();
-  void loadDiagnostics();
+  void startDiagnosticsFeed();
+});
+
+onBeforeUnmount(() => {
+  disposed = true;
+  unlistenDiagnostics?.();
+  if (diagnosticsTimer !== undefined) window.clearTimeout(diagnosticsTimer);
 });
 </script>
 
@@ -228,15 +312,16 @@ onMounted(() => {
         :diagnostics="diagnostics"
         :now-ms="nowMs"
         @restart="doRestart"
+        @replay-onboarding="replayOnboarding = true"
       />
 
       <div v-else class="text-muted-foreground py-16 text-center text-sm">正在读取…</div>
     </main>
 
     <OnboardingFlow
-      v-if="settings && !settings.onboardingCompleted"
+      v-if="settings && (!settings.onboardingCompleted || replayOnboarding)"
       :busy="busy"
-      @done="finishOnboarding"
+      @done="onOnboardingDone"
     />
 
     <Alert
