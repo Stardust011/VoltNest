@@ -113,14 +113,19 @@ impl NotificationBook {
 
     /// 更新配置（设置页改动）。
     ///
-    /// 阈值列表变化时必须同步清理每个设备的条目：`entries()` 既是诊断页
-    /// 「通知触发节点」的数据源，也是 `state.json` 的持久化来源。不清的话
-    /// 用户改完阈值仍会看到已经不存在的档位，重启后还会被 [`Self::seed`] 读回来。
+    /// 阈值列表变化时重建每个设备的条目：
     ///
-    /// 同时清空跌破判定基线：电量本来就低于新阈值时（例如从 20 改成 30，
-    /// 当前 15%），基线一直停在 15%，永远等不到「跌破」，新档位一次也不会触发。
-    /// 清空后按「首次获得读数」处理，新档位立刻有机会按当前电量判定一次；
-    /// 已被跌破且尚未回升的档位仍是未武装状态，不会重复提醒。
+    /// - 不在新配置里的档位直接丢弃 —— `entries()` 既是诊断页「通知触发节点」
+    ///   的数据源，也是 `state.json` 的持久化来源。留着旧档位，用户改完阈值
+    ///   仍会看到已经不存在的节点，重启后还会被 [`Self::seed`] 读回来；
+    /// - 新档位立刻建出来（`armed`、无通知历史），诊断页当场就能看到两档，
+    ///   不必等下一次电量上报才补齐；
+    /// - 跌破判定基线清空：电量本来就低于新阈值时（例如从 20 改成 30，当前 15%），
+    ///   「上次电量 >= 新阈值」永远不成立，新档位一次也不会触发。清空后按
+    ///   「首次获得读数」判定一次；已跌破且尚未回升的档位仍是未武装状态，不会重复提醒。
+    ///
+    /// 阈值列表没变（例如只改通知方式）时不动条目与基线，否则会把已通知的档位
+    /// 重新武装，同一次低电量会再弹一遍。
     pub fn set_config(&mut self, config: NotificationConfig) {
         let next = config.normalized();
         let thresholds_changed = next.thresholds != self.config.thresholds;
@@ -134,6 +139,13 @@ impl NotificationBook {
             device
                 .entries
                 .retain(|threshold, _| thresholds.contains(threshold));
+            for threshold in &thresholds {
+                device.entries.entry(*threshold).or_insert_with(|| EntryState {
+                    armed: true,
+                    last_notified_at_ms: None,
+                    last_result: None,
+                });
+            }
             device.last_battery = None;
         }
     }
@@ -546,26 +558,26 @@ mod tests {
         assert!(b.observe("d", "Dev", 15, Some(false), T0).is_some());
         assert_eq!(b.entries().len(), 2);
 
-        // 改成 30 / 25：20 / 10 的条目必须随之消失。
+        // 改成 30 / 25：20 / 10 的条目必须随之消失，新档位立刻建出来。
         b.set_config(with_thresholds(vec![30, 25]));
-        assert!(b.entries().is_empty(), "旧档位不得残留");
-
-        // 下一次读数只为当前配置里的档位重新建条目。
-        assert!(b.observe("d", "Dev", 15, Some(false), T0 + 1).is_some());
-        let mut kept: Vec<u8> = b.entries().iter().map(|e| e.threshold).collect();
+        let entries = b.entries();
+        let mut kept: Vec<u8> = entries.iter().map(|e| e.threshold).collect();
         kept.sort_unstable();
         assert_eq!(kept, vec![25, 30], "只应有新配置里的档位");
-        let raised = b
-            .entries()
-            .into_iter()
-            .find(|e| e.threshold == 30)
-            .unwrap();
-        assert_eq!(
-            raised.last_notified_at_ms,
-            Some(T0 + 1),
-            "新档位的通知时间应是这次读数，不是旧档位留下的历史"
+        assert!(
+            entries.iter().all(|e| e.armed && e.last_notified_at_ms.is_none()),
+            "新档位不能继承旧档位的通知历史"
         );
-        assert!(!raised.armed, "已通知的档位必须解除武装");
+
+        // 下一次读数按新档位判定：15% 已在新阈值之下，只报最高的那一档。
+        let alert = b
+            .observe("d", "Dev", 15, Some(false), T0 + 1)
+            .expect("抬高一档后应按当前电量提醒");
+        assert_eq!(alert.threshold, 30);
+        assert!(
+            b.observe("d", "Dev", 15, Some(false), T0 + 2).is_none(),
+            "同一读数不得重复提醒"
+        );
     }
 
     #[test]
