@@ -111,6 +111,8 @@ fn main() {
             commands::set_autostart,
             commands::complete_onboarding,
             commands::show_panel,
+            commands::hide_to_tray,
+            commands::quit_app,
         ])
         .setup(move |app| {
             let handle = app.handle().clone();
@@ -158,7 +160,9 @@ fn main() {
         })
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { api, .. } = event {
-                // 关闭窗口只隐藏到托盘；退出走托盘菜单。
+                // 标题栏 × 已改成「退出程序」（走 `quit_app` → `app.exit`），能落到这儿的只剩 Alt+F4 这类系统关闭请求
+                // 与 `close()` 调用。仍然收进托盘而不是退出：这是个后台监控程序，误触 Alt+F4 不该把采集一起关掉；
+                // 真要退出有标题栏 × 和托盘菜单两条明路。
                 api.prevent_close();
                 let _ = window.hide();
                 let shared = window.app_handle().state::<Arc<Shared>>();

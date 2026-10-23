@@ -5,14 +5,18 @@ import { getCurrentWindow, type Window as TauriWindow } from "@tauri-apps/api/wi
 import { Minus, X } from "@lucide/vue";
 import { Button } from "@/components/ui/button";
 import BrandMark from "@/components/BrandMark.vue";
+import { hideToTray, quitApp } from "@/lib/ipc";
 
 /**
  * 自绘标题栏（`decorations:false`，系统边框不画）。约束：
  * 1. 拖拽靠 `data-tauri-drag-region`：宿主只认命中元素上的属性，故品牌区子元素 `pointer-events-none` 让点击落回 `<header>`。
  * 2. 窗口按钮须落在拖拽区外（`<header>` 内 `ml-auto` 一组），否则「点了没反应」。
- * 3. 关闭=收托盘：真正隐藏由宿主 `prevent_close`+`hide` 完成，前端只发请求，不自己调 `hide()`（会绕开落盘）。
- * 4. 指针状态需主动作废（见 `POINTER_STALE`）。
- * 无最大化（配置 `maximizable:false`，双击标题栏最大化亦失效），仅最小化与关闭。窗口按钮用 lucide 的 `Minus`/`X`，品牌徽标为 `BrandMark`（与应用图标同源）。
+ * 3. 「最小化到托盘」= 宿主 `hide_to_tray`：隐藏窗口 + 强制落盘，进程与采集线程照旧跑，托盘图标还在。
+ * 4. 「退出程序」= 宿主 `quit_app` → `app.exit(0)`，由 `RunEvent::Exit` 停监管线程并落盘。
+ *    两个按钮都必须走命令而非 `window.hide()/close()`：前端自己调会绕开落盘；且 `close()` 被宿主 `prevent_close`
+ *    截成「收托盘」，在这里用就成了「点了退出结果只关掉窗口」。
+ * 5. 指针状态需主动作废（见 `POINTER_STALE`）。
+ * 无最大化（配置 `maximizable:false`，双击标题栏最大化亦失效），仅最小化到托盘与退出。窗口按钮用 lucide 的 `Minus`/`X`，品牌徽标为 `BrandMark`（与应用图标同源）。
  */
 
 /**
@@ -23,7 +27,7 @@ import BrandMark from "@/components/BrandMark.vue";
  */
 const POINTER_STALE = "pointer-stale";
 
-/** 非 Tauri 环境（纯 `vite dev` / `vite preview`）没有窗口 API，按钮退化为无操作。 */
+/** 非 Tauri 环境（纯 `vite dev` / `vite preview`）没有窗口 API：窗口按钮退化为无操作，只保留焦点监听这一路。 */
 const appWindow: TauriWindow | null = isTauri() ? getCurrentWindow() : null;
 
 let unlisten: (() => void) | null = null;
@@ -40,14 +44,14 @@ function clearPointerStale() {
   document.documentElement.classList.remove(POINTER_STALE);
 }
 
-function minimize() {
-  if (!appWindow) return;
-  void appWindow.minimize().catch((e) => warn("最小化", e));
+function minimizeToTray() {
+  if (!isTauri()) return;
+  void hideToTray().catch((e) => warn("最小化到托盘", e));
 }
 
-function closeToTray() {
-  if (!appWindow) return;
-  void appWindow.close().catch((e) => warn("关闭", e));
+function quit() {
+  if (!isTauri()) return;
+  void quitApp().catch((e) => warn("退出", e));
 }
 
 onMounted(async () => {
@@ -96,9 +100,9 @@ onBeforeUnmount(() => {
         variant="ghost"
         size="icon"
         class="h-full w-[42px] rounded-none text-muted-foreground hover:bg-transparent hover:text-foreground dark:hover:bg-transparent [html:not(.pointer-stale)_&]:hover:bg-neutral-900/[0.07] [html:not(.pointer-stale)_&]:active:bg-neutral-900/[0.12] dark:[html:not(.pointer-stale)_&]:hover:bg-white/[0.09] dark:[html:not(.pointer-stale)_&]:active:bg-white/[0.14]"
-        title="最小化"
-        aria-label="最小化"
-        @click="minimize"
+        title="最小化到托盘"
+        aria-label="最小化到托盘"
+        @click="minimizeToTray"
       >
         <Minus :size="13" :stroke-width="1.75" aria-hidden="true" />
       </Button>
@@ -107,9 +111,9 @@ onBeforeUnmount(() => {
         variant="ghost"
         size="icon"
         class="h-full w-[42px] rounded-none text-muted-foreground hover:bg-transparent hover:text-foreground dark:hover:bg-transparent [html:not(.pointer-stale)_&]:hover:bg-[#c42b1c] [html:not(.pointer-stale)_&]:hover:text-white [html:not(.pointer-stale)_&]:active:bg-[#b0261a] [html:not(.pointer-stale)_&]:active:text-white"
-        title="关闭到托盘"
-        aria-label="关闭到托盘"
-        @click="closeToTray"
+        title="退出程序"
+        aria-label="退出程序"
+        @click="quit"
       >
         <X :size="14" :stroke-width="1.75" aria-hidden="true" />
       </Button>
