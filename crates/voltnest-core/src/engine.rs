@@ -1,11 +1,10 @@
-//! 状态机与设备注册表（K-1..K-5 / Z-1..Z-10 / W-1..W-10）。
+//! 状态机与设备注册表。
 //!
 //! 三条不可协商的约束：
 //!
-//! 1. **显式时间**：所有接口接收 `now_ms`，本模块不读时钟（K-2 / Z-6）。
-//! 2. **退化只由 `lastValidAt` 与阈值链驱动**，且只在状态真变化时对外可见（Z-2 / Z-4）。
-//! 3. **坏帧不改变状态**：`Unreadable` 只写诊断与 `lastError`，`Online/Stale/Unavailable`
-//!    之间的转移仍只依据时间（规格 §5 / D9）。
+//! 1. 显式时间：所有接口接收 `now_ms`，本模块不读时钟。
+//! 2. 退化只由 `lastValidAt` 与阈值链驱动，且只在状态真变化时对外可见。
+//! 3. 坏帧不改变状态：`Unreadable` 只写诊断与 `lastError`，`Online/Stale/Unavailable` 之间的转移只依据时间。
 
 use crate::diagnostics::{DiagLevel, Diagnostics};
 use crate::humanize::humanize_ago;
@@ -20,16 +19,16 @@ use voltnest_provider::{
     validate_registry,
 };
 
-/// 引擎配置。阈值不在其中：它只能来自 Provider 与档位（Z-1）。
+/// 引擎配置。阈值不在其中：它只能来自 Provider 与档位。
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct EngineConfig {
     /// 阈值档位。
     pub sensitivity: Sensitivity,
     /// 通知策略。
     pub notifications: NotificationConfig,
-    /// 托盘图标上限（规格 §12：最多 4 个）。
+    /// 托盘图标上限。
     pub tray_capacity: usize,
-    /// `tray.order` 条目上限（X-7：超过 32 条淘汰最久未出现项）。
+    /// `tray.order` 条目上限：超过后淘汰最久未出现的条目。
     pub tray_order_limit: usize,
 }
 
@@ -49,7 +48,7 @@ impl Default for EngineConfig {
 pub enum Transition {
     /// 无变化。
     None,
-    /// 新建了 L1 记录（`Unknown`）。
+    /// 新建了设备记录（`Unknown`）。
     Created,
     /// 状态发生转移。
     StateChanged {
@@ -60,9 +59,9 @@ pub enum Transition {
     },
     /// 收到有效读数，但状态本来就是 `Online`。
     Refreshed,
-    /// 读数被丢弃：时间戳早于 `lastValidAt`（时钟后跳后的回填，Z-10）。
+    /// 读数被丢弃：时间戳早于 `lastValidAt`（时钟后跳后的回填）。
     Backfilled,
-    /// 记录了 Y-3 冲突告警，未新建第二条记录。
+    /// 记录了冲突告警，未新建第二条记录。
     BindingConflictRecorded,
 }
 
@@ -73,7 +72,7 @@ impl Transition {
     }
 }
 
-/// `state.json` 回填所需的字段（D8 / Y-6）。
+/// `state.json` 回填所需的字段。
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct SeedEntry {
     /// 设备标识字符串。
@@ -100,7 +99,7 @@ pub struct SeedEntry {
 
 /// 设备状态机 + 注册表 + 快照生成器。
 ///
-/// 宿主只持有一个实例，并在收到 Provider 事件、每秒 tick、以及设置变更时调用它。
+/// 宿主只持有一个实例，在 Provider 事件、每秒 tick、设置变更时调用。
 #[derive(Debug)]
 pub struct Engine {
     profiles: Vec<&'static ProviderProfile>,
@@ -173,7 +172,7 @@ impl Engine {
         &self.tray_order
     }
 
-    /// 设置托盘隐藏列表（`settings.tray.hidden`，AA-4）。
+    /// 设置托盘隐藏列表（`settings.tray.hidden`）。
     pub fn set_hidden(&mut self, hidden: Vec<String>) {
         self.hidden = hidden;
     }
@@ -229,12 +228,12 @@ impl Engine {
         std::mem::take(&mut self.pending_alerts)
     }
 
-    /// 导出通知状态用于持久化（AB-4 / AB-5）。
+    /// 导出通知状态用于持久化。
     pub fn notification_entries(&self) -> Vec<NotificationEntry> {
         self.notifications.entries()
     }
 
-    /// 回填一次通知的真实投递结果（AB-5）。
+    /// 回填一次通知的真实投递结果。
     ///
     /// `take_alerts()` 给出「应当发送」，宿主真正投递（或被模式关闭、被系统拒绝）后
     /// 用本方法覆盖 `last_result`，诊断页才不会把「打算发」显示成「已发送」。
@@ -246,9 +245,8 @@ impl Engine {
 
     /// 应用一个 Provider 事件。
     ///
-    /// `source` 是发出事件的 transport（宿主从线程组处获知）。它只用于
-    /// [`ProviderEvent::TransportDown`]：该变体按契约不带 transport，而「只影响当前
-    /// transport」是 RT-1 的硬要求。其它变体忽略该参数。
+    /// `source` 只在 [`ProviderEvent::TransportDown`] 生效：该变体不带 transport，而「只影响当前 transport」
+    /// 是故障隔离的硬要求；其它变体忽略此参数。
     pub fn apply_event(
         &mut self,
         event: &ProviderEvent,
@@ -286,8 +284,7 @@ impl Engine {
                 // D8：Provider 是名称唯一真值，快照只做对照。
                 let renamed = (rec.display_name != fact.display_name)
                     .then(|| (rec.display_name.clone(), fact.display_name.clone()));
-                // 类型识别同样以 Provider 上报为唯一真值；只在真的变了时留痕，
-                // 避免每次重枚举都刷一条诊断。
+                // 类型识别同样以 Provider 为唯一真值；只在真变了时留痕，避免每次重枚举刷诊断。
                 let reclassified = (rec.classification != fact.classification)
                     .then(|| (rec.classification.device_type, fact.classification.clone()));
                 rec.classification.clone_from(&fact.classification);
@@ -299,8 +296,7 @@ impl Engine {
                 rec.present = true;
                 rec.last_seen_at_ms = now_ms;
                 if from == DeviceState::Offline {
-                    // Offline → Unknown（重新出现）。必须清掉旧读数，否则下一次 tick
-                    // 会立刻按时间链把它推回 Offline。
+                    // Offline → Unknown：必须清掉旧读数，否则下一次 tick 立刻按时间链推回 Offline。
                     rec.state = DeviceState::Unknown;
                     rec.last_valid_at_ms = None;
                     rec.battery = None;
@@ -353,16 +349,11 @@ impl Engine {
         }
     }
 
-    /// 把一次「设备类型识别」写进诊断：**成功与失败都记**。
+    /// 把一次设备类型识别写进诊断，成功与失败都记。
     ///
-    /// 分两级写，边界是「结论需不需要它」：
-    ///
-    /// - `info`（`device_classified`）：**只有结论**，形如
-    ///   `mouse via verified_device_mapping` / `unknown -> mouse via …`。
-    ///   设备是谁由诊断行的 `deviceId` 给出，不在正文里重复。
-    /// - `debug`（`device_classification_evidence`）：逐条证据、冲突说明与
-    ///   「未支持组合」清单。一台复合 HID 能报 7 个集合，这些细节只该在
-    ///   排查时看，不该占结论行的位置。
+    /// 两级分界是「结论需不需要它」：`info`（`device_classified`）只写结论，如 `mouse via verified_device_mapping`，
+    /// 设备是谁由诊断行 `deviceId` 给出不在正文重复；`debug`（`device_classification_evidence`）写逐条证据、
+    /// 冲突说明与未支持组合清单——一台复合 HID 能报 7 个集合，这些只该在排查时看。
     fn push_classification(&mut self, now_ms: u64, fact: &DeviceFact, from: Option<DeviceType>) {
         let c = &fact.classification;
         let mut detail = match from {
@@ -400,13 +391,13 @@ impl Engine {
         let display_name = self.records[idx].display_name.clone();
         let stable_id = self.records[idx].stable_id.as_str().to_string();
 
-        // PC-5：充电语义不可得的家族，任何 Some(bool) 都必须变成 None。
+        // 充电语义不可得的家族，任何 Some(bool) 都转成 None。
         let charging = self
             .profile_for(family)
             .map(|p| p.sanitize_charging(reading.charging))
             .unwrap_or(reading.charging);
 
-        // Z-10：时间戳早于 lastValidAt 的读数属于回填，丢弃。
+        // 时间戳早于 lastValidAt 的读数属于回填，丢弃。
         if let Some(last) = self.records[idx].last_valid_at_ms
             && now_ms < last
         {
@@ -430,11 +421,10 @@ impl Engine {
             rec.last_known_battery = Some(reading.battery);
             rec.last_known_at_ms = Some(now_ms);
             rec.last_error = None;
-            // 故意**不**清空 `unreadable_kinds`：好坏帧交替上报时，每帧都清空会让
-            // 同一条坏帧重新刷屏。种类只在设备重新出现时重置。
+            // 故意不清空 `unreadable_kinds`：好坏帧交替时每帧清空会让同一条坏帧重新刷屏，种类只在重新出现时重置。
             rec.present = true;
             rec.last_seen_at_ms = now_ms;
-            // Z-3：任何有效读数直接 Online，不经过中间态。
+            // 任何有效读数直接 Online，不经过中间态。
             rec.state = DeviceState::Online;
         }
 
@@ -470,21 +460,17 @@ impl Engine {
         let (from, to, log_line) = {
             let rec = &mut self.records[idx];
             rec.last_error = Some(code);
-            // 同一台设备反复上报**同一种**坏帧时只留一条诊断：坏帧可能以 20ms 的
-            // 节奏刷屏，200 条环形缓冲会在几秒内被同样的内容冲掉，把「为什么坏」
-            // 之外的所有线索（到达、识别、链路）一并挤出去。
-            //
-            // 按「本次出现以来见过的种类」去重，而不是只比上一条：设备常轮流发出
-            // 几种非电量报文（命令字各不相同），交替刷屏时相邻两条永远不同，
-            // 比上一条挡不住。种类上限见 `UNREADABLE_KINDS_MAX`。
+            // 同一台设备反复上报同一种坏帧只留一条诊断：坏帧以 20ms 节奏刷屏，
+            // 200 条缓冲会在几秒内被相同内容冲掉，挤掉到达、识别、链路等线索。
+            // 按「本次出现以来见过的种类」去重而非只比上一条：设备常轮流发几种非电量报文，
+            // 交替刷屏时相邻两条永远不同，比上一条挡不住。种类上限见 `UNREADABLE_KINDS_MAX`。
             let log_line = !rec.unreadable_kinds.iter().any(|k| k == &text)
                 && rec.unreadable_kinds.len() < UNREADABLE_KINDS_MAX;
             if log_line {
                 rec.unreadable_kinds.push(text.clone());
             }
             let from = rec.state;
-            // 坏帧只记录结构化错误。曾有有效读数 → Unavailable；从未有过 → 保持 Unknown
-            // （E：Unknown 与 Unavailable 在 UI 上必须可区分）。
+            // 坏帧只记结构化错误。曾有有效读数 → Unavailable；从未有过 → 保持 Unknown（E：两者 UI 必须可区分）。
             if rec.last_valid_at_ms.is_some() && from != DeviceState::Offline {
                 rec.state = DeviceState::Unavailable;
             }
@@ -550,7 +536,7 @@ impl Engine {
             let rec = &mut self.records[idx];
             let from = rec.state;
             rec.state = DeviceState::Offline;
-            // AA-2：唯一的图标销毁路径。
+            // 唯一的图标销毁路径。
             rec.present = false;
             rec.battery = None;
             rec.charging = None;
@@ -582,7 +568,7 @@ impl Engine {
     ) -> Transition {
         let transports: Vec<Transport> = match source {
             Some(t) => vec![t],
-            // 契约上的兜底：调用方未告知来源时按全部 transport 处理，并留下诊断。
+            // 调用方未告知来源时按全部 transport 处理，并留下诊断。
             None => vec![Transport::Hid, Transport::Ble],
         };
         self.diagnostics.push(
@@ -631,10 +617,9 @@ impl Engine {
 
     // ---------- 退化 ----------
 
-    /// 1s tick：只比对时间戳，只在状态真变化时返回 `true`（Z-4 / W-8）。
+    /// 1s tick：只比对时间戳，仅在状态真变化时返回 `true`。
     ///
-    /// 系统时间后跳（`now < last_now`）会记录诊断、清除通知冷却，并丢弃回填值；
-    /// 前跳则允许设备批量退化（Z-9）。
+    /// 系统时间后跳（`now < last_now`）记录诊断、清除通知冷却并丢弃回填值；前跳则允许设备批量退化。
     pub fn tick(&mut self, now_ms: u64) -> bool {
         if let Some(last) = self.last_now_ms {
             if now_ms < last {
@@ -690,7 +675,7 @@ impl Engine {
 
     // ---------- 回填 ----------
 
-    /// 用 `state.json` 回填：设备一律 `Unknown`，`lastKnownBattery` 供 UI 首屏显示缓存值（§11 / D8）。
+    /// 用 `state.json` 回填：设备一律 `Unknown`，`lastKnownBattery` 供 UI 首屏显示缓存值。
     pub fn seed(&mut self, entries: &[SeedEntry], now_ms: u64) {
         for entry in entries {
             let Some(stable_id) = StableId::parse(&entry.stable_id) else {
@@ -774,11 +759,8 @@ impl Engine {
         }
     }
 
-    /// L2 分组：三个条件必须同时满足（§9.2）。
-    ///
-    /// 1. 两条记录的 `modelKey` 非空且严格相等；
-    /// 2. 该 `modelKey` 下恰好一条活跃、一条非活跃；
-    /// 3. 只涉及 HID 与 BLE 两个 transport。
+    /// 呈现分组：三个条件必须同时满足：① 两条 `modelKey` 非空且严格相等；
+    /// ② 该 `modelKey` 下恰好一条活跃、一条非活跃；③ 只涉及 HID 与 BLE 两个 transport。
     fn build_cards(&self, order: &[usize], now_ms: u64) -> Vec<CardDto> {
         let mut groups: BTreeMap<String, Vec<usize>> = BTreeMap::new();
         for &idx in order {
@@ -825,7 +807,7 @@ impl Engine {
                 inactive_member_text: age_text,
             });
         }
-        // 卡片顺序跟随主成员在面板中的位置（W-3：排序在 Rust 决定）。
+        // 卡片顺序跟随主成员在面板中的位置（排序统一由 Rust 决定）。
         let pos = |id: &str| {
             order
                 .iter()
@@ -856,8 +838,8 @@ impl Engine {
             .unwrap_or("unknown")
     }
 
-    /// 读数的到达可能早于 `Arrived`（枚举与读取在不同线程）。此时按 transport
-    /// 反推家族建记录，避免丢弃第一条读数；随后 `Arrived` 会补齐名称。
+    /// 读数可能早于 `Arrived` 到达（枚举与读取在不同线程）。按 transport 反推家族建记录，
+    /// 避免丢弃第一条读数，随后 `Arrived` 补齐名称。
     fn ensure_record(&mut self, stable_id: &StableId, now_ms: u64) -> usize {
         if let Some(idx) = self.index_of(stable_id) {
             return idx;
@@ -878,7 +860,7 @@ impl Engine {
             DiagLevel::Warn,
             "record_implicit",
             Some(stable_id.as_str().to_string()),
-            "读数先于 Arrived 到达，已按 transport 反推家族",
+            "读数先于 Arrived，已按 transport 反推家族",
         );
         self.records.len() - 1
     }
@@ -894,7 +876,7 @@ impl Engine {
             .unwrap_or(usize::MAX)
     }
 
-    /// 面板 / 卡片 / 托盘的统一排序（W-3）：`tray.order` → 名称 → id。
+    /// 面板 / 卡片 / 托盘的统一排序：`tray.order` → 名称 → id。
     fn sorted_indices(&self) -> Vec<usize> {
         let mut idx: Vec<usize> = (0..self.records.len()).collect();
         idx.sort_by(|&a, &b| {
@@ -912,9 +894,8 @@ impl Engine {
         idx
     }
 
-    /// X-7：`tray.order` 超过上限时淘汰「最久未出现」的条目。
-    ///
-    /// 只在保存设置时收敛，不因为「临时拔掉接收器」丢掉用户设置。
+    /// `tray.order` 超上限时淘汰「最久未出现」的条目，只在保存设置时收敛，
+    /// 不因临时拔掉接收器而丢失用户设置。
     fn prune_tray_order(&mut self) {
         if self.tray_order.len() <= self.tray_order_limit {
             return;
@@ -944,13 +925,12 @@ impl Engine {
     }
 }
 
-/// 时钟前跳的诊断阈值：超过 10 分钟算一次「跳变」（含休眠唤醒）。
+/// 时钟前跳诊断阈值：超过 10 分钟算一次跳变（含休眠唤醒）。
 const CLOCK_FORWARD_WARN_MS: u64 = 10 * 60_000;
 
 /// 诊断行文本：`malformed_frame · cmd_mismatch(want=0x03 got=0x23) · 6B: 06 FA …`。
 ///
-/// 错误码放最前，诊断页按关键词筛选时仍能命中；细节缺省时退化成只有错误码，
-/// 与加字段之前的行为逐字一致。
+/// 错误码放最前，按关键词筛选仍可命中；细节缺省时退化为只有错误码，与加字段前行为一致。
 fn unreadable_detail(code: ErrorCode, detail: Option<&str>) -> String {
     match detail.map(str::trim).filter(|d| !d.is_empty()) {
         Some(d) => format!("{code} · {d}"),
@@ -958,7 +938,7 @@ fn unreadable_detail(code: ErrorCode, detail: Option<&str>) -> String {
     }
 }
 
-/// 状态「退化深度」。只允许沿 0→4 方向前进。
+/// 状态退化深度，只允许沿 0→4 方向前进。
 const fn rank(state: DeviceState) -> u8 {
     match state {
         DeviceState::Unknown => 0,

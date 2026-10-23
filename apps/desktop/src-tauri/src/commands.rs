@@ -1,7 +1,4 @@
-//! Tauri 命令：前端唯一的写入入口。
-//!
-//! 每个命令都遵循同一条纪律：**先改内存、再落盘、最后 Wake 一次快照**。
-//! 任何命令都不直接操作 `voltnest_hid` / `voltnest_ble`，采集线程只由监管模块管理。
+//! Tauri 命令：前端唯一的写入入口。纪律：先改内存、再落盘、最后 Wake 一次快照；不直接碰 `voltnest_hid`/`voltnest_ble`，采集线程只由监管模块管理。
 
 use std::sync::Arc;
 
@@ -39,8 +36,7 @@ pub fn update_settings(
 ) -> Result<SettingsDto, String> {
     let next = write_settings(&shared, |current| settings.apply_to(current))?;
     notify_wake(&shared);
-    // 改阈值会重建通知触发节点（旧档位丢弃、新档位建出来），诊断页必须重拉，
-    // 否则它还停在改之前的列表上，看起来像「新阈值没生效」。
+    // 改阈值重建通知触发节点（旧档位丢弃、新档位建出），诊断页须重拉，否则仍显示改前列表，像「新阈值没生效」。
     notify_diagnostics(&shared);
     Ok(SettingsDto::from_settings(&next))
 }
@@ -118,10 +114,7 @@ pub fn test_notification(app: AppHandle) -> Result<(), String> {
     notification::test(&app)
 }
 
-/// 开 / 关开机自启。
-///
-/// 返回**注册表实际状态**而不是请求值：写 `HKCU\...\Run` 可能被组策略或安全软件拦掉，
-/// 前端拿返回值回拨开关，避免「界面显示已开启、实际不会自启」。
+/// 开/关开机自启。返回**注册表实际状态**而非请求值：写 `HKCU\...\Run` 可能被组策略/安全软件拦掉，前端用返回值回拨开关，避免「界面显示已开启、实际不自启」。
 #[tauri::command]
 pub fn set_autostart(enabled: bool, shared: State<'_, Arc<Shared>>) -> Result<bool, String> {
     let actual = apply_autostart(enabled)?;

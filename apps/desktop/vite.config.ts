@@ -26,7 +26,7 @@ export default defineConfig({
     outDir: "dist",
   },
   test: {
-    // 只测纯函数：不引入 jsdom / happy-dom（规格 §14.1）。
+    // 只测纯函数：不引入 jsdom / happy-dom。
     environment: "node",
     include: ["src/tests/**/*.spec.ts"],
   },

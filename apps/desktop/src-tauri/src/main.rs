@@ -1,12 +1,4 @@
-//! VoltNest 桌面应用入口。
-//!
-//! 进程启动顺序是有讲究的，任何一步提前都会引入难查的边界问题：
-//!
-//! 1. **单实例**先拿互斥体：第二个进程在创建任何窗口 / 线程之前就该退出；
-//! 2. 数据目录与日志：后面每一步出错都需要能写进日志；
-//! 3. AUMID：Toast 的归属在第一次发送前就要就位（AC-8）；
-//! 4. 设置与状态：读盘，损坏也不能阻塞启动（X-4）；
-//! 5. Tauri 应用 → 托盘 → 宿主事件循环 → Provider 线程组。
+//! 桌面应用入口。启动顺序不可调换：单实例互斥 → 数据目录/日志 → AUMID → 设置/状态（损坏不阻塞）→ Tauri/托盘/宿主/Provider。
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 #![deny(clippy::disallowed_types)]
 
@@ -57,8 +49,7 @@ fn main() {
     logger::init(&paths.logs_dir());
     log::info!("VoltNest 启动（autostart={launched_by_autostart}）");
 
-    // 3. AUMID：幂等写入当前用户，Toast 才有正确的应用名和图标（AC-8）。
-    //    图标必须先落盘：`IconUri` 只认真实文件，exe 内嵌资源不算。
+    // 3. AUMID 先于首次 Toast 就位；图标须先落盘，`IconUri` 只认真实文件。
     let toast_icon = toast_icon::init(paths.root());
     if let Err(err) = voltnest_platform::aumid::register("VoltNest", toast_icon.as_deref()) {
         log::warn!("AUMID 注册失败：{err}");
@@ -79,7 +70,7 @@ fn main() {
     );
     shared.apply_settings(&loaded.settings);
 
-    // 设置损坏 / 版本过高：备份 + 默认值启动 + 诊断告警，不阻塞（X-4）。
+    // 设置损坏 / 版本过高：备份 + 默认值启动 + 诊断告警，不阻塞。
     if let Some(warning) = loaded.warning {
         let detail = warning.to_string();
         log::warn!("设置加载告警：{detail}");
@@ -167,7 +158,7 @@ fn main() {
         })
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { api, .. } = event {
-                // 关闭窗口只隐藏到托盘；退出走托盘菜单（§12）。
+                // 关闭窗口只隐藏到托盘；退出走托盘菜单。
                 api.prevent_close();
                 let _ = window.hide();
                 let shared = window.app_handle().state::<Arc<Shared>>();

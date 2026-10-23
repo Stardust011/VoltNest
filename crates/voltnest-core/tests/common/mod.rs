@@ -12,7 +12,7 @@ pub const T0: u64 = 1_800_000_000_000;
 
 pub fn engine() -> Engine {
     Engine::new(&[&HID_VBAS, &BLE_BAS], EngineConfig::default())
-        .expect("v1 的 Profile 必须通过 PC-1..PC-7")
+        .expect("v1 的 Profile 必须通过能力校验")
 }
 
 pub fn engine_with(config: EngineConfig) -> Engine {

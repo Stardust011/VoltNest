@@ -14,13 +14,13 @@ import {
   type Thresholds,
 } from "../lib/thresholds";
 
-/** 两档都不报错。 */
+// 两档都不报错。
 function isValidPair(raws: [string, string]): boolean {
   const [first, second] = validateThresholdPair(raws);
   return first === null && second === null;
 }
 
-/** 正式值必须始终满足业务约束：0～95 且第一档比第二档至少高 1%。 */
+// 正式值须始终满足约束：0~95 且第一档比第二档至少高 1%。
 function expectInvariant(pair: Thresholds) {
   for (const value of pair) {
     expect(Number.isInteger(value)).toBe(true);
@@ -99,10 +99,7 @@ describe("两档联动校验", () => {
       FIRST_BELOW_MESSAGE,
       SECOND_ABOVE_MESSAGE,
     ]);
-    expect(validateThresholdPair(["0", "95"])).toEqual([
-      FIRST_BELOW_MESSAGE,
-      SECOND_ABOVE_MESSAGE,
-    ]);
+    expect(validateThresholdPair(["0", "95"])).toEqual([FIRST_BELOW_MESSAGE, SECOND_ABOVE_MESSAGE]);
     // 只差 1% 也算「第二档更高」，不能报成「至少相差 1%」。
     expect(validateThresholdPair(["19", "20"])).toEqual([
       FIRST_BELOW_MESSAGE,
