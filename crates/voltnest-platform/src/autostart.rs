@@ -1,6 +1,6 @@
 //! 开机自启：`HKCU\Software\Microsoft\Windows\CurrentVersion\Run`。
 //!
-//! 永不默认开启，仅用户在引导页或设置页显式勾选才写注册项；卸载须清除；改动立即生效（AC-1/AC-5/AC-6/AC-7）。
+//! 永不默认开启，仅用户在引导页或设置页显式勾选才写注册项；卸载须清除；改动立即生效。
 //! 命令恒带 `--autostart`，但首屏显隐与手动启动一致，统一由「启动时最小化到托盘」决定。
 
 use std::path::Path;
@@ -64,7 +64,7 @@ pub fn enable(_exe: &Path) -> std::io::Result<()> {
     ))
 }
 
-/// 清除自启项；不存在视为成功，卸载清理可重复执行（AC-7）。
+/// 清除自启项；不存在视为成功，卸载清理可重复执行。
 #[cfg(windows)]
 pub fn disable() -> std::io::Result<()> {
     use winreg::RegKey;
@@ -87,7 +87,7 @@ pub fn disable() -> std::io::Result<()> {
     Ok(())
 }
 
-/// 把实际状态同步到期望状态（AC-5 双向同步的唯一入口）。
+/// 把实际状态同步到期望状态（双向同步的唯一入口）。
 pub fn set_enabled(exe: &Path, enabled: bool) -> std::io::Result<()> {
     if enabled { enable(exe) } else { disable() }
 }
@@ -114,7 +114,7 @@ mod tests {
 
     #[test]
     fn command_always_carries_autostart_flag() {
-        // AC-6：命令恒带 --autostart，首屏显隐另由「启动时最小化」决定。
+        // 命令恒带 --autostart，首屏显隐另由「启动时最小化」决定。
         for p in [r"C:\a b\VoltNest.exe", r"C:\a\VoltNest.exe"] {
             assert!(run_command(&PathBuf::from(p)).ends_with("--autostart"));
         }

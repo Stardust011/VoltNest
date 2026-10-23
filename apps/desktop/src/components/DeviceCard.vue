@@ -44,7 +44,7 @@ const typeIcon = computed(() => deviceTypeIcon(props.device.deviceType, props.de
 /** 图标无文字，用无障碍标签补语义（类型优先，否则链路）。 */
 const typeIconLabel = computed(() => typeLabel.value ?? transportLabel(props.device.transport));
 
-/** 副行：合并卡用非活跃链路说明（W-2，Rust 生成）；主数字为缓存值时补「上次读数 · 时间」；其余按充电状态。 */
+/** 副行：合并卡用非活跃链路说明（Rust 生成）；主数字为缓存值时补「上次读数 · 时间」；其余按充电状态。 */
 const secondary = computed(() => {
   if (props.inactiveText) return props.inactiveText;
   if (props.device.battery === null && props.device.lastKnownBattery !== null) {

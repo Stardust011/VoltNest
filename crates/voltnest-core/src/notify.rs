@@ -1,7 +1,7 @@
-//! 低电量通知策略：跌破触发 + 迟滞 + 冷却（AB-1..AB-5）。
+//! 低电量通知策略：跌破触发 + 迟滞 + 冷却。
 //!
 //! 通知由事件触发而非周期提醒：8 小时不充电只产生 2 次通知（20% 与 10% 各一次）；
-//! 持续可见性由托盘环颜色承担（AB-3）。
+//! 持续可见性由托盘环颜色承担。
 
 use std::collections::{BTreeMap, HashMap};
 
@@ -59,7 +59,7 @@ pub struct LowBatteryAlert {
     pub at_ms: u64,
 }
 
-/// 单个 `(device, threshold)` 的持久化状态（AB-5 诊断页要展示这三项）。
+/// 单个 `(device, threshold)` 的持久化状态（诊断页要展示这三项）。
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct NotificationEntry {
     /// 设备标识。
@@ -145,7 +145,7 @@ impl NotificationBook {
         }
     }
 
-    /// 用 `state.json` 回填：重启后不得重复通知（AB-4）。
+    /// 用 `state.json` 回填：重启后不得重复通知。
     pub fn seed(
         &mut self,
         stable_id: &str,
@@ -193,7 +193,7 @@ impl NotificationBook {
                     last_result: None,
                 });
 
-            // 迟滞：只有回升到「阈值 + 5%」才重新武装（AB-2）。
+            // 迟滞：只有回升到「阈值 + 5%」才重新武装。
             if battery >= threshold.saturating_add(self.config.rearm_margin) {
                 entry.armed = true;
             }
@@ -212,7 +212,7 @@ impl NotificationBook {
                 continue;
             }
 
-            // 冷却只挡「快速往返」，不承担持续提醒职责（AB-3）。
+            // 冷却只挡「快速往返」，不承担持续提醒职责。
             let cooldown_ok = entry
                 .last_notified_at_ms
                 .is_none_or(|last| now_ms.saturating_sub(last) >= self.config.cooldown_ms);
@@ -241,7 +241,7 @@ impl NotificationBook {
         alert
     }
 
-    /// 覆盖某 `(device, threshold)` 的最后结果（AB-5）。
+    /// 覆盖某 `(device, threshold)` 的最后结果。
     ///
     /// `observe()` 只记录策略判定为应当发送，不知宿主是否真送出去：Toast 可能被系统通知关掉、
     /// 模式可能是关闭。宿主投递完回填真实结果，诊断页才能显示事实而非意图。
@@ -253,7 +253,7 @@ impl NotificationBook {
         }
     }
 
-    /// 时钟后跳（系统时间被调早）：清除全部冷却，保留 `armed`（Z-9）。
+    /// 时钟后跳（系统时间被调早）：清除全部冷却，保留 `armed`。
     pub fn clear_cooldowns(&mut self) {
         for device in self.devices.values_mut() {
             for entry in device.entries.values_mut() {
@@ -263,7 +263,7 @@ impl NotificationBook {
         }
     }
 
-    /// 导出全部 `(device, threshold)` 状态用于持久化与诊断页（AB-5）。
+    /// 导出全部 `(device, threshold)` 状态用于持久化与诊断页。
     ///
     /// 排序：设备按 `stable_id` 升序，同设备内阈值从高到低。档位有先后语义（第一档先提醒），
     /// 若按 `BTreeMap` 自然升序展示，第二档会排在第一条，与设置页顺序相反。
@@ -326,14 +326,14 @@ mod tests {
         let mut b = book();
         assert!(b.observe("d", "Dev", 25, Some(false), T0).is_none());
         assert!(b.observe("d", "Dev", 19, Some(false), T0 + 1).is_some());
-        // 持续在阈值下不得重复提醒（AB-1）。
+        // 持续在阈值下不得重复提醒。
         assert!(b.observe("d", "Dev", 18, Some(false), T0 + 2).is_none());
         assert!(b.observe("d", "Dev", 17, Some(false), T0 + 3).is_none());
     }
 
     #[test]
     fn hysteresis_requires_threshold_plus_five() {
-        // 冷却关掉，单独验证迟滞（AB-2）。
+        // 冷却关掉，单独验证迟滞。
         let mut b = NotificationBook::new(NotificationConfig {
             thresholds: vec![20, 10],
             cooldown_ms: 0,
@@ -450,7 +450,7 @@ mod tests {
 
         let mut restored = book();
         restored.seed("d", last, &entries);
-        // 重启后同一读数不得再提醒（AB-4）。
+        // 重启后同一读数不得再提醒。
         assert!(
             restored
                 .observe("d", "Dev", 19, Some(false), T0 + 2)
@@ -464,7 +464,7 @@ mod tests {
         assert!(b.observe("d", "Dev", 25, Some(false), T0).is_none());
         assert!(b.observe("d", "Dev", 19, Some(false), T0).is_some());
         b.clear_cooldowns();
-        // 冷却已清除，重新跌破即可发送（Z-9）。
+        // 冷却已清除，重新跌破即可发送。
         assert!(b.observe("d", "Dev", 25, Some(false), T0 - 10).is_none());
         assert!(b.observe("d", "Dev", 19, Some(false), T0 - 9).is_some());
     }

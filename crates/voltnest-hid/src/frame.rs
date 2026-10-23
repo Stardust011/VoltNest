@@ -1,6 +1,6 @@
-//! 通用帧解析：**完全由 [`BrandSpec`] 驱动**的电量解码（新增品牌不改这里，ADR-0011）。
+//! 通用帧解析：**完全由 [`BrandSpec`] 驱动**的电量解码（新增品牌不改这里）。
 //!
-//! 所有失败必须映射为**结构化错误码**，不得静默丢帧、不得回落到 0%（§5 / ADR-0010 D9）。错误码与情形是契约：
+//! 所有失败必须映射为**结构化错误码**，不得静默丢帧、不得回落到 0%。错误码与情形的对应关系：
 //!
 //! | 情形 | 错误码 |
 //! |---|---|
@@ -25,7 +25,7 @@ pub struct BatteryReading {
 
 /// 帧被拒的**具体环节**（诊断用）。
 ///
-/// 与 [`ErrorCode`] 是两层：错误码是给状态机与 `lastError` 的契约，
+/// 与 [`ErrorCode`] 是两层：错误码是给状态机与 `lastError` 的稳定标识，
 /// 本枚举是给人看的排查线索。一个 `MalformedFrame` 对应其中一种成因。
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum RejectReason {
@@ -140,7 +140,7 @@ fn hex_opt(value: Option<u8>) -> String {
 /// 一次具名的拒绝：错误码 + 成因 + 原始字节。
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct FrameReject {
-    /// 契约错误码（写 `Snapshot.lastError`）。
+    /// 稳定错误码（写 `Snapshot.lastError`）。
     pub code: ErrorCode,
     /// 具体成因（只进诊断）。
     pub reason: RejectReason,
@@ -165,7 +165,7 @@ impl FrameReject {
 
 /// 按品牌描述解析一帧，返回电量与充电标志。
 ///
-/// 只回错误码：状态机与 `lastError` 只需要它，新增成因不得新增错误码（ADR-0011）。
+/// 只回错误码：状态机与 `lastError` 只需要它，新增成因不得新增错误码。
 pub fn decode_battery(spec: &BrandSpec, report: &[u8]) -> Result<BatteryReading, ErrorCode> {
     decode_battery_detailed(spec, report).map_err(|reject| reject.code)
 }

@@ -1,4 +1,4 @@
-//! 结构化错误码。字符串即契约，改名属破坏性变更（ADR-0010）。
+//! 结构化错误码。字符串形式对外可见，改名属破坏性变更。
 
 use std::fmt;
 
@@ -18,7 +18,7 @@ pub enum ErrorCode {
     EmptyPayload,
     /// 电量字节 > 100。
     PercentOutOfRange,
-    /// BLE 无 `0x180F`（O-2 负缓存触发条件）。
+    /// BLE 无 `0x180F`（负缓存的触发条件）。
     ServiceMissing,
     /// GATT 缓存命中被拒（读取一律 `Uncached`）。
     CachedValueRejected,
@@ -56,7 +56,7 @@ impl fmt::Display for ErrorCode {
 mod tests {
     use super::*;
 
-    /// 字符串是契约：既有值不得改动，只能新增变体。
+    /// 字符串对外可见：既有值不得改动，只能新增变体。
     #[test]
     fn stable_strings() {
         let pairs = [

@@ -1,4 +1,4 @@
-//! BLE 调度策略：负缓存、退避、跟踪上限、并发上限（O-1..O-8）。纯逻辑：时间由调用方以单调毫秒传入
+//! BLE 调度策略：负缓存、退避、跟踪上限、并发上限。纯逻辑：时间由调用方以单调毫秒传入
 //! （Provider 内部巡检用 `Instant`，不参与对外语义，D10），故全部边界都能用假时钟手动推进测出，无需注入时钟抽象。
 
 use crate::{
@@ -8,7 +8,7 @@ use crate::{
 use std::collections::BTreeMap;
 use voltnest_provider::ErrorCode;
 
-/// BLE 调度参数。默认值全部来自规格 §6 与实测。
+/// BLE 调度参数。默认值来自实测。
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct BlePolicy {
     /// 建链超时。
@@ -59,7 +59,7 @@ pub enum Admission {
         /// 退避结束时间（单调毫秒）。
         until_ms: u64,
     },
-    /// 超过跟踪上限（O-6）：只进诊断页，不建链。
+    /// 超过跟踪上限：只进诊断页，不建链。
     OverLimit,
 }
 
@@ -97,7 +97,7 @@ impl PolicyBook {
         &self.policy
     }
 
-    /// 是否还有并发槽位（O-4）。
+    /// 是否还有并发槽位。
     pub fn allows_concurrent(&self, running: usize) -> bool {
         running < self.policy.max_concurrent
     }
@@ -135,7 +135,7 @@ impl PolicyBook {
         Admission::Admit
     }
 
-    /// 建链 + 读取成功：清零失败计数、退避与负缓存（O-5「重新 connected 后清零」）。
+    /// 建链 + 读取成功：清零失败计数、退避与负缓存。
     pub fn on_success(&mut self, addr: [u8; 6]) {
         let state = self.devices.entry(addr).or_default();
         state.failures = 0;
@@ -187,7 +187,7 @@ impl PolicyBook {
     }
 }
 
-/// 退避步长：第 3 次失败 2 分钟，之后 4 / 8 分钟，上限 10 分钟（O-5）。
+/// 退避步长：第 3 次失败 2 分钟，之后 4 / 8 分钟，上限 10 分钟。
 pub fn backoff_step(failures: u32, threshold: u32, cap_ms: u64) -> u64 {
     if failures < threshold {
         return 0;
@@ -227,7 +227,7 @@ mod tests {
 
     #[test]
     fn negative_cache_blocks_for_thirty_minutes() {
-        // O-2：否则用户每台非电量 BLE 外设会每 60s 被建链一次，永不停止。
+        // 否则用户每台非电量 BLE 外设会每 60s 被建链一次，永不停止。
         let mut b = book();
         b.track(A);
         b.on_service_missing(A, T);
@@ -253,7 +253,7 @@ mod tests {
 
     #[test]
     fn backoff_is_two_four_eight_then_cap() {
-        // O-5：连续失败 3 次 → 2 / 4 / 8 分钟，上限 10 分钟。
+        // 连续失败 3 次 → 2 / 4 / 8 分钟，上限 10 分钟。
         let mut b = book();
         b.track(A);
         b.on_failure(A, T, ErrorCode::IoTimeout);
@@ -342,7 +342,7 @@ mod tests {
 
     #[test]
     fn tracking_limit_is_eight() {
-        // O-6：第 9 台只进诊断页，不建链。
+        // 第 9 台只进诊断页，不建链。
         let mut b = book();
         for i in 0..8u8 {
             b.track([i, 0, 0, 0, 0, 1]);
@@ -356,7 +356,7 @@ mod tests {
         let b = book();
         assert!(b.allows_concurrent(0));
         assert!(b.allows_concurrent(1));
-        assert!(!b.allows_concurrent(2), "O-4：全局同时建链 ≤ 2");
+        assert!(!b.allows_concurrent(2), "全局同时建链 ≤ 2");
     }
 
     #[test]

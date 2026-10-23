@@ -1,4 +1,4 @@
-//! 数据根目录与文件名约定（规格 §11）。
+//! 数据根目录与文件名约定。
 //!
 //! ```text
 //! %APPDATA%\VoltNest\
@@ -52,12 +52,12 @@ impl DataPaths {
         self.root.join("logs")
     }
 
-    /// 损坏存档：`settings.corrupt-<UTC毫秒>.json`（X-4）。时间戳由调用方传入，本 crate 不读时钟。
+    /// 损坏存档：`settings.corrupt-<UTC毫秒>.json`。时间戳由调用方传入，本 crate 不读时钟。
     pub fn corrupt_settings_file(&self, now_ms: u64) -> PathBuf {
         self.root.join(format!("settings.corrupt-{now_ms}.json"))
     }
 
-    /// 版本过高存档：`settings.unsupported-<UTC毫秒>.json`（X-6）。
+    /// 版本过高存档：`settings.unsupported-<UTC毫秒>.json`。
     pub fn unsupported_settings_file(&self, now_ms: u64) -> PathBuf {
         self.root
             .join(format!("settings.unsupported-{now_ms}.json"))

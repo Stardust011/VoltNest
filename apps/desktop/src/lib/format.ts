@@ -1,4 +1,4 @@
-// 展示层纯函数：只把快照字段翻译成 CSS/文案，不做业务推断（W-2 / W-3）。
+// 展示层纯函数：只把快照字段翻译成 CSS/文案，不做业务推断。
 
 import type { DeviceDto, DeviceState } from "./types";
 
@@ -56,10 +56,10 @@ export function toneFor(state: DeviceState): Tone {
   return TONES[state] ?? TONES.unknown;
 }
 
-// 充电绿：与托盘 `tray.rs::EMERALD` 同色值，两侧必须一致（§12）。充电不分档，闪电已表「在充」，弧长仍表进度。
+// 充电绿：与托盘 `tray.rs::EMERALD` 同色值，两侧必须一致。充电不分档，闪电已表「在充」，弧长仍表进度。
 const CHARGING_GREEN = "#10b981";
 
-// 电量环颜色与托盘对齐（§12）：<10% 红、<20% 橙、充电绿；离线/过期沿用状态色。
+// 电量环颜色与托盘对齐：<10% 红、<20% 橙、充电绿；离线/过期沿用状态色。
 export function batteryColor(battery: number | null, charging: boolean, state: DeviceState): string {
   if (state !== "online" && state !== "stale") return toneFor(state).ring;
   if (charging) return CHARGING_GREEN;
@@ -102,7 +102,7 @@ export function transportLabel(transport: "hid" | "ble"): string {
   return transport === "hid" ? "2.4G" : "蓝牙";
 }
 
-// 诊断列表默认折叠 `debug`：级别只控「默认是否展示」，不控「是否记录」——逐条证据仍留环形缓冲，展开可核对，过滤不改数据（W-2）。
+// 诊断列表默认折叠 `debug`：级别只控「默认是否展示」，不控「是否记录」——逐条证据仍留环形缓冲，展开可核对，过滤不改数据。
 export function visibleDiagEvents<T extends { level: string }>(
   events: readonly T[],
   showDebug: boolean,
@@ -110,7 +110,7 @@ export function visibleDiagEvents<T extends { level: string }>(
   return showDebug ? [...events] : events.filter((e) => e.level !== "debug");
 }
 
-// 设备类型 → 中文短标签。`unknown`/未知串返回 `null`：识别不出就不显示，前端不猜类型（W-2）。
+// 设备类型 → 中文短标签。`unknown`/未知串返回 `null`：识别不出就不显示，前端不猜类型。
 export function deviceTypeLabel(deviceType: string): string | null {
   switch (deviceType) {
     case "keyboard":

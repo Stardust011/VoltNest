@@ -2,8 +2,8 @@
 //!
 //! 两个文件刻意分开（X）：合并会让最高频写入去碰最有价值的数据——断电、磁盘满、杀软锁文件都会
 //! 一次同时毁掉阈值、隐藏列表和托盘顺序。
-//! 所有写入走原子替换：`.tmp` → `fsync` → `rename`（X-2）。损坏恢复不阻塞启动：
-//! 备份 → 用默认值启动 → 诊断页告警（X-4 / X-6）。
+//! 所有写入走原子替换：`.tmp` → `fsync` → `rename`。损坏恢复不阻塞启动：
+//! 备份 → 用默认值启动 → 诊断页告警。
 
 #![forbid(unsafe_code)]
 #![deny(clippy::disallowed_types)]
@@ -21,11 +21,11 @@ pub use settings::{
 };
 pub use state::{DeviceStateEntry, NotificationStateEntry, StateFile, StateStore, StateThrottle};
 
-/// 两个文件共用的 schema 版本（整数，X-1）。
+/// 两个文件共用的 schema 版本（整数）。
 pub const SCHEMA_VERSION: u32 = 1;
 
-/// `state.json` 写入节流（X-3）。
+/// `state.json` 写入节流。
 pub const STATE_THROTTLE_MS: u64 = 5_000;
 
-/// 按 `stableId` 索引的条目上限（X-7）。超出时淘汰最久未出现项。
+/// 按 `stableId` 索引的条目上限。超出时淘汰最久未出现项。
 pub const MAX_INDEXED_ENTRIES: usize = 32;

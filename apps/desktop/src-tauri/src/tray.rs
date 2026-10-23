@@ -1,6 +1,6 @@
-//! 托盘图标：每个可见设备一个环形电量图（§12）。
+//! 托盘图标：每个可见设备一个环形电量图。
 //!
-//! 设备图标用 32×32 RGBA 手工光栅化，不引入图形渲染依赖（AA-4）；语义与前端 `batteryColor()` 一一对应：在线主题色、<20% 橙、<10% 红、充电绿弧加环心闪电、等待读数蓝、过期琥珀、读取失败橙，离线但物理存在时为灰环加横线。图标**存在性只由物理存在决定**：`visibleDeviceIds` 已由核心按 `present && !hidden` 截断到 4 个算好，这里只跟随、不二次判断。
+//! 设备图标用 32×32 RGBA 手工光栅化，不引入图形渲染依赖；语义与前端 `batteryColor()` 一一对应：在线主题色、<20% 橙、<10% 红、充电绿弧加环心闪电、等待读数蓝、过期琥珀、读取失败橙，离线但物理存在时为灰环加横线。图标**存在性只由物理存在决定**：`visibleDeviceIds` 已由核心按 `present && !hidden` 截断到 4 个算好，这里只跟随、不二次判断。
 //!
 //! # 基础图标（应用图标）何时显现
 //! 窗口关掉只剩托盘时，**一张图标都没有等于进程失联**（打不开面板也无法退出），故托盘必须始终至少有一张可用图标。占位图标即**应用图标本身**（与任务栏/开始菜单同 PNG）：无设备时用户看到「应用在跑」而非需解读的小图形；手绘蓝环只留给「设备已在列表、还没拿到读数」那一种状态。它仅在「没有设备图标」时现身：有设备图标就让位（电量环本身就是入口，再挂一个会像第二台设备）；设备全拔或全被隐藏时再回来。每张图标右键菜单一致（打开面板 / 退出 VoltNest），任意一张都能退出。
@@ -24,7 +24,7 @@ use crate::host::{Shared, lock};
 pub const BASE_TRAY_ID: &str = "voltnest";
 /// 图标边长。
 pub const ICON_SIZE: u32 = 32;
-/// tooltip 上限（§12）。
+/// tooltip 上限。
 const TOOLTIP_LIMIT: usize = 128;
 /// 托盘气泡（tooltip 提示）的持续时长。
 const BUBBLE_MS: u64 = 6_000;
@@ -300,7 +300,7 @@ fn tray_id_for(stable_id: &str) -> String {
     format!("tray:{stable_id}")
 }
 
-/// tooltip 文案：`型号 · 92%` / `型号 · —（离线）` / `型号 · 87%（上次读数）`。读数与图标共用同一个 `displayed_battery()`：图标画了 87% 蓝弧，悬停文字就不能还写「—」，否则用户以为百分比凭空来的。`extra > 0` 表示还有设备没进托盘（§12「还有 N 台」），挂最后一张图标上；整串（含后缀）≤128 字符。
+/// tooltip 文案：`型号 · 92%` / `型号 · —（离线）` / `型号 · 87%（上次读数）`。读数与图标共用同一个 `displayed_battery()`：图标画了 87% 蓝弧，悬停文字就不能还写「—」，否则用户以为百分比凭空来的。`extra > 0` 表示还有设备没进托盘（「还有 N 台」），挂最后一张图标上；整串（含后缀）≤128 字符。
 fn tooltip_for(device: &DeviceDto, extra: usize) -> String {
     let reading = displayed_battery(device);
     let battery = match reading {
@@ -364,7 +364,7 @@ fn displayed_battery(device: &DeviceDto) -> Option<Reading> {
     }
 }
 
-/// 环的颜色：除充电外与前端 `batteryColor()` 逐条对应（§12）。只有 `Online`/`Stale` 有「当前读数」可按阈值着色，其余状态沿用状态色（即面板「等待读数」蓝环、「读取失败」橙环那套）。充电不看电量高低一律绿：闪电已说清「在充电」、弧长继续表达充到哪了；面板同色（`CHARGING_GREEN`），两侧一致。
+/// 环的颜色：除充电外与前端 `batteryColor()` 逐条对应。只有 `Online`/`Stale` 有「当前读数」可按阈值着色，其余状态沿用状态色（即面板「等待读数」蓝环、「读取失败」橙环那套）。充电不看电量高低一律绿：闪电已说清「在充电」、弧长继续表达充到哪了；面板同色（`CHARGING_GREEN`），两侧一致。
 fn ring_tone(battery: Option<u8>, charging: bool, state: DeviceState) -> [u8; 3] {
     let tone = match state {
         DeviceState::Online => EMERALD,

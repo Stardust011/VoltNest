@@ -1,4 +1,4 @@
-//! Provider 能力声明（ADR-0010 D2 / D3 / D5）：能力与节奏是编译期常量，不是 Profile 数据文件、不是 `settings.json`。
+//! Provider 能力声明：能力与节奏是编译期常量，不是 Profile 数据文件、不是 `settings.json`。
 //! 型号表加一行不改这里，而阈值链与状态机不变量强耦合，写坏即「永不过期」。
 
 use crate::transport::Transport;
@@ -8,13 +8,13 @@ use crate::transport::Transport;
 pub enum ChargingSupport {
     /// 读数自带充电标志（HID：`payload[2]`，`0x01` = 充电中）。
     FromReading,
-    /// 协议层不可得（BLE）→ UI 显示 `Unknown`，**不得**显示「未充电」（PC-5）。
+    /// 协议层不可得（BLE）→ UI 显示 `Unknown`，**不得**显示「未充电」。
     Unavailable,
 }
 
 /// 状态机退化阈值链（毫秒）。
 ///
-/// 不变量 `stale < unavailable < offline` 由 [`ProviderProfile::validate`] 的 PC-1 保证。
+/// 不变量 `stale < unavailable < offline` 由 [`ProviderProfile::validate`] 在构造期保证。
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Thresholds {
     /// 超过该时长未收到有效读数 → `Stale`。
@@ -26,7 +26,7 @@ pub struct Thresholds {
 }
 
 impl Thresholds {
-    /// 档位乘数作用于整条链（D3 修规格缺陷 F1），用整数 `(num, den)`：`(2,1)`/`(1,1)`/`(1,2)`。
+    /// 档位乘数作用于整条链，用整数 `(num, den)`：`(2,1)`/`(1,1)`/`(1,2)`。
     /// 全部阈值都是 500ms 的整数倍，`/2` 无损；若将来引入奇数毫秒值，须先把分母改为 1000 并向下取整，
     /// 不得引入浮点（会让边界测试出现 ±1ms 抖动）。
     pub fn scaled(self, sensitivity: Sensitivity) -> Self {
@@ -39,7 +39,7 @@ impl Thresholds {
     }
 }
 
-/// 用户可选的阈值档位。设置里只存档位，**不存毫秒**（Z-1）。
+/// 用户可选的阈值档位。设置里只存档位，**不存毫秒**。
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub enum Sensitivity {
     /// 敏感 ×0.5。
@@ -120,7 +120,7 @@ pub struct ProviderProfile {
     pub thresholds: Thresholds,
     /// 充电状态可获得性。
     pub charging: ChargingSupport,
-    /// 出现检测间隔；`None` = 复用轮询周期。仅允许 HID（PC-6）。
+    /// 出现检测间隔；`None` = 复用轮询周期。仅允许 HID。
     pub presence_poll_ms: Option<u64>,
 }
 
@@ -130,7 +130,7 @@ impl ProviderProfile {
         self.thresholds.scaled(sensitivity)
     }
 
-    /// PC-5 的唯一实现点：充电不可得时把任何 `Some(bool)` 压成 `None`。
+    /// 充电语义收敛的唯一实现点：充电不可得时把任何 `Some(bool)` 压成 `None`。
     /// 宿主在把读数写进状态机前必须经过这里，否则 BLE 会被渲染成未充电。
     pub fn sanitize_charging(&self, raw: Option<bool>) -> Option<bool> {
         match self.charging {
@@ -139,10 +139,10 @@ impl ProviderProfile {
         }
     }
 
-    /// 构造期不变量 PC-1..PC-7，进程启动时跑一次（[`validate_registry`] 内部调用）。
+    /// 构造期不变量，进程启动时跑一次（[`validate_registry`] 内部调用）。
     pub fn validate(&self) -> Result<(), ProfileError> {
-        // PC-4：家族 ID 必须 `<transport>-<protocol>`，品牌名不得占据 transport 段或单独构成 ID。
-        // ADR-0010 D1 允许协议段带厂商标识，故不能简单黑名单整串；`hid-vbas` 已把品牌从 ID 移除，收敛为「协议 = 家族」。
+        // 家族 ID 必须 `<transport>-<protocol>`，品牌名不得占据 transport 段或单独构成 ID。
+        // 协议段允许带厂商标识，故不能简单黑名单整串；`hid-vbas` 已把品牌从 ID 移除，收敛为「协议 = 家族」。
         let prefix = self.transport.as_str();
         let mut segments = self.family_id.split('-');
         let first = segments.next().unwrap_or_default();
@@ -168,7 +168,7 @@ impl ProviderProfile {
             }
         }
 
-        // PC-1：stale < unavailable < offline。
+        // stale < unavailable < offline。
         let t = self.thresholds;
         if !(t.stale_ms < t.unavailable_ms && t.unavailable_ms < t.offline_ms) {
             return Err(ProfileError::ThresholdOrder {
@@ -178,10 +178,10 @@ impl ProviderProfile {
             });
         }
 
-        // PC-2 / PC-3：阈值必须显著大于采集周期，否则边界抖动。
+        // 阈值必须显著大于采集周期，否则边界抖动。
         match self.cadence {
             Cadence::NotifyWithPoll { poll } => {
-                // PC-7 先校验区间，PC-2 才有意义。
+                // 先校验区间，再校验与周期之间的关系。
                 if poll.min_ms < POLL_MIN_FLOOR_MS
                     || poll.max_ms > POLL_MAX_CEIL_MS
                     || !(poll.min_ms <= poll.default_ms && poll.default_ms <= poll.max_ms)
@@ -211,7 +211,7 @@ impl ProviderProfile {
             }
         }
 
-        // PC-6：出现检测间隔只允许出现在 HID。
+        // 出现检测间隔只允许出现在 HID。
         match (self.presence_poll_ms, self.transport) {
             (Some(0), _) => return Err(ProfileError::PresencePollZero),
             (Some(_), Transport::Ble) => {
@@ -226,18 +226,18 @@ impl ProviderProfile {
     }
 }
 
-/// PC-7 的区间下限：30s。
+/// 轮询间隔下限：30s。
 pub const POLL_MIN_FLOOR_MS: u64 = 30_000;
-/// PC-7 的区间上限：300s。
+/// 轮询间隔上限：300s。
 pub const POLL_MAX_CEIL_MS: u64 = 300_000;
 
-/// PC-4 的品牌黑名单（ADR-0008 第 1 条：不能仅按品牌划分协议）。
+/// 品牌黑名单：协议家族不能仅按品牌划分。
 pub const BRAND_BLACKLIST: [&str; 2] = ["ajazz", "xctech"];
 
 /// 能力声明的构造期错误。
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum ProfileError {
-    /// PC-1：阈值链顺序错误。
+    /// 阈值链顺序错误。
     ThresholdOrder {
         /// `staleAfter`。
         stale_ms: u64,
@@ -246,45 +246,45 @@ pub enum ProfileError {
         /// `offlineAfter`。
         offline_ms: u64,
     },
-    /// PC-2：`staleAfter` 相对轮询下限过小。
+    /// `staleAfter` 相对轮询下限过小。
     StaleBelowPollFloor {
         /// `staleAfter`。
         stale_ms: u64,
         /// 轮询下限。
         poll_min_ms: u64,
     },
-    /// PC-3：`staleAfter` 相对推送期望间隔过小。
+    /// `staleAfter` 相对推送期望间隔过小。
     StaleBelowExpectedInterval {
         /// `staleAfter`。
         stale_ms: u64,
         /// 期望间隔。
         expected_interval_ms: u64,
     },
-    /// PC-4：家族 ID 使用了品牌名作为 transport 段。
+    /// 家族 ID 使用了品牌名作为 transport 段。
     BrandInFamilyId {
         /// 家族 ID。
         family_id: &'static str,
     },
-    /// PC-4：家族 ID 的前缀与 `transport` 不一致。
+    /// 家族 ID 的前缀与 `transport` 不一致。
     TransportPrefixMismatch {
         /// 家族 ID。
         family_id: &'static str,
         /// 声明的 transport。
         transport: Transport,
     },
-    /// PC-4：家族 ID 只有 transport，没有协议段。
+    /// 家族 ID 只有 transport，没有协议段。
     FamilyIdWithoutProtocol {
         /// 家族 ID。
         family_id: &'static str,
     },
-    /// PC-6：`presence_poll_ms` 出现在 BLE 上。
+    /// `presence_poll_ms` 出现在 BLE 上。
     PresencePollNotAllowed {
         /// 声明了出现检测的 transport。
         transport: Transport,
     },
-    /// PC-6：出现检测间隔为 0。
+    /// 出现检测间隔为 0。
     PresencePollZero,
-    /// PC-7：轮询区间非法。
+    /// 轮询区间非法。
     PollRangeInvalid {
         /// 下限。
         min_ms: u64,
@@ -293,12 +293,12 @@ pub enum ProfileError {
         /// 默认值。
         default_ms: u64,
     },
-    /// D5：注册表出现重复家族 ID。
+    /// 注册表出现重复家族 ID。
     DuplicateFamilyId {
         /// 重复的家族 ID。
         family_id: &'static str,
     },
-    /// D5：注册表出现重复 transport。
+    /// 注册表出现重复 transport。
     DuplicateTransport {
         /// 重复的 transport。
         transport: Transport,
@@ -314,59 +314,55 @@ impl core::fmt::Display for ProfileError {
                 offline_ms,
             } => write!(
                 f,
-                "PC-1 违反：阈值链必须 stale<unavailable<offline，实际 {stale_ms}/{unavailable_ms}/{offline_ms}"
+                "阈值链必须 stale<unavailable<offline，实际 {stale_ms}/{unavailable_ms}/{offline_ms}"
             ),
             Self::StaleBelowPollFloor {
                 stale_ms,
                 poll_min_ms,
             } => write!(
                 f,
-                "PC-2 违反：staleAfter={stale_ms}ms 必须 >= 1.5×轮询下限({poll_min_ms}ms)"
+                "staleAfter={stale_ms}ms 必须 >= 1.5×轮询下限({poll_min_ms}ms)"
             ),
             Self::StaleBelowExpectedInterval {
                 stale_ms,
                 expected_interval_ms,
             } => write!(
                 f,
-                "PC-3 违反：staleAfter={stale_ms}ms 必须 >= 1.5×期望间隔({expected_interval_ms}ms)"
+                "staleAfter={stale_ms}ms 必须 >= 1.5×期望间隔({expected_interval_ms}ms)"
             ),
             Self::BrandInFamilyId { family_id } => {
-                write!(f, "PC-4 违反：家族 ID {family_id} 不得以品牌名标识协议")
+                write!(f, "家族 ID {family_id} 不得以品牌名标识协议")
             }
             Self::TransportPrefixMismatch {
                 family_id,
                 transport,
             } => write!(
                 f,
-                "PC-4 违反：家族 ID {family_id} 必须以 \"{}-*\" 开头",
+                "家族 ID {family_id} 必须以 \"{}-*\" 开头",
                 transport.as_str()
             ),
             Self::FamilyIdWithoutProtocol { family_id } => {
-                write!(f, "PC-4 违反：家族 ID {family_id} 缺少协议段")
+                write!(f, "家族 ID {family_id} 缺少协议段")
             }
             Self::PresencePollNotAllowed { transport } => write!(
                 f,
-                "PC-6 违反：presence_poll_ms 仅允许 HID，实际 transport={}",
+                "presence_poll_ms 仅允许 HID，实际 transport={}",
                 transport.as_str()
             ),
-            Self::PresencePollZero => write!(f, "PC-6 违反：presence_poll_ms 不得为 0"),
+            Self::PresencePollZero => write!(f, "presence_poll_ms 不得为 0"),
             Self::PollRangeInvalid {
                 min_ms,
                 max_ms,
                 default_ms,
             } => write!(
                 f,
-                "PC-7 违反：轮询区间非法 min={min_ms} default={default_ms} max={max_ms}（要求 30000..=300000 且 min<=default<=max）"
+                "轮询区间非法 min={min_ms} default={default_ms} max={max_ms}（要求 30000..=300000 且 min<=default<=max）"
             ),
             Self::DuplicateFamilyId { family_id } => {
-                write!(f, "D5 违反：家族 ID {family_id} 重复")
+                write!(f, "家族 ID {family_id} 重复")
             }
             Self::DuplicateTransport { transport } => {
-                write!(
-                    f,
-                    "D5 违反：transport {} 被多个 Provider 占用",
-                    transport.as_str()
-                )
+                write!(f, "transport {} 被多个 Provider 占用", transport.as_str())
             }
         }
     }
@@ -374,8 +370,8 @@ impl core::fmt::Display for ProfileError {
 
 impl std::error::Error for ProfileError {}
 
-/// `hid-vbas` 的能力声明，数值与规格 §3 / §5.3 逐字一致（有测试断言）。
-/// 家族级能力声明只有一份：品牌再多也不新增家族（ADR-0011）；品牌各自的上报节奏由
+/// `hid-vbas` 的能力声明。三档阈值与轮询节奏在此固定，有测试断言防止漂移。
+/// 家族级能力声明只有一份：品牌再多也不新增家族；品牌各自的上报节奏由
 /// `voltnest-hid` 的品牌描述声明，并在启动期与本声明做兼容校验。
 pub static HID_VBAS: ProviderProfile = ProviderProfile {
     family_id: crate::FAMILY_HID_VBAS,
@@ -389,7 +385,7 @@ pub static HID_VBAS: ProviderProfile = ProviderProfile {
         offline_ms: 180_000,
     },
     charging: ChargingSupport::FromReading,
-    // P-2：内部常量，不进 settings.json。
+    // 内部常量，不进 settings.json。
     presence_poll_ms: Some(5_000),
 };
 
@@ -411,11 +407,11 @@ pub static BLE_BAS: ProviderProfile = ProviderProfile {
     },
     // 0x2BF0 / 0x2BEA 未实现，0x2BED 失真（BLE 充电状态不可用）。
     charging: ChargingSupport::Unavailable,
-    // 出现由 60s 巡检天然覆盖（PC-6）。
+    // 出现由 60s 巡检天然覆盖。
     presence_poll_ms: None,
 };
 
-/// D5：启动期自检，断言 `(family_id, transport)` 唯一。违反时宿主不启动该 Provider，
+/// 启动期自检，断言 `(family_id, transport)` 唯一。违反时宿主不启动该 Provider，
 /// 诊断页红条 + 稳定错误码 `PROFILE_CONFLICT`，宿主照常运行；v1 不做运行期优先级仲裁。
 pub fn validate_registry(profiles: &[&'static ProviderProfile]) -> Result<(), ProfileError> {
     for p in profiles {
@@ -450,7 +446,7 @@ mod tests {
         BLE_BAS
     }
 
-    // ---------- PC-1 ----------
+    // ---------- 阈值链顺序 ----------
 
     #[test]
     fn pc1_accepts_canonical_chain() {
@@ -482,7 +478,7 @@ mod tests {
         ));
     }
 
-    // ---------- PC-2 ----------
+    // ---------- stale 与轮询下限 ----------
 
     #[test]
     fn pc2_ble_boundary_is_exact() {
@@ -497,7 +493,7 @@ mod tests {
         ));
     }
 
-    // ---------- PC-3 ----------
+    // ---------- stale 与期望间隔 ----------
 
     #[test]
     fn pc3_hid_boundary_is_exact() {
@@ -512,7 +508,7 @@ mod tests {
         ));
     }
 
-    // ---------- PC-4 ----------
+    // ---------- 家族 ID ----------
 
     #[test]
     fn pc4_rejects_brand_as_transport() {
@@ -564,7 +560,7 @@ mod tests {
         ));
     }
 
-    // ---------- PC-5 ----------
+    // ---------- 充电语义 ----------
 
     #[test]
     fn pc5_charging_unavailable_forces_none() {
@@ -582,7 +578,7 @@ mod tests {
         assert_eq!(base_hid().sanitize_charging(None), None);
     }
 
-    // ---------- PC-6 ----------
+    // ---------- 出现检测间隔 ----------
 
     #[test]
     fn pc6_presence_poll_only_for_hid() {
@@ -606,7 +602,7 @@ mod tests {
         assert_eq!(p.validate(), Err(ProfileError::PresencePollZero));
     }
 
-    // ---------- PC-7 ----------
+    // ---------- 轮询区间 ----------
 
     #[test]
     fn pc7_enforces_range_and_order() {
@@ -701,7 +697,7 @@ mod tests {
 
     #[test]
     fn sensitivity_scales_whole_chain() {
-        // 规格 §5.3 表：三值同比缩放，不能只改 staleAfter。
+        // 三值同比缩放，不能只改 staleAfter。
         let hid = HID_VBAS;
         assert_eq!(
             hid.thresholds_for(Sensitivity::Sensitive),
@@ -797,7 +793,7 @@ mod tests {
         assert_eq!(Sensitivity::default(), Sensitivity::Standard);
     }
 
-    // ---------- D5 注册表自检 ----------
+    // ---------- 注册表自检 ----------
 
     #[test]
     fn registry_accepts_v1_providers() {
@@ -886,7 +882,7 @@ mod tests {
             offline_ms: 3,
         }
         .to_string();
-        assert!(msg.contains("PC-1"));
+        assert!(msg.contains("阈值链"));
         assert!(msg.contains("1/2/3"));
     }
 }

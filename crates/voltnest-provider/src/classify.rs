@@ -14,7 +14,7 @@
 //! | 规则 | 来源 | 实测状态 |
 //! |---|---|---|
 //! | HID Usage `0x01/0x01,0x02,0x04..0x08` | USB-IF HID Usage Tables 1.4（Generic Desktop） | 单测覆盖；本机为厂商自定义 UsagePage，未命中 |
-//! | BLE Appearance `0x03C1..0x03C4 / 0x0841..0x0844 / 0x0942,0x0943` | Bluetooth SIG Assigned Numbers，值 = `category << 6 \| subcategory` | 单测覆盖；本机 BLE 实测见 `docs/device-classification.md` |
+//! | BLE Appearance `0x03C1..0x03C4 / 0x0841..0x0844 / 0x0942,0x0943` | Bluetooth SIG Assigned Numbers，值 = `category << 6 \| subcategory` | 单测覆盖；本机 BLE 设备为 Unknown |
 //! | BLE 服务 `0x180F / 0x1812 / 0x180A` | Battery Service / HOGP / DIS 规范 | 只作上下文证据，不单独定型 |
 //! | 可核验设备映射 | 品牌型号表（官方驱动 `config.xml` 的 `device_attr`） | 仅 `device_attr` 恰为规范类型词时生效 |
 //!
@@ -54,7 +54,7 @@ pub enum DeviceType {
 }
 
 impl DeviceType {
-    /// 稳定小写字符串：落进 `Snapshot.deviceType`，改动即破坏前端契约。
+    /// 稳定小写字符串：落进 `Snapshot.deviceType`，改动即破坏前端展示。
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Keyboard => "keyboard",
@@ -217,8 +217,8 @@ pub struct HidCollection {
 
 /// HID 侧证据：同一 `VID:PID` 全部接口的 Usage 汇总。
 ///
-/// 按 `VID:PID` 聚合而不是按接口聚合，是因为 `stableId` 也只到 `VID:PID`
-/// （Y-1）：一个接收器有多个接口，物理上仍是一台设备。
+/// 按 `VID:PID` 聚合而不是按接口聚合，是因为 `stableId` 也只到 `VID:PID`：
+/// 一个接收器有多个接口，物理上仍是一台设备。
 #[derive(Clone, PartialEq, Eq, Debug, Default)]
 pub struct HidEvidence {
     /// VID。
@@ -679,8 +679,7 @@ mod tests {
         assert!(c.evidence.iter().any(|e| e.contains("缺少可核验映射")));
     }
 
-    /// 实测回归：本仓库 2.4G 接收器 `7768:6426` 的真实集合清单
-    /// （`tools/hid-probe-rs list`，2026-10-23）。
+    /// 实测回归：本仓库 2.4G 接收器 `7768:6426` 的真实集合清单（本机枚举记录）。
     ///
     /// 它同时声明鼠标与键盘集合，所以标准侧只能判成「复合」；结论来自
     /// 官方驱动配置的 `device_attr=mouse`。这条用例保证真实设备不会因为
@@ -894,7 +893,7 @@ mod tests {
         assert!(c.evidence.iter().any(|e| e.contains("证据冲突")));
     }
 
-    // ---------- 契约 ----------
+    // ---------- 字符串稳定性 ----------
 
     #[test]
     fn type_strings_are_stable() {

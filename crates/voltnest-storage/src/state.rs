@@ -1,8 +1,8 @@
 //! `state.json`：可丢弃缓存（设备最后已知电量、时间、路径、通知冷却与 `armed`）。
 //!
-//! 规则（X-3 / X-5 / X-7）：写入节流 5s，退出、隐藏到托盘、状态退化时由宿主强制 flush；
+//! 规则：写入节流 5s，退出、隐藏到托盘、状态退化时由宿主强制 flush；
 //! 随时删除功能不受影响，只失去启动回填（有自动化测试，不靠人工记得）；按 `stableId` 条目超 32 条时
-//! 淘汰最久未出现项（Y-5 地址轮换产生的孤儿）。
+//! 淘汰最久未出现项（地址轮换产生的孤儿）。
 
 use crate::SCHEMA_VERSION;
 use crate::atomic::{archive_corrupt, read_optional, write_json_atomic};
@@ -11,7 +11,7 @@ use crate::{MAX_INDEXED_ENTRIES, STATE_THROTTLE_MS};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
-/// 单个 `(device, threshold)` 的通知状态（AB-4 / AB-5）。
+/// 单个 `(device, threshold)` 的通知状态。
 #[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct NotificationStateEntry {
@@ -44,15 +44,15 @@ pub struct DeviceStateEntry {
     pub stable_id: String,
     /// `hid` / `ble`。
     pub transport: String,
-    /// 显示名快照（仅诊断与展示，Provider 上报才是真值，D8）。
+    /// 显示名快照（仅诊断与展示，Provider 上报才是真值）。
     pub display_name: String,
     /// 型号原文快照。
     pub model_name_raw: String,
-    /// 上次已知电量（只走副行展示，W-9）。
+    /// 上次已知电量（只走副行展示）。
     pub last_known_battery: Option<u8>,
     /// 上次已知电量时间。
     pub last_known_at_ms: Option<u64>,
-    /// 诊断路径（Y-6）。
+    /// 诊断路径。
     pub last_path: Option<String>,
     /// 首次发现时间。
     pub first_seen_at_ms: Option<u64>,
@@ -60,7 +60,7 @@ pub struct DeviceStateEntry {
     pub last_seen_at_ms: Option<u64>,
     /// 通知状态。
     pub notifications: Vec<NotificationStateEntry>,
-    /// 未知字段（X-1）。
+    /// 未知字段。
     #[serde(flatten)]
     pub extra: Map<String, Value>,
 }
@@ -91,7 +91,7 @@ pub struct StateFile {
     pub schema_version: u32,
     /// 设备条目。
     pub devices: Vec<DeviceStateEntry>,
-    /// 未知字段（X-1）。
+    /// 未知字段。
     #[serde(flatten)]
     pub extra: Map<String, Value>,
 }
@@ -121,7 +121,7 @@ impl StateFile {
 
     /// 按 `lastSeenAt` 淘汰最久未出现的条目，保留 `limit` 条。
     ///
-    /// 这是 Y-5「地址轮换产生的 orphan 交给 X-7 的 32 条上限」的落地。
+    /// 这是「地址轮换产生的孤儿交给 32 条上限」的落地。
     pub fn prune(&mut self, limit: usize) {
         if self.devices.len() <= limit {
             return;
@@ -155,7 +155,7 @@ impl StateStore {
         Self { paths }
     }
 
-    /// 加载。文件不存在、损坏、版本过高都返回空状态（X-5：删除后功能必须正常）。
+    /// 加载。文件不存在、损坏、版本过高都返回空状态（删除后功能必须正常）。
     pub fn load(&self, now_ms: u64) -> StateFile {
         let path = self.paths.state_file();
         let raw = match read_optional(&path) {
@@ -188,7 +188,7 @@ impl StateStore {
     }
 }
 
-/// 写入节流器（X-3）。只记时间戳，不做 I/O 决策以外的判断。
+/// 写入节流器。只记时间戳，不做 I/O 决策以外的判断。
 #[derive(Clone, Debug)]
 pub struct StateThrottle {
     throttle_ms: u64,
@@ -279,7 +279,7 @@ mod tests {
 
     #[test]
     fn delete_state_file_and_everything_still_works() {
-        // X-5：写成自动化测试，不靠人工记得。
+        // 写成自动化测试，不靠人工记得。
         let (s, dir) = store();
         let mut state = StateFile::default();
         state.upsert(entry("hid:7768:6426", T));
@@ -347,7 +347,7 @@ mod tests {
 
     #[test]
     fn prunes_to_limit_keeping_most_recent() {
-        // X-7 / Y-5：地址轮换产生的 orphan 靠 32 条上限淘汰。
+        // 地址轮换产生的 orphan 靠 32 条上限淘汰。
         let mut state = StateFile::default();
         for i in 0..40u64 {
             state.upsert(entry(&format!("ble:00:00:00:00:00:{i:02x}"), T + i));

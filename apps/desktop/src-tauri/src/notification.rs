@@ -1,4 +1,4 @@
-//! 低电量通知投递（§12）。策略判定在 `NotificationBook` 里完成；这里只把「应当发送」变成「真的送出」并把真实结果回填状态机 —— 诊断页区分「系统吞了」与「我们没发」靠的就是这层返回值。不做自动降级：`system` 发不出就记 `failed`，不偷偷改托盘气泡。
+//! 低电量通知投递。策略判定在 `NotificationBook` 里完成；这里只把「应当发送」变成「真的送出」并把真实结果回填状态机 —— 诊断页区分「系统吞了」与「我们没发」靠的就是这层返回值。不做自动降级：`system` 发不出就记 `failed`，不偷偷改托盘气泡。
 //!
 //! # 为什么 Windows 不用 `tauri_plugin_notification`
 //! 发送方传入的 AUMID 决定 Toast 的应用名与图标；该插件在 Windows 上仅「看起来已安装」才设 AUMID，把 `target\debug|release` 下的进程一律当开发运行、直接不设，于是 `notify-rust` 回落 `Toast::POWERSHELL_APP_ID`：开发时通知顶上是 PowerShell 蓝图标与「Windows PowerShell」标题，与我们的 `HKCU\...\VoltNest.Desktop` 注册无关。这里改用 `tauri-winrt-notification`，AUMID 恒定、图标显式给，开发与安装版看到同一个「VoltNest」。

@@ -1,6 +1,6 @@
 //! 传输层枚举。
 
-/// 设备接入的物理传输层。`stableId` 的前缀与之一一对应（Y-1）。
+/// 设备接入的物理传输层。`stableId` 的前缀与之一一对应。
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, PartialOrd, Ord)]
 pub enum Transport {
     /// 2.4G / NearLink 接收器，走 HID 厂商通道。
@@ -18,7 +18,7 @@ impl Transport {
         }
     }
 
-    /// 用户可见的链路名称。命名归宿主（W-2），但链路词汇是协议事实，放契约里避免两处漂移。
+    /// 用户可见的链路名称。展示措辞归宿主，但链路词汇是协议事实，由本类型统一提供以避免两处漂移。
     pub const fn display_label(self) -> &'static str {
         match self {
             Self::Hid => "2.4G",
@@ -41,7 +41,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn strings_are_stable_contract() {
+    fn strings_are_stable() {
         assert_eq!(Transport::Hid.as_str(), "hid");
         assert_eq!(Transport::Ble.as_str(), "ble");
         assert_eq!(Transport::Hid.display_label(), "2.4G");

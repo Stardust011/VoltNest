@@ -1,8 +1,8 @@
 //! `settings.json`：用户资产（阈值档位、通知方式、自启、托盘顺序与隐藏列表）。
 //!
-//! 规则（X-1 / X-3 / X-4 / X-6 / X-7）：带整数 `schemaVersion`；未知字段读入后原样保留
+//! 规则：带整数 `schemaVersion`；未知字段读入后原样保留
 //! （`#[serde(flatten)]` 收进 `extra`），降级运行不静默清空；损坏或版本过高时备份 → 默认值启动 →
-//! 诊断告警，绝不阻塞启动；配置不出现任何毫秒值（Z-1），只存档位字符串。
+//! 诊断告警，绝不阻塞启动；配置不出现任何毫秒值，只存档位字符串。
 
 use crate::SCHEMA_VERSION;
 use crate::atomic::{archive_corrupt, read_optional, write_json_atomic};
@@ -33,7 +33,7 @@ pub struct NotificationSettings {
     pub mode: NotificationMode,
     /// 低电量阈值（默认 20 / 10，可调整）。
     pub low_thresholds: [u8; 2],
-    /// 未知字段（X-1：嵌套层级同样不得丢弃）。
+    /// 未知字段（嵌套层级同样不得丢弃）。
     #[serde(flatten)]
     pub extra: Map<String, Value>,
 }
@@ -52,11 +52,11 @@ impl Default for NotificationSettings {
 #[derive(Clone, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct TraySettings {
-    /// 托盘顺序（`stableId` 列表）。条目不自动删除；排序时过滤不存在的 id（X-7）。
+    /// 托盘顺序（`stableId` 列表）。条目不自动删除；排序时过滤不存在的 id。
     pub order: Vec<String>,
-    /// 用户显式隐藏的设备（AA-4）。
+    /// 用户显式隐藏的设备。
     pub hidden: Vec<String>,
-    /// 未知字段（X-1）。
+    /// 未知字段。
     #[serde(flatten)]
     pub extra: Map<String, Value>,
 }
@@ -73,15 +73,15 @@ pub struct Settings {
     pub sensitivity: String,
     /// 通知设置。
     pub notifications: NotificationSettings,
-    /// 开机自启：**永不默认开启**（AC-1）。
+    /// 开机自启：**永不默认开启**。
     pub autostart: bool,
-    /// 启动时最小化到托盘（AC-8：手动启动与开机自启共用这一项）。
+    /// 启动时最小化到托盘（手动启动与开机自启共用这一项）。
     pub start_minimized: bool,
-    /// 首启引导是否完成（AC-2：不用「文件是否存在」判断）。
+    /// 首启引导是否完成（不用「文件是否存在」判断）。
     pub onboarding_completed: bool,
     /// 托盘顺序与隐藏列表。
     pub tray: TraySettings,
-    /// 未知字段（X-1：读-改-写必须保留）。
+    /// 未知字段（读-改-写必须保留）。
     #[serde(flatten)]
     pub extra: Map<String, Value>,
 }
@@ -103,7 +103,7 @@ impl Default for Settings {
 
 impl Settings {
     /// 损坏恢复 / 版本过高时用于重建的默认值：
-    /// `onboardingCompleted = true`，避免每次启动都弹一次引导（AC-3）。
+    /// `onboardingCompleted = true`，避免每次启动都弹一次引导。
     pub fn recovered() -> Self {
         Self {
             onboarding_completed: true,
@@ -199,7 +199,7 @@ impl SettingsStore {
         let path = self.paths.settings_file();
         let raw = match read_optional(&path) {
             Ok(Some(bytes)) => bytes,
-            // 首次运行：文件不存在不是错误（AC-2 用 onboardingCompleted 判断引导）。
+            // 首次运行：文件不存在不是错误（用 onboardingCompleted 判断引导）。
             Ok(None) => {
                 return LoadedSettings {
                     settings: Settings::default(),
@@ -222,7 +222,7 @@ impl SettingsStore {
             Err(e) => return self.recover_corrupt(&path, now_ms, &e.to_string()),
         };
 
-        // X-6：版本高于当前支持 → 备份后按默认启动，不猜测解析。
+        // 版本高于当前支持 → 备份后按默认启动，不猜测解析。
         let found = value
             .get("schemaVersion")
             .and_then(Value::as_u64)
@@ -252,7 +252,7 @@ impl SettingsStore {
         }
     }
 
-    /// X-4：存档 → 默认值 → 告警。
+    /// 存档 → 默认值 → 告警。
     fn recover_corrupt(&self, path: &std::path::Path, now_ms: u64, detail: &str) -> LoadedSettings {
         let backup_target = self.paths.corrupt_settings_file(now_ms);
         let backup = match archive_corrupt(path, &backup_target) {
@@ -304,7 +304,7 @@ mod tests {
     fn defaults_are_safe() {
         let s = Settings::default();
         assert_eq!(s.schema_version, 1);
-        assert!(!s.autostart, "AC-1：自启永不默认开启");
+        assert!(!s.autostart, "自启永不默认开启");
         assert!(!s.start_minimized);
         assert!(!s.onboarding_completed, "首次运行应显示引导");
         assert_eq!(s.sensitivity(), Sensitivity::Standard);
@@ -342,7 +342,7 @@ mod tests {
 
     #[test]
     fn unknown_fields_survive_read_modify_write() {
-        // X-1：降级运行不得静默清空用户（或新版本）写下的字段。
+        // 降级运行不得静默清空用户（或新版本）写下的字段。
         let (s, dir) = store();
         fs::write(
             dir.join("settings.json"),
@@ -370,7 +370,7 @@ mod tests {
 
     #[test]
     fn corrupt_file_is_archived_and_startup_continues() {
-        // X-4 / AC-3：损坏 → 备份 → 默认值 → onboardingCompleted 置 true。
+        // 损坏 → 备份 → 默认值 → onboardingCompleted 置 true。
         let (s, dir) = store();
         fs::write(dir.join("settings.json"), b"{ this is not json").unwrap();
         let loaded = s.load(T);

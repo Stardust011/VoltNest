@@ -10,7 +10,7 @@ description = "VoltNest BLE Provider（ble-bas）：发现、连接、通知、�
 voltnest-provider.workspace = true
 
 # 锁定 btleplug 0.13.x：Windows 后端在 0.13 才提供 Uncached 读取路径，
-# 也不能被一次 minor 升级悄悄换掉（规格 §8）。
+# 行为依赖较深，不接受 minor 版本自动上浮。
 [target.'cfg(windows)'.dependencies]
 btleplug = { version = "~0.13", features = ["serde"] }
 futures = "0.3"

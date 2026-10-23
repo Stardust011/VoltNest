@@ -85,7 +85,7 @@ impl Registry {
             .find_map(|b| b.table.lookup(vid, pid).map(|e| (b, e)))
     }
 
-    /// 全部品牌的节奏都必须落在家族声明的预算内（BV-10）。
+    /// 全部品牌的节奏都必须落在家族声明的预算内。
     pub fn validate_against(&self, profile: &ProviderProfile) -> Result<(), SpecError> {
         for b in &self.brands {
             b.spec.validate_against(profile)?;
