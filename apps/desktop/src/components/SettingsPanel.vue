@@ -157,9 +157,9 @@ function onCheckbox(value: boolean | "indeterminate", apply: (checked: boolean) 
     <Card class="gap-3 py-4">
       <CardHeader class="px-4">
         <div class="flex items-center justify-between gap-3">
-          <CardTitle class="text-sm">数据过期速度</CardTitle>
+          <CardTitle class="text-sm">刷新速率</CardTitle>
           <Select :model-value="settings.sensitivity" @update:model-value="setSensitivity">
-            <SelectTrigger id="expiry-speed" aria-label="数据过期速度" size="sm" class="w-[9rem]">
+            <SelectTrigger id="refresh-rate" aria-label="刷新速率" size="sm" class="w-[9rem]">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
