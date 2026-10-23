@@ -64,7 +64,8 @@ export interface SettingsDto {
 
 export interface DiagEventDto {
   atMs: number;
-  level: "info" | "warn" | "error";
+  /** `debug` 默认折叠：它放的是逐条枚举细节，不是结论。 */
+  level: "debug" | "info" | "warn" | "error";
   code: string;
   deviceId: string | null;
   detail: string;

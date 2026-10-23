@@ -358,8 +358,13 @@ impl Engine {
     /// 这是规范 §6「可追溯」的落点：诊断页能回答「这台设备为什么是 / 不是某个类型」，
     /// 而不是只有 `deviceType` 一个结果。分类文本由
     /// [`voltnest_provider::DeviceClassification::evidence_text`] 提供。
+    ///
+    /// 分两级写：结论（含真正起作用的证据与冲突）走 `info`；「字段存在但本项目
+    /// 不支持、因而没参与判定」的逐条清单走 `debug`（`device_classification_skipped`）。
+    /// 实测一台复合 HID 能报 7 个集合，混在结论行里会把证据淹掉。
     fn push_classification(&mut self, now_ms: u64, fact: &DeviceFact, prefix: &str) {
         let c = &fact.classification;
+        let device_id = Some(fact.stable_id.as_str().to_string());
         let evidence = c.evidence_text();
         let detail = if evidence.is_empty() {
             format!("{prefix} · {}（无可用证据）", c.device_type)
@@ -370,9 +375,18 @@ impl Engine {
             now_ms,
             DiagLevel::Info,
             "device_classified",
-            Some(fact.stable_id.as_str().to_string()),
+            device_id.clone(),
             detail,
         );
+        if !c.skipped.is_empty() {
+            self.diagnostics.push(
+                now_ms,
+                DiagLevel::Debug,
+                "device_classification_skipped",
+                device_id,
+                format!("{prefix} · 未参与判定：{}", c.skipped_text()),
+            );
+        }
     }
 
     fn apply_reading(&mut self, reading: &ValidReading, now_ms: u64) -> Transition {

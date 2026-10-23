@@ -9,6 +9,7 @@ import {
   stateLabel,
   toneFor,
   transportLabel,
+  visibleDiagEvents,
 } from "../lib/format";
 import type { DeviceDto, DeviceState } from "../lib/types";
 
@@ -147,6 +148,28 @@ describe("displayedBattery", () => {
     expect(
       displayedBattery(device({ battery: null, state: "unknown", lastKnownBattery: null })),
     ).toBe(null);
+  });
+});
+
+describe("visibleDiagEvents", () => {
+  const events = [
+    { level: "info", code: "device_classified" },
+    { level: "debug", code: "device_classification_skipped" },
+    { level: "warn", code: "backfill_dropped" },
+    { level: "debug", code: "device_classification_skipped" },
+  ];
+
+  it("默认折叠 debug，其余级别原序保留", () => {
+    expect(visibleDiagEvents(events, false).map((e) => e.code)).toEqual([
+      "device_classified",
+      "backfill_dropped",
+    ]);
+  });
+
+  it("展开后一条不少，且不改动原数组", () => {
+    const all = visibleDiagEvents(events, true);
+    expect(all).toHaveLength(events.length);
+    expect(events).toHaveLength(4);
   });
 });
 

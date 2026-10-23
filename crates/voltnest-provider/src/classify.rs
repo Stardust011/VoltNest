@@ -142,8 +142,14 @@ pub struct DeviceClassification {
     pub device_type: DeviceType,
     /// 得出该结果的方法（`Unknown` 时为 [`ClassificationMethod::Unknown`]）。
     pub method: ClassificationMethod,
-    /// 逐条证据 / 未命中原因，按收集顺序。
+    /// 逐条证据 / 未命中原因，按收集顺序。**只含参与判定（或解释未判定）的条目**。
     pub evidence: Vec<String>,
+    /// 标准字段里**存在但本项目不支持**的组合，未参与判定。
+    ///
+    /// 与 [`Self::evidence`] 分开是为了让结论行保持可读：一台复合 HID 设备一次能
+    /// 报出 5~7 个厂商/消费者集合，全都塞进结论行会把真正的证据淹掉。这些条目
+    /// 仍然可追溯，但只进 **debug 级**诊断。
+    pub skipped: Vec<String>,
 }
 
 impl DeviceClassification {
@@ -153,6 +159,7 @@ impl DeviceClassification {
             device_type: DeviceType::Unknown,
             method: ClassificationMethod::Unknown,
             evidence: Vec::new(),
+            skipped: Vec::new(),
         }
     }
 
@@ -170,6 +177,7 @@ impl DeviceClassification {
             device_type,
             method,
             evidence,
+            skipped: Vec::new(),
         }
     }
 
@@ -182,11 +190,26 @@ impl DeviceClassification {
     pub fn evidence_text(&self) -> String {
         self.evidence.join("；")
     }
+
+    /// 单行「未参与判定」文本（**仅供 debug 级诊断**，不要混进结论行）。
+    pub fn skipped_text(&self) -> String {
+        self.skipped.join("；")
+    }
 }
 
 impl Default for DeviceClassification {
     fn default() -> Self {
         Self::unknown()
+    }
+}
+
+/// 未判定但保留证据（冲突 / 缺映射都用它）。`skipped` 由 [`resolve`] 统一回填。
+fn unknown_with(evidence: Vec<String>) -> DeviceClassification {
+    DeviceClassification {
+        device_type: DeviceType::Unknown,
+        method: ClassificationMethod::Unknown,
+        evidence,
+        skipped: Vec::new(),
     }
 }
 
@@ -324,9 +347,13 @@ fn mapping_detail(v: &VerifiedMapping) -> String {
 /// `0x01/0x0006`（键盘/宏键）两个应用集合。这正是「集合声明的是功能，不是
 /// 完整产品」的直接证据，所以标准侧不下结论，交给产品级的映射；没有映射就
 /// 老实返回 `Unknown`。
+///
+/// `skipped` 是「字段存在但本项目不支持、因而没参与判定」的条目，原样带进
+/// [`DeviceClassification::skipped`]（debug 级诊断），不进 `evidence`。
 fn resolve(
     standard: Vec<Candidate>,
     notes: Vec<String>,
+    skipped: Vec<String>,
     mapping: Option<&VerifiedMapping>,
 ) -> DeviceClassification {
     let mut groups: Vec<(DeviceType, ClassificationMethod, Vec<String>)> = Vec::new();
@@ -341,7 +368,7 @@ fn resolve(
     let mut evidence = notes;
     let mapping_text = mapping.map(mapping_detail);
 
-    match groups.len() {
+    let mut result = match groups.len() {
         0 => match (mapping, mapping_text) {
             (Some(v), Some(text)) => {
                 evidence.push(text);
@@ -351,11 +378,7 @@ fn resolve(
                     evidence,
                 )
             }
-            _ => DeviceClassification {
-                device_type: DeviceType::Unknown,
-                method: ClassificationMethod::Unknown,
-                evidence,
-            },
+            _ => unknown_with(evidence),
         },
         1 => {
             let (device_type, method, details) = groups.remove(0);
@@ -376,6 +399,7 @@ fn resolve(
                         device_type: DeviceType::Unknown,
                         method: ClassificationMethod::Unknown,
                         evidence,
+                        skipped: Vec::new(),
                     }
                 }
                 _ => DeviceClassification::new(device_type, method, evidence),
@@ -409,11 +433,14 @@ fn resolve(
                         device_type: DeviceType::Unknown,
                         method: ClassificationMethod::Unknown,
                         evidence,
+                        skipped: Vec::new(),
                     }
                 }
             }
         }
-    }
+    };
+    result.skipped = skipped;
+    result
 }
 
 /// HID Generic Desktop 页的标准 Usage → 类型。
@@ -478,9 +505,14 @@ pub fn service_note(short: u16) -> Option<&'static str> {
 /// HID 设备分类。
 ///
 /// 顺序：先按 Usage 收集候选，再叠加可核验映射；最后统一做冲突裁决。
+///
+/// **只解析已支持的组合**：窗口里没收录的 Usage Page / Usage 一律不映射，也不写进
+/// 结论证据（那是每台复合设备 5~7 行的噪音），而是收进
+/// [`DeviceClassification::skipped`]，只出现在 debug 级诊断里。
 pub fn classify_hid(ev: &HidEvidence, verified: Option<&VerifiedMapping>) -> DeviceClassification {
     let mut candidates = Vec::new();
     let mut notes = vec![format!("HID {:04x}:{:04x}", ev.vid, ev.pid)];
+    let mut skipped = Vec::new();
 
     if ev.usage_available {
         for c in &ev.collections {
@@ -490,7 +522,7 @@ pub fn classify_hid(ev: &HidEvidence, verified: Option<&VerifiedMapping>) -> Dev
                     method: ClassificationMethod::HidUsage,
                     detail: format!("HID Usage {:#06x}/{:#06x} = {name}", c.usage_page, c.usage),
                 }),
-                None => notes.push(format!(
+                None => skipped.push(format!(
                     "HID Usage {:#06x}/{:#06x} 不在已支持组合内，不映射",
                     c.usage_page, c.usage
                 )),
@@ -505,7 +537,7 @@ pub fn classify_hid(ev: &HidEvidence, verified: Option<&VerifiedMapping>) -> Dev
         );
     }
 
-    resolve(candidates, notes, verified)
+    resolve(candidates, notes, skipped, verified)
 }
 
 /// BLE 设备分类。
@@ -536,7 +568,9 @@ pub fn classify_ble(ev: &BleEvidence, verified: Option<&VerifiedMapping>) -> Dev
         notes.push("本轮服务发现未返回任何 SIG 已知服务".to_string());
     }
 
-    resolve(candidates, notes, verified)
+    // BLE 侧暂无可「跳过」的条目：Appearance 取到但无映射时必须留在 evidence 里，
+    // 它是「为什么还是 unknown」的直接原因（去查表、补映射就从这行入手）。
+    resolve(candidates, notes, Vec::new(), verified)
 }
 
 #[cfg(test)]
@@ -576,7 +610,14 @@ mod tests {
         let c = classify_hid(&ev, None);
         assert_eq!(c.device_type, DeviceType::Unknown);
         assert_eq!(c.method, ClassificationMethod::Unknown);
-        assert!(c.evidence.iter().any(|e| e.contains("不在已支持组合内")));
+        // 只解析已支持的组合：未收录的 Usage 不进结论证据，只进 skipped（debug）。
+        assert!(
+            !c.evidence.iter().any(|e| e.contains("不在已支持组合内")),
+            "未支持的 Usage 不得出现在结论证据里：{:?}",
+            c.evidence
+        );
+        assert_eq!(c.skipped.len(), 2, "两条未收录 Usage 都要留痕");
+        assert_eq!(c.skipped_text().matches("不在已支持组合内").count(), 2);
     }
 
     #[test]
@@ -654,6 +695,14 @@ mod tests {
         assert_eq!(c.method, ClassificationMethod::VerifiedDeviceMapping);
         assert!(c.evidence.iter().any(|e| e.contains("复合集合")));
         assert!(c.evidence.iter().any(|e| e.contains("config.xml 1.0.7.6")));
+        // 7 个集合里只有 2 个命中已支持组合；另外 5 个只该出现在 debug 级诊断里，
+        // 结论行只保留「复合集合 + 映射裁决」这两条真正起作用的证据。
+        assert_eq!(c.skipped.len(), 5, "未收录的 Usage 逐条留痕但不进结论");
+        assert!(
+            !c.evidence_text().contains("不在已支持组合内"),
+            "结论行不得被未支持组合淹没：{}",
+            c.evidence_text()
+        );
     }
 
     #[test]
