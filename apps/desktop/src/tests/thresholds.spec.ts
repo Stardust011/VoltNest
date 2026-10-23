@@ -44,9 +44,10 @@ describe("parseThresholdInput", () => {
 });
 
 describe("clampThreshold", () => {
-  it("夹进 5～95", () => {
-    expect(clampThreshold(4)).toBe(THRESHOLD_MIN);
+  it("夹进 0～95", () => {
+    expect(clampThreshold(-1)).toBe(THRESHOLD_MIN);
     expect(clampThreshold(96)).toBe(THRESHOLD_MAX);
+    expect(clampThreshold(0)).toBe(0);
     expect(clampThreshold(20)).toBe(20);
   });
 });
@@ -66,14 +67,14 @@ describe("单档校验", () => {
     expect(validateThresholdValue("12.5")).toBe(RANGE_MESSAGE);
   });
 
-  it("越界数值非法（4 / 96）", () => {
-    expect(validateThresholdValue("4")).toBe(RANGE_MESSAGE);
+  it("越界数值非法（-1 / 96）", () => {
+    expect(validateThresholdValue("-1")).toBe(RANGE_MESSAGE);
     expect(validateThresholdValue("96")).toBe(RANGE_MESSAGE);
-    expect(validateThresholdValue("0")).toBe(RANGE_MESSAGE);
+    expect(validateThresholdValue("-40")).toBe(RANGE_MESSAGE);
   });
 
-  it("边界值 5 / 95 单档合法", () => {
-    expect(validateThresholdValue("5")).toBeNull();
+  it("边界值 0 / 95 单档合法", () => {
+    expect(validateThresholdValue("0")).toBeNull();
     expect(validateThresholdValue("95")).toBeNull();
   });
 });
@@ -82,8 +83,9 @@ describe("两档联动校验", () => {
   it("合法组合无错误", () => {
     expect(isValidPair(["20", "10"])).toBe(true);
     expect(isValidPair(["6", "5"])).toBe(true);
+    expect(isValidPair(["1", "0"])).toBe(true);
     expect(isValidPair(["95", "94"])).toBe(true);
-    expect(isValidPair(["95", "5"])).toBe(true);
+    expect(isValidPair(["95", "0"])).toBe(true);
   });
 
   it("两档相等时两档一起报顺序错误", () => {
@@ -92,13 +94,13 @@ describe("两档联动校验", () => {
 
   it("间距不足 1%（第一档不高于第二档）报顺序错误", () => {
     expect(validateThresholdPair(["10", "20"])).toEqual([ORDER_MESSAGE, ORDER_MESSAGE]);
-    expect(validateThresholdPair(["5", "95"])).toEqual([ORDER_MESSAGE, ORDER_MESSAGE]);
+    expect(validateThresholdPair(["0", "95"])).toEqual([ORDER_MESSAGE, ORDER_MESSAGE]);
   });
 
   it("单档本身非法时只报该档，不掺顺序错误", () => {
     expect(validateThresholdPair(["", "10"])).toEqual([RANGE_MESSAGE, null]);
     expect(validateThresholdPair(["20", ""])).toEqual([null, RANGE_MESSAGE]);
-    expect(validateThresholdPair(["4", "3"])).toEqual([RANGE_MESSAGE, RANGE_MESSAGE]);
+    expect(validateThresholdPair(["96", "95"])).toEqual([RANGE_MESSAGE, null]);
   });
 
   it("非法修正为合法后红色状态消失", () => {
@@ -116,9 +118,10 @@ describe("applyThresholdEdit", () => {
     expect(applyThresholdEdit([20, 10], 1, "8")).toEqual([20, 8]);
   });
 
-  it("夹紧越界输入，边界值落到 5 / 95", () => {
+  it("夹紧越界输入，边界值落到 0 / 95", () => {
     expect(applyThresholdEdit([20, 10], 0, "120")).toEqual([95, 10]);
-    expect(applyThresholdEdit([20, 10], 1, "1")).toEqual([20, 5]);
+    expect(applyThresholdEdit([20, 10], 1, "-1")).toEqual([20, 0]);
+    expect(applyThresholdEdit([20, 10], 1, "0")).toEqual([20, 0]);
   });
 
   it("非整数输入返回 null，不产生正式值", () => {
@@ -143,12 +146,13 @@ describe("applyThresholdEdit", () => {
     expect(applyThresholdEdit([10, 95], 0, "95")).toEqual([95, 94]);
   });
 
-  it("修正撞到下界时移动另一档，不产出 4", () => {
-    // 旧实现：next[1] = 5 - 1 = 4。
-    const next = applyThresholdEdit([5, 10], 1, "6");
-    expect(next).toEqual([6, 5]);
+  it("修正撞到下界时移动另一档，不产出负数", () => {
+    // 旧实现：next[1] = 0 - 1 越界。
+    const next = applyThresholdEdit([0, 1], 1, "0");
+    expect(next).toEqual([1, 0]);
     expectInvariant(next as Thresholds);
-    expect(applyThresholdEdit([5, 6], 1, "5")).toEqual([6, 5]);
+    // 常规下界修正：第二档让位到第一档之下。
+    expect(applyThresholdEdit([5, 10], 1, "6")).toEqual([5, 4]);
   });
 
   it("不修改传入的正式值", () => {
