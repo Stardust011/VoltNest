@@ -191,9 +191,14 @@ impl DeviceClassification {
         self.evidence.join("；")
     }
 
-    /// 单行「未参与判定」文本（**仅供 debug 级诊断**，不要混进结论行）。
-    pub fn skipped_text(&self) -> String {
-        self.skipped.join("；")
+    /// 完整留痕文本：`evidence` + `skipped`。**仅供 debug 级诊断**。
+    ///
+    /// 结论行走的是「类型 + 方法」，证据与未支持清单一律走这里，避免把
+    /// 一台复合设备 5~7 行的枚举细节塞进结论行。
+    pub fn debug_text(&self) -> String {
+        let mut parts = self.evidence.clone();
+        parts.extend(self.skipped.iter().cloned());
+        parts.join("；")
     }
 }
 
@@ -327,7 +332,7 @@ struct Candidate {
 
 /// 可核验映射的证据文本。
 fn mapping_detail(v: &VerifiedMapping) -> String {
-    format!("可核验映射 → {}（来源：{}）", v.device_type, v.source)
+    format!("可核验映射 → {}（{}）", v.device_type, v.source)
 }
 
 /// 标准证据的裁决：同类型合并；多类型（复合集合）或与映射冲突时按显式规则返回。
@@ -392,7 +397,7 @@ fn resolve(
                 (Some(v), Some(text)) => {
                     evidence.push(text);
                     evidence.push(format!(
-                        "证据冲突：{device_type}（标准字段）vs {}（可核验映射）；返回 unknown，不静默择一",
+                        "证据冲突：{device_type}（标准）vs {}（映射）",
                         v.device_type
                     ));
                     DeviceClassification {
@@ -410,17 +415,10 @@ fn resolve(
             for (_, _, details) in groups {
                 evidence.extend(details);
             }
-            evidence.push(format!(
-                "复合集合：{}；标准字段只能说明该产品同时具备这些功能，无法收敛到单一类型",
-                types.join(" + ")
-            ));
+            evidence.push(format!("复合集合：{}", types.join(" + ")));
             match (mapping, mapping_text) {
                 (Some(v), Some(text)) => {
                     evidence.push(text);
-                    evidence.push(format!(
-                        "按显式规则由可核验映射裁决为 {}（复合冲突已记录）",
-                        v.device_type
-                    ));
                     DeviceClassification::new(
                         v.device_type,
                         ClassificationMethod::VerifiedDeviceMapping,
@@ -428,13 +426,8 @@ fn resolve(
                     )
                 }
                 _ => {
-                    evidence.push("证据冲突：缺少可核验映射，返回 unknown，不静默择一".to_string());
-                    DeviceClassification {
-                        device_type: DeviceType::Unknown,
-                        method: ClassificationMethod::Unknown,
-                        evidence,
-                        skipped: Vec::new(),
-                    }
+                    evidence.push("缺少可核验映射，无法收敛".to_string());
+                    unknown_with(evidence)
                 }
             }
         }
@@ -495,9 +488,9 @@ pub fn appearance_type(value: u16) -> Option<(DeviceType, &'static str)> {
 /// 信息服务，`0x1812` 只能确认「HID 类设备」而不能区分键盘/鼠标/手柄。
 pub fn service_note(short: u16) -> Option<&'static str> {
     match short {
-        0x180F => Some("服务 0x180F Battery Service：只说明提供电池服务，与产品类别无关"),
-        0x1812 => Some("服务 0x1812 HID Service：只说明声明 HID 功能，不能区分键盘/鼠标/手柄"),
-        0x180A => Some("服务 0x180A Device Information Service：只说明提供设备信息服务"),
+        0x180F => Some("0x180F Battery Service（与类别无关）"),
+        0x1812 => Some("0x1812 HID Service（只说明 HID 类）"),
+        0x180A => Some("0x180A Device Information Service"),
         _ => None,
     }
 }
@@ -511,7 +504,7 @@ pub fn service_note(short: u16) -> Option<&'static str> {
 /// [`DeviceClassification::skipped`]，只出现在 debug 级诊断里。
 pub fn classify_hid(ev: &HidEvidence, verified: Option<&VerifiedMapping>) -> DeviceClassification {
     let mut candidates = Vec::new();
-    let mut notes = vec![format!("HID {:04x}:{:04x}", ev.vid, ev.pid)];
+    let mut notes = Vec::new();
     let mut skipped = Vec::new();
 
     if ev.usage_available {
@@ -523,18 +516,16 @@ pub fn classify_hid(ev: &HidEvidence, verified: Option<&VerifiedMapping>) -> Dev
                     detail: format!("HID Usage {:#06x}/{:#06x} = {name}", c.usage_page, c.usage),
                 }),
                 None => skipped.push(format!(
-                    "HID Usage {:#06x}/{:#06x} 不在已支持组合内，不映射",
+                    "HID Usage {:#06x}/{:#06x} 未支持",
                     c.usage_page, c.usage
                 )),
             }
         }
         if ev.collections.is_empty() {
-            notes.push("Usage 字段可用，但未枚举到任何集合".to_string());
+            notes.push("未枚举到任何集合".to_string());
         }
     } else {
-        notes.push(
-            "Usage 字段不可用（该平台/后端不提供 usage_page/usage），跳过 Usage 规则".to_string(),
-        );
+        notes.push("Usage 字段不可用（该后端不提供），跳过 Usage 规则".to_string());
     }
 
     resolve(candidates, notes, skipped, verified)
@@ -552,11 +543,9 @@ pub fn classify_ble(ev: &BleEvidence, verified: Option<&VerifiedMapping>) -> Dev
                 method: ClassificationMethod::BleAppearance,
                 detail: format!("GAP Appearance 0x{value:04X} = {name}"),
             }),
-            None => notes.push(format!(
-                "GAP Appearance 0x{value:04X} 无具体类型映射（通用类别或未收录子类），不作为类型证据"
-            )),
+            None => notes.push(format!("GAP Appearance 0x{value:04X} 无类型映射")),
         },
-        None => notes.push("未取得 GAP Appearance（特征缺失/读取失败），不使用该规则".to_string()),
+        None => notes.push("未取得 GAP Appearance（缺失/读取失败）".to_string()),
     }
 
     for short in &ev.services {
@@ -565,7 +554,7 @@ pub fn classify_ble(ev: &BleEvidence, verified: Option<&VerifiedMapping>) -> Dev
         }
     }
     if ev.services.is_empty() {
-        notes.push("本轮服务发现未返回任何 SIG 已知服务".to_string());
+        notes.push("服务发现无 SIG 已知服务".to_string());
     }
 
     // BLE 侧暂无可「跳过」的条目：Appearance 取到但无映射时必须留在 evidence 里，
@@ -612,12 +601,12 @@ mod tests {
         assert_eq!(c.method, ClassificationMethod::Unknown);
         // 只解析已支持的组合：未收录的 Usage 不进结论证据，只进 skipped（debug）。
         assert!(
-            !c.evidence.iter().any(|e| e.contains("不在已支持组合内")),
+            c.evidence.iter().all(|e| !e.contains("未支持")),
             "未支持的 Usage 不得出现在结论证据里：{:?}",
             c.evidence
         );
         assert_eq!(c.skipped.len(), 2, "两条未收录 Usage 都要留痕");
-        assert_eq!(c.skipped_text().matches("不在已支持组合内").count(), 2);
+        assert_eq!(c.debug_text().matches("未支持").count(), 2);
     }
 
     #[test]
@@ -695,13 +684,13 @@ mod tests {
         assert_eq!(c.method, ClassificationMethod::VerifiedDeviceMapping);
         assert!(c.evidence.iter().any(|e| e.contains("复合集合")));
         assert!(c.evidence.iter().any(|e| e.contains("config.xml 1.0.7.6")));
-        // 7 个集合里只有 2 个命中已支持组合；另外 5 个只该出现在 debug 级诊断里，
-        // 结论行只保留「复合集合 + 映射裁决」这两条真正起作用的证据。
-        assert_eq!(c.skipped.len(), 5, "未收录的 Usage 逐条留痕但不进结论");
+        // 7 个集合里只有 2 个命中已支持组合；另外 5 个只进 skipped（debug），
+        // evidence 只留「复合集合 + 映射」这两条真正起作用的。
+        assert_eq!(c.skipped.len(), 5, "未收录的 Usage 逐条留痕但不进 evidence");
         assert!(
-            !c.evidence_text().contains("不在已支持组合内"),
-            "结论行不得被未支持组合淹没：{}",
-            c.evidence_text()
+            c.evidence.iter().all(|e| !e.contains("未支持")),
+            "evidence 不得被未支持组合淹没：{:?}",
+            c.evidence
         );
     }
 
@@ -765,11 +754,10 @@ mod tests {
         assert!(c.is_unknown());
         assert_eq!(c.device_type, DeviceType::Unknown);
         assert_eq!(c.method, ClassificationMethod::Unknown);
-        assert!(
-            c.evidence.iter().any(|e| e.contains("7768:6426")),
-            "未判定时仍要能追溯是哪台设备：{:?}",
-            c.evidence
-        );
+        // 只留「为什么没有证据」，不编造类型，也不在正文重复 VID:PID（诊断行已有 deviceId）。
+        assert_eq!(c.evidence.len(), 1, "证据：{:?}", c.evidence);
+        assert!(c.evidence[0].contains("Usage 字段不可用"));
+        assert!(c.evidence.iter().all(|e| !e.contains("7768")));
     }
 
     // ---------- BLE Appearance ----------
@@ -807,7 +795,7 @@ mod tests {
             };
             let c = classify_ble(&ev, None);
             assert_eq!(c.device_type, DeviceType::Unknown, "value {value:#06x}");
-            assert!(c.evidence.iter().any(|e| e.contains("无具体类型映射")));
+            assert!(c.evidence.iter().any(|e| e.contains("无类型映射")));
         }
     }
 

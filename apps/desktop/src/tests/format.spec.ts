@@ -154,9 +154,9 @@ describe("displayedBattery", () => {
 describe("visibleDiagEvents", () => {
   const events = [
     { level: "info", code: "device_classified" },
-    { level: "debug", code: "device_classification_skipped" },
+    { level: "debug", code: "device_classification_evidence" },
     { level: "warn", code: "backfill_dropped" },
-    { level: "debug", code: "device_classification_skipped" },
+    { level: "debug", code: "device_classification_evidence" },
   ];
 
   it("默认折叠 debug，其余级别原序保留", () => {

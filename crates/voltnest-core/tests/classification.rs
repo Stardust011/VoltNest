@@ -167,12 +167,18 @@ fn conflict_evidence_is_surfaced_without_a_type() {
     let snap = e.snapshot(T0);
     assert_eq!(snap.devices[0].device_type, "unknown");
     assert_eq!(snap.devices[0].classification_method, "unknown");
-    let diag = e
-        .diagnostics()
-        .recent()
-        .into_iter()
+    // 结论行只写结论，冲突原因落在 debug 证据里。
+    let recent = e.diagnostics().recent();
+    let conclusion = recent
+        .iter()
         .find(|d| d.code == "device_classified")
         .expect("识别记录必须存在");
+    assert_eq!(conclusion.detail, "unknown");
+    let diag = recent
+        .iter()
+        .find(|d| d.code == "device_classification_evidence")
+        .expect("冲突原因必须留痕");
+    assert_eq!(diag.level, DiagLevel::Debug);
     assert!(
         diag.detail.contains("证据冲突"),
         "诊断必须保留冲突原因：{}",
@@ -181,18 +187,21 @@ fn conflict_evidence_is_surfaced_without_a_type() {
 }
 
 #[test]
-fn unsupported_usages_only_reach_debug_level() {
-    // 只解析已支持的组合：未收录的 Usage 属于排查细节，走 debug；结论行必须干净。
+fn evidence_goes_to_debug_and_conclusion_stays_short() {
+    // 结论行只留结论；逐条证据与「未支持组合」清单全部降为 debug。
     let mut e = engine();
     let mut c = DeviceClassification::new(
         DeviceType::Mouse,
         ClassificationMethod::VerifiedDeviceMapping,
-        vec!["可核验映射 → mouse（来源：config.xml 1.0.7.6）".to_string()],
+        vec![
+            "HID Usage 0x0001/0x0006 = Keyboard".to_string(),
+            "HID Usage 0x0001/0x0002 = Mouse".to_string(),
+            "复合集合：keyboard + mouse".to_string(),
+            "可核验映射 → mouse（config.xml 1.0.7.6 · ajazz device_attr=mouse）".to_string(),
+        ],
     );
-    c.skipped
-        .push("HID Usage 0x000c/0x0001 不在已支持组合内，不映射".to_string());
-    c.skipped
-        .push("HID Usage 0xffb2/0x0001 不在已支持组合内，不映射".to_string());
+    c.skipped.push("HID Usage 0x000c/0x0001 未支持".to_string());
+    c.skipped.push("HID Usage 0xffb2/0x0001 未支持".to_string());
     let fact = hid_fact("AJ159 NL").with_classification(c);
     e.apply_event(&ProviderEvent::Arrived(fact), Some(Transport::Hid), T0);
 
@@ -202,24 +211,27 @@ fn unsupported_usages_only_reach_debug_level() {
         .find(|d| d.code == "device_classified")
         .expect("结论行必须存在");
     assert_eq!(info.level, DiagLevel::Info);
-    assert!(
-        !info.detail.contains("不在已支持组合内"),
-        "结论行只留参与判定的证据：{}",
-        info.detail
-    );
+    assert_eq!(info.detail, "mouse via verified_device_mapping");
+    assert_eq!(info.device_id.as_deref(), Some("hid:7768:6426"));
 
     let debug = recent
         .iter()
-        .find(|d| d.code == "device_classification_skipped")
-        .expect("未参与判定的条目必须留 debug 记录");
+        .find(|d| d.code == "device_classification_evidence")
+        .expect("证据必须留痕（debug）");
     assert_eq!(debug.level, DiagLevel::Debug);
     assert_eq!(debug.device_id.as_deref(), Some("hid:7768:6426"));
-    assert_eq!(
-        debug.detail.matches("不在已支持组合内").count(),
-        2,
-        "逐条都要留痕：{}",
-        debug.detail
-    );
+    for want in [
+        "HID Usage 0x0001/0x0002 = Mouse",
+        "复合集合：keyboard + mouse",
+        "ajazz device_attr=mouse",
+        "HID Usage 0x000c/0x0001 未支持",
+    ] {
+        assert!(
+            debug.detail.contains(want),
+            "debug 证据缺「{want}」：{}",
+            debug.detail
+        );
+    }
 }
 
 #[test]
