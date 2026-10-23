@@ -35,12 +35,7 @@
   "bundle": {
     "active": true,
     "targets": ["nsis"],
-    "icon": [
-      "icons/32x32.png",
-      "icons/128x128.png",
-      "icons/128x128@2x.png",
-      "icons/icon.ico"
-    ],
+    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.ico"],
     "publisher": "VoltNest",
     "shortDescription": "外设电量监控",
     "longDescription": "统一展示 2.4G 接收器与蓝牙设备的电量，读数过期时逐级退化而不假装仍有效。",

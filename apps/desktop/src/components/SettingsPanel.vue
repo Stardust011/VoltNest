@@ -175,11 +175,11 @@ function onCheckbox(value: boolean | "indeterminate", apply: (checked: boolean) 
     <Card class="gap-3 py-4">
       <CardHeader class="px-4">
         <CardTitle class="text-sm">低电量通知</CardTitle>
-        <p class="text-muted-foreground text-xs">电量下降时，按以下档位依次提醒。</p>
+        <p class="text-xs text-muted-foreground">电量下降时，按以下档位依次提醒。</p>
       </CardHeader>
       <CardContent class="flex flex-col gap-3 px-4">
         <div class="flex items-center justify-between gap-3">
-          <Label for="notification-mode" class="text-muted-foreground text-xs font-normal">
+          <Label for="notification-mode" class="text-xs font-normal text-muted-foreground">
             通知方式
           </Label>
           <Select :model-value="settings.notifications.mode" @update:model-value="setMode">
@@ -204,7 +204,7 @@ function onCheckbox(value: boolean | "indeterminate", apply: (checked: boolean) 
               <component :is="row.icon" class="size-4 shrink-0 text-foreground" />
               <div class="min-w-0">
                 <Label :for="row.id" class="text-xs font-medium">{{ row.label }}</Label>
-                <p class="text-muted-foreground mt-0.5 text-[11px] leading-snug">{{ row.hint }}</p>
+                <p class="mt-0.5 text-[11px] leading-snug text-muted-foreground">{{ row.hint }}</p>
               </div>
             </div>
             <div class="flex shrink-0 items-center gap-1.5">
@@ -229,7 +229,7 @@ function onCheckbox(value: boolean | "indeterminate", apply: (checked: boolean) 
                 @keydown="onThresholdKeydown"
                 @keydown.enter="onThresholdEnter"
               />
-              <span class="text-muted-foreground text-xs" aria-hidden="true">%</span>
+              <span class="text-xs text-muted-foreground" aria-hidden="true">%</span>
             </div>
           </div>
           <!-- 错误行常驻占位，出现/消失不会让上下内容跳动。 -->
@@ -237,7 +237,7 @@ function onCheckbox(value: boolean | "indeterminate", apply: (checked: boolean) 
             <p
               v-if="thresholdErrors[row.index]"
               :id="row.errorId"
-              class="text-destructive text-right text-[11px] leading-tight"
+              class="text-right text-[11px] leading-tight text-destructive"
             >
               {{ thresholdErrors[row.index] }}
             </p>
@@ -258,7 +258,9 @@ function onCheckbox(value: boolean | "indeterminate", apply: (checked: boolean) 
           <Checkbox
             id="autostart"
             :model-value="settings.autostart"
-            @update:model-value="(value) => onCheckbox(value, (checked) => emit('autostart', checked))"
+            @update:model-value="
+              (value) => onCheckbox(value, (checked) => emit('autostart', checked))
+            "
           />
         </div>
 

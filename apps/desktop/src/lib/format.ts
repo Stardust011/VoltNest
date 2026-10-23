@@ -60,7 +60,11 @@ export function toneFor(state: DeviceState): Tone {
 const CHARGING_GREEN = "#10b981";
 
 // 电量环颜色与托盘对齐：<10% 红、<20% 橙、充电绿；离线/过期沿用状态色。
-export function batteryColor(battery: number | null, charging: boolean, state: DeviceState): string {
+export function batteryColor(
+  battery: number | null,
+  charging: boolean,
+  state: DeviceState,
+): string {
   if (state !== "online" && state !== "stale") return toneFor(state).ring;
   if (charging) return CHARGING_GREEN;
   if (battery === null) return toneFor(state).ring;

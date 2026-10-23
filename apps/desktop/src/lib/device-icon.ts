@@ -31,9 +31,6 @@ const BY_TRANSPORT: Readonly<Record<DeviceDto["transport"], Component>> = {
   ble: BluetoothConnected,
 };
 
-export function deviceTypeIcon(
-  deviceType: string,
-  transport: DeviceDto["transport"],
-): Component {
+export function deviceTypeIcon(deviceType: string, transport: DeviceDto["transport"]): Component {
   return BY_TYPE[deviceType] ?? BY_TRANSPORT[transport] ?? Link;
 }

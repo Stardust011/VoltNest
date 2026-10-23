@@ -1,4 +1,3 @@
-
 <script setup lang="ts">
 import { RotateCcw } from "@lucide/vue";
 import { computed, ref } from "vue";
@@ -38,9 +37,7 @@ const levelLabel: Record<string, string> = {
 
 /** `debug` 默认折叠（逐条细节，展开才看）；纯前端状态不落盘，开关置于底部「调试区」以免混入正常诊断。 */
 const showDebug = ref(false);
-const visibleEvents = computed(() =>
-  visibleDiagEvents(props.diagnostics.events, showDebug.value),
-);
+const visibleEvents = computed(() => visibleDiagEvents(props.diagnostics.events, showDebug.value));
 
 /** `debug` 级记录总数，只数原始列表、不随开关变化：若按「总数-可见数」算，展开后差值归零会让开关自消失。 */
 const debugCount = computed(
@@ -103,7 +100,7 @@ function detailClass(code: string) {
       <CardHeader class="px-4 pb-0">
         <div class="flex items-center justify-between gap-3">
           <CardTitle class="text-sm font-semibold">采集线程组</CardTitle>
-          <span class="text-muted-foreground text-xs">
+          <span class="text-xs text-muted-foreground">
             {{ diagnostics.transports.length }} 个线程
           </span>
         </div>
@@ -112,7 +109,7 @@ function detailClass(code: string) {
       <CardContent class="px-4">
         <div
           v-if="diagnostics.transports.length === 0"
-          class="text-muted-foreground rounded-lg border border-dashed px-3 py-6 text-center text-xs"
+          class="rounded-lg border border-dashed px-3 py-6 text-center text-xs text-muted-foreground"
         >
           暂无采集线程
         </div>
@@ -129,24 +126,17 @@ function detailClass(code: string) {
                   <span class="text-sm font-semibold">
                     {{ transportName(t.transport) }}
                   </span>
-                  <span class="text-muted-foreground font-mono text-[11px] break-all">
+                  <span class="font-mono text-[11px] break-all text-muted-foreground">
                     {{ familyLabel(t.family) }}
                   </span>
                 </div>
 
                 <div class="mt-2 flex flex-wrap items-center gap-2">
-                  <Badge
-                    :variant="statusVariant(t.status)"
-                    :class="statusClass(t.status)"
-                  >
+                  <Badge :variant="statusVariant(t.status)" :class="statusClass(t.status)">
                     {{ statusLabel[t.status] ?? t.status }}
                   </Badge>
-                  <span class="text-muted-foreground text-xs">
-                    重启 {{ t.restarts }} 次
-                  </span>
-                  <span class="text-muted-foreground text-xs">
-                    队列 {{ t.queuedEvents }}
-                  </span>
+                  <span class="text-xs text-muted-foreground"> 重启 {{ t.restarts }} 次 </span>
+                  <span class="text-xs text-muted-foreground"> 队列 {{ t.queuedEvents }} </span>
                 </div>
               </div>
 
@@ -165,11 +155,9 @@ function detailClass(code: string) {
               v-if="t.lastError"
               class="mt-3 rounded-md border border-destructive/20 bg-destructive/5 p-2.5"
             >
-              <p class="text-destructive mb-1 text-[11px] font-medium">
-                最近错误
-              </p>
+              <p class="mb-1 text-[11px] font-medium text-destructive">最近错误</p>
               <p
-                class="text-destructive font-mono text-xs break-all whitespace-pre-wrap select-text"
+                class="font-mono text-xs break-all whitespace-pre-wrap text-destructive select-text"
               >
                 {{ t.lastError }}
               </p>
@@ -225,7 +213,7 @@ function detailClass(code: string) {
       <CardHeader class="px-4 pb-0">
         <div class="flex items-center justify-between gap-3">
           <CardTitle class="text-sm font-semibold">通知触发节点</CardTitle>
-          <span class="text-muted-foreground text-xs">
+          <span class="text-xs text-muted-foreground">
             {{ diagnostics.notifications.length }} 条记录
           </span>
         </div>
@@ -234,7 +222,7 @@ function detailClass(code: string) {
       <CardContent class="px-4">
         <div
           v-if="diagnostics.notifications.length === 0"
-          class="text-muted-foreground rounded-lg border border-dashed px-3 py-6 text-center text-xs"
+          class="rounded-lg border border-dashed px-3 py-6 text-center text-xs text-muted-foreground"
         >
           暂无通知记录
         </div>
@@ -259,7 +247,7 @@ function detailClass(code: string) {
                   :class="
                     n.armed
                       ? 'font-normal'
-                      : 'border-amber-500/40 text-amber-600 font-normal dark:text-amber-400'
+                      : 'border-amber-500/40 font-normal text-amber-600 dark:text-amber-400'
                   "
                 >
                   {{ n.armed ? "待触发" : "已触发" }}
@@ -269,14 +257,10 @@ function detailClass(code: string) {
 
             <div
               v-if="n.lastNotifiedAtMs || n.lastResult"
-              class="text-muted-foreground mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs"
+              class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground"
             >
-              <span v-if="n.lastNotifiedAtMs">
-                通知时间：{{ ago(n.lastNotifiedAtMs) }}
-              </span>
-              <span v-if="n.lastResult" class="break-all">
-                结果：{{ n.lastResult }}
-              </span>
+              <span v-if="n.lastNotifiedAtMs"> 通知时间：{{ ago(n.lastNotifiedAtMs) }} </span>
+              <span v-if="n.lastResult" class="break-all"> 结果：{{ n.lastResult }} </span>
             </div>
           </li>
         </ul>
@@ -288,7 +272,7 @@ function detailClass(code: string) {
       <CardHeader class="px-4 pb-0">
         <div class="flex items-center justify-between gap-3">
           <CardTitle class="text-sm font-semibold">诊断事件</CardTitle>
-          <span class="text-muted-foreground text-xs">
+          <span class="text-xs text-muted-foreground">
             {{ eventCountText }}
           </span>
         </div>
@@ -297,7 +281,7 @@ function detailClass(code: string) {
       <CardContent class="px-4">
         <div
           v-if="visibleEvents.length === 0"
-          class="text-muted-foreground rounded-lg border border-dashed px-3 py-6 text-center text-xs"
+          class="rounded-lg border border-dashed px-3 py-6 text-center text-xs text-muted-foreground"
         >
           暂无诊断事件
         </div>
@@ -309,14 +293,11 @@ function detailClass(code: string) {
             class="min-w-0 border-b border-border/50 py-3 first:pt-0 last:border-b-0 last:pb-0"
           >
             <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
-              <span class="text-muted-foreground text-xs tabular-nums">
+              <span class="text-xs text-muted-foreground tabular-nums">
                 {{ ago(event.atMs) }}
               </span>
 
-              <Badge
-                variant="outline"
-                :class="levelClass[event.level] ?? 'text-muted-foreground'"
-              >
+              <Badge variant="outline" :class="levelClass[event.level] ?? 'text-muted-foreground'">
                 {{ levelLabel[event.level] ?? event.level }}
               </Badge>
 
@@ -326,10 +307,10 @@ function detailClass(code: string) {
             </div>
 
             <p
-              class="mt-2 min-w-0 text-xs leading-5 text-foreground/90 break-all whitespace-pre-wrap select-text"
+              class="mt-2 min-w-0 text-xs leading-5 break-all whitespace-pre-wrap text-foreground/90 select-text"
               :class="detailClass(event.code)"
             >
-              <span v-if="event.deviceId" class="text-muted-foreground font-mono">
+              <span v-if="event.deviceId" class="font-mono text-muted-foreground">
                 {{ event.deviceId }} ·
               </span>
               {{ event.detail }}
@@ -340,13 +321,13 @@ function detailClass(code: string) {
     </Card>
 
     <!-- 调试区（红色边框）：只做前端重放，不写设置、不动启动项 -->
-    <Card class="border-destructive/60 min-w-0 py-4">
+    <Card class="min-w-0 border-destructive/60 py-4">
       <CardHeader class="px-4 pb-0">
         <div class="flex items-center justify-between gap-3">
-          <CardTitle class="text-destructive text-sm font-semibold">调试区</CardTitle>
+          <CardTitle class="text-sm font-semibold text-destructive">调试区</CardTitle>
           <Badge
             variant="outline"
-            class="border-destructive/40 text-destructive px-1.5 py-0 text-[10px] font-normal"
+            class="border-destructive/40 px-1.5 py-0 text-[10px] font-normal text-destructive"
           >
             请明白你要做什么
           </Badge>
@@ -359,13 +340,13 @@ function detailClass(code: string) {
           它控制的是上方「诊断事件」是否展开 debug 级记录，纯前端状态、不落盘。
         -->
         <div
-          class="border-destructive/30 bg-destructive/5 flex items-start justify-between gap-3 rounded-lg border p-3"
+          class="flex items-start justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/5 p-3"
         >
           <div class="min-w-0 flex-1">
             <Label for="show-debug-events" class="cursor-pointer text-xs font-medium">
               显示调试信息
             </Label>
-            <p class="text-muted-foreground mt-1 text-[11px] leading-snug">
+            <p class="mt-1 text-[11px] leading-snug text-muted-foreground">
               {{ debugHint }}
             </p>
           </div>
@@ -374,7 +355,7 @@ function detailClass(code: string) {
             id="show-debug-events"
             v-model="showDebug"
             aria-label="显示调试信息"
-            class="data-[state=checked]:bg-destructive mt-0.5 shrink-0"
+            class="mt-0.5 shrink-0 data-[state=checked]:bg-destructive"
           />
         </div>
 
@@ -382,7 +363,7 @@ function detailClass(code: string) {
           type="button"
           variant="outline"
           size="sm"
-          class="border-destructive/50 text-destructive hover:bg-destructive/10 hover:text-destructive w-full"
+          class="w-full border-destructive/50 text-destructive hover:bg-destructive/10 hover:text-destructive"
           @click="emit('replayOnboarding')"
         >
           <RotateCcw aria-hidden="true" />

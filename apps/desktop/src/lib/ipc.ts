@@ -2,12 +2,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import type {
-  DiagnosticsDto,
-  OnboardingChoice,
-  SettingsDto,
-  Snapshot,
-} from "./types";
+import type { DiagnosticsDto, OnboardingChoice, SettingsDto, Snapshot } from "./types";
 
 // 快照事件名（W：`state://snapshot`）。
 export const SNAPSHOT_EVENT = "state://snapshot";

@@ -15,8 +15,8 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme {
-  --font-sans: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system,
-    "Microsoft YaHei UI", sans-serif;
+  --font-sans:
+    "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, "Microsoft YaHei UI", sans-serif;
 }
 
 :root {
@@ -110,6 +110,6 @@
   }
 
   body {
-    @apply bg-background text-foreground font-sans antialiased;
+    @apply bg-background font-sans text-foreground antialiased;
   }
 }
