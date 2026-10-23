@@ -9,6 +9,7 @@ Windows 上的 HID / BLE 设备电量监控应用。单进程 Rust（Tauri 2）+
   [ADR-0010](docs/adr/0010-provider-contract.md) ·
   [ADR-0011](docs/adr/0011-hid-vbas-brand-model.md)
 - 新增品牌接入：[`docs/hid-vbas-brands.md`](docs/hid-vbas-brands.md)
+- 设备类型识别（规则、证据来源与验证状态）：[`docs/device-classification.md`](docs/device-classification.md)
 - 规则到测试的映射：[`docs/test-matrix.md`](docs/test-matrix.md)
 
 ## 目录
