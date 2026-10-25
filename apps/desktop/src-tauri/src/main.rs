@@ -1,5 +1,5 @@
 //! 桌面应用入口。启动顺序不可调换：单实例互斥 → 数据目录/日志 → AUMID → 设置/状态（损坏不阻塞）→ Tauri/托盘/宿主/Provider。
-#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+#![cfg_attr(all(not(debug_assertions), windows), windows_subsystem = "windows")]
 #![deny(clippy::disallowed_types)]
 
 mod commands;
@@ -50,6 +50,7 @@ fn main() {
     log::info!("VoltNest 启动（autostart={launched_by_autostart}）");
 
     // 3. AUMID 先于首次 Toast 就位；图标须先落盘，`IconUri` 只认真实文件。
+    //    非 Windows 上 `init` 是空操作（返回 `None`，不落盘）：那边没有 AUMID/Toast。
     let toast_icon = toast_icon::init(paths.root());
     if let Err(err) = voltnest_platform::aumid::register("VoltNest", toast_icon.as_deref()) {
         log::warn!("AUMID 注册失败：{err}");
