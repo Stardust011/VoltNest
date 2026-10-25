@@ -8,7 +8,9 @@
 
 use crate::diagnostics::{DiagLevel, Diagnostics};
 use crate::humanize::humanize_ago;
-use crate::notify::{LowBatteryAlert, NotificationBook, NotificationConfig, NotificationEntry};
+use crate::notify::{
+    LowBatteryAlert, NotificationBook, NotificationConfig, NotificationEntry, NotificationNode,
+};
 use crate::record::{Record, UNREADABLE_KINDS_MAX};
 use crate::snapshot::{CardDto, DeviceDto, Snapshot, TrayDto};
 use crate::state::DeviceState;
@@ -760,7 +762,8 @@ impl Engine {
     }
 
     /// 呈现分组：三个条件必须同时满足：① 两条 `modelKey` 非空且严格相等；
-    /// ② 该 `modelKey` 下恰好一条活跃、一条非活跃；③ 只涉及 HID 与 BLE 两个 transport。
+    /// ② 该 `modelKey` 下两条不同 transport 的记录不都活跃（都活跃时并列，其余情况合并）；
+    /// ③ 只涉及 HID 与 BLE 两个 transport。
     fn build_cards(&self, order: &[usize], now_ms: u64) -> Vec<CardDto> {
         let mut groups: BTreeMap<String, Vec<usize>> = BTreeMap::new();
         for &idx in order {
@@ -783,8 +786,10 @@ impl Engine {
             let (active, inactive) = match (ra.state.is_active(), rb.state.is_active()) {
                 (true, false) => (ra, rb),
                 (false, true) => (rb, ra),
-                // 两条都活跃或都不活跃 → 不满足「恰好一条活跃」。
-                _ => continue,
+                // 两条都不活跃（启动瞬间、双链路同时退场）仍合并成一张卡。
+                (false, false) => pick_inactive_primary(ra, rb),
+                // 两条都活跃 → 各有实时读数，不合并。
+                (true, true) => continue,
             };
             let age_text = match inactive.age_ms(now_ms) {
                 Some(age) => format!(
@@ -815,6 +820,53 @@ impl Engine {
         };
         cards.sort_by_key(|c| pos(&c.primary_device_id).unwrap_or(usize::MAX));
         cards
+    }
+
+    /// 诊断页的通知节点：同一台设备的多条链路按呈现分组合成一个节点。
+    pub fn notification_nodes(&self, now_ms: u64) -> Vec<NotificationNode> {
+        // 设备 → (主成员, 全部成员)，未参与合并的设备自成一组。
+        let mut owner: BTreeMap<String, (String, Vec<String>)> = BTreeMap::new();
+        for card in self.build_cards(&self.sorted_indices(), now_ms) {
+            for id in &card.member_device_ids {
+                owner.insert(
+                    id.clone(),
+                    (
+                        card.primary_device_id.clone(),
+                        card.member_device_ids.clone(),
+                    ),
+                );
+            }
+        }
+
+        let mut nodes: Vec<NotificationNode> = Vec::new();
+        let mut index: BTreeMap<(String, u8), usize> = BTreeMap::new();
+        for entry in self.notifications.entries() {
+            let (primary, members) = owner
+                .get(&entry.stable_id)
+                .cloned()
+                .unwrap_or_else(|| (entry.stable_id.clone(), vec![entry.stable_id.clone()]));
+            let key = (primary, entry.threshold);
+            match index.get(&key) {
+                Some(&i) => merge_node(&mut nodes[i], &entry),
+                None => {
+                    index.insert(key, nodes.len());
+                    nodes.push(NotificationNode {
+                        device_ids: members,
+                        threshold: entry.threshold,
+                        armed: entry.armed,
+                        last_notified_at_ms: entry.last_notified_at_ms,
+                        last_result: entry.last_result,
+                    });
+                }
+            }
+        }
+        nodes.sort_by(|a, b| {
+            a.device_ids
+                .first()
+                .cmp(&b.device_ids.first())
+                .then_with(|| b.threshold.cmp(&a.threshold))
+        });
+        nodes
     }
 
     // ---------- 内部 ----------
@@ -927,6 +979,32 @@ impl Engine {
 
 /// 时钟前跳诊断阈值：超过 10 分钟算一次跳变（含休眠唤醒）。
 const CLOCK_FORWARD_WARN_MS: u64 = 10 * 60_000;
+
+/// 两条都不活跃时的主成员：最后有效读数更新的优先，同为无读数或同一时刻则取 2.4G。
+fn pick_inactive_primary<'a>(ra: &'a Record, rb: &'a Record) -> (&'a Record, &'a Record) {
+    let rank = |r: &Record| (r.last_valid_at_ms, r.transport == Transport::Hid);
+    if rank(ra) >= rank(rb) {
+        (ra, rb)
+    } else {
+        (rb, ra)
+    }
+}
+
+/// 把同一节点的另一条链路状态并入：任一条已通知即视为已触发，结果取最近一次。
+fn merge_node(node: &mut NotificationNode, entry: &NotificationEntry) {
+    node.armed &= entry.armed;
+    let newer = match (node.last_notified_at_ms, entry.last_notified_at_ms) {
+        (_, None) => false,
+        (None, Some(_)) => true,
+        (Some(a), Some(b)) => b > a,
+    };
+    if newer {
+        node.last_notified_at_ms = entry.last_notified_at_ms;
+        node.last_result = entry.last_result.clone();
+    } else if node.last_result.is_none() {
+        node.last_result = entry.last_result.clone();
+    }
+}
 
 /// 诊断行文本：`malformed_frame · cmd_mismatch(want=0x03 got=0x23) · 6B: 06 FA …`。
 ///

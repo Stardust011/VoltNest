@@ -177,10 +177,11 @@ pub fn decode_battery_detailed(
 ) -> Result<BatteryReading, FrameReject> {
     let layout = &spec.frame;
     // 每次拒绝都带上原始报告：诊断页要的是「被拒的那一帧长什么样」。
+    let original_report = report;
     let reject = |reason: RejectReason| FrameReject {
         code: reason_code(reason),
         reason,
-        report: report.to_vec(),
+        report: original_report.to_vec(),
     };
 
     // 1) 头部完整 + 报告 ID。
@@ -197,6 +198,25 @@ pub fn decode_battery_detailed(
             got: report.first().copied(),
         }));
     }
+
+    // MCHOSE 等协议只反转报告 ID 之后的内容；诊断报告仍保留原始字节。
+    let normalized_report;
+    let report = if spec.reply_inverted {
+        normalized_report = report
+            .iter()
+            .enumerate()
+            .map(|(index, byte)| {
+                if layout.report_id.is_some() && index == 0 {
+                    *byte
+                } else {
+                    *byte ^ 0xFF
+                }
+            })
+            .collect::<Vec<_>>();
+        normalized_report.as_slice()
+    } else {
+        report
+    };
 
     // 2) 命令字。
     if report.get(layout.cmd_index) != Some(&spec.battery.cmd) {
@@ -267,14 +287,21 @@ pub fn decode_battery_detailed(
                 index: spec.battery.percent_index,
             })
         })?;
-    let percent =
-        Percent::new(raw).ok_or_else(|| reject(RejectReason::PercentOutOfRange { raw }))?;
+    let percent = if spec.clamp_percent {
+        Percent::new(raw.min(100)).expect("截断后的电量必定在 0..=100")
+    } else {
+        Percent::new(raw).ok_or_else(|| reject(RejectReason::PercentOutOfRange { raw }))?
+    };
 
     // 7) 充电标志：协议不提供 → None；字节缺失 → None（不猜测）。
     let charging = spec
         .battery
         .charging
-        .and_then(|field| payload.get(field.index).map(|b| *b == field.true_value));
+        .and_then(|field| {
+            payload
+                .get(field.index)
+                .map(|b| field.true_values.contains(b))
+        });
 
     Ok(BatteryReading { percent, charging })
 }
@@ -322,6 +349,9 @@ mod tests {
         label: "合成品牌",
         usage_page: 0xFFC0,
         usage_page_write: None,
+        transport: crate::spec::ReplyTransport::Push,
+        reply_inverted: false,
+        clamp_percent: false,
         frame: FrameLayout {
             report_id: Some(0x11),
             cmd_index: 1,
@@ -335,7 +365,7 @@ mod tests {
             percent_index: 0,
             charging: Some(ChargingField {
                 index: 1,
-                true_value: 0x02,
+                true_values: &[0x02],
             }),
         },
         request: None,
