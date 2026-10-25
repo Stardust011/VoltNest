@@ -8,6 +8,40 @@
 
 use voltnest_provider::{Cadence, ChargingSupport, ProviderProfile};
 
+/// 设备电量帧的传输方式。
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum ReplyTransport {
+    /// 设备主动推送输入报告。
+    Push,
+    /// 发送 output report 后等待输入报告。
+    InterruptQuery,
+    /// 发送 feature report 后读取 feature report 应答。
+    FeatureQuery {
+        /// 读取 feature report 时请求的总长度。
+        reply_len: usize,
+    },
+    /// 周期读取 feature report，不发送查询报文。
+    FeaturePoll {
+        /// 读取 feature report 时请求的总长度。
+        reply_len: usize,
+    },
+}
+
+impl ReplyTransport {
+    /// 是否使用 feature report 传输。
+    pub const fn is_feature(self) -> bool {
+        matches!(self, Self::FeatureQuery { .. } | Self::FeaturePoll { .. })
+    }
+
+    /// feature report 的读取长度；非 feature 传输不需要该长度。
+    pub const fn reply_len(self) -> Option<usize> {
+        match self {
+            Self::FeatureQuery { reply_len } | Self::FeaturePoll { reply_len } => Some(reply_len),
+            Self::Push | Self::InterruptQuery => None,
+        }
+    }
+}
+
 /// 帧头布局：把一帧切成「头部 → payload」，其余字节是填充。
 ///
 /// 头部只描述**位置**，不描述语义；语义在 [`BatteryFields`]。
@@ -30,8 +64,8 @@ pub struct FrameLayout {
 pub struct ChargingField {
     /// 标志在 payload 内的下标。
     pub index: usize,
-    /// 表示「充电中」的取值。其余取值一律视为「未充电」，不猜测语义。
-    pub true_value: u8,
+    /// 表示「充电中」的取值集合。其余取值一律视为「未充电」，不猜测语义。
+    pub true_values: &'static [u8],
 }
 
 /// 电量字段定义。
@@ -57,6 +91,8 @@ pub struct RequestTemplate {
     pub usage_page: u16,
     /// 报文中携带的命令字（查询命令，可与推送帧的命令字不同）。
     pub cmd: u8,
+    /// 命令字之前的固定报文内容。
+    pub prefix: &'static [u8],
     /// 报文总长（HID 输出报告长度，不足补 0）。
     pub report_len: usize,
     /// 命令字所在下标。
@@ -67,6 +103,8 @@ pub struct RequestTemplate {
     pub payload: &'static [u8],
     /// 周期发送间隔；`None` = 仅在会话建立时发一次。
     pub interval_ms: Option<u64>,
+    /// 是否对报告 ID 之后的报文内容逐字节取反。
+    pub inverted: bool,
 }
 
 impl RequestTemplate {
@@ -81,6 +119,14 @@ impl RequestTemplate {
         {
             *first = id;
         }
+        let prefix_start = usize::from(report_id.is_some());
+        let prefix_end = self.cmd_index.min(self.report_len);
+        if prefix_start < prefix_end
+            && let Some(dst) = buf.get_mut(prefix_start..prefix_end)
+        {
+            let n = dst.len().min(self.prefix.len());
+            dst[..n].copy_from_slice(&self.prefix[..n]);
+        }
         if let Some(slot) = buf.get_mut(self.cmd_index) {
             *slot = self.cmd;
         }
@@ -91,6 +137,12 @@ impl RequestTemplate {
         if let Some(dst) = buf.get_mut(self.payload_offset..end) {
             let n = dst.len();
             dst.copy_from_slice(&self.payload[..n]);
+        }
+        if self.inverted {
+            let start = usize::from(report_id.is_some());
+            for byte in buf.iter_mut().skip(start) {
+                *byte ^= 0xFF;
+            }
         }
         buf
     }
@@ -112,6 +164,12 @@ pub struct BrandSpec {
     pub usage_page: u16,
     /// 只写命令通道的 UsagePage。`None` = 该品牌不主动发报文。
     pub usage_page_write: Option<u16>,
+    /// 读取电量帧所使用的 HID 传输方式。
+    pub transport: ReplyTransport,
+    /// 是否对报告 ID 之后的应答内容逐字节取反。
+    pub reply_inverted: bool,
+    /// 电量超过 100 时是否按厂商实现截断到 100。
+    pub clamp_percent: bool,
     /// 帧头布局。
     pub frame: FrameLayout,
     /// 电量字段。
@@ -220,12 +278,29 @@ impl BrandSpec {
             if req.data_end() > req.report_len
                 || req.cmd_index >= req.payload_offset
                 || req.report_len < self.frame.payload_offset
+                || req.prefix.len() > req.cmd_index
             {
                 return Err(SpecError::RequestLayoutInvalid { brand: self.id });
             }
             if self.frame.report_id.is_some() && req.report_len == 0 {
                 return Err(SpecError::RequestLayoutInvalid { brand: self.id });
             }
+        }
+
+        match self.transport {
+            ReplyTransport::Push | ReplyTransport::InterruptQuery => {}
+            ReplyTransport::FeatureQuery { reply_len }
+            | ReplyTransport::FeaturePoll { reply_len } => {
+                if self.frame.report_id.is_none() || reply_len < self.min_report_len() {
+                    return Err(SpecError::FeatureLayoutInvalid { brand: self.id });
+                }
+            }
+        }
+        if matches!(self.transport, ReplyTransport::FeaturePoll { .. }) && self.request.is_some() {
+            return Err(SpecError::FeaturePollHasRequest { brand: self.id });
+        }
+        if matches!(self.transport, ReplyTransport::FeatureQuery { .. }) && self.request.is_none() {
+            return Err(SpecError::FeatureQueryWithoutRequest { brand: self.id });
         }
 
         // 节奏必须为正，否则「期望间隔」失去意义。
@@ -339,6 +414,21 @@ pub enum SpecError {
         /// 家族声明的 `stale_ms`。
         stale_ms: u64,
     },
+    /// Feature report 布局缺少报告 ID或长度不足。
+    FeatureLayoutInvalid {
+        /// 品牌标识。
+        brand: &'static str,
+    },
+    /// Feature 轮询不应同时声明查询报文。
+    FeaturePollHasRequest {
+        /// 品牌标识。
+        brand: &'static str,
+    },
+    /// Feature 查询必须声明查询报文。
+    FeatureQueryWithoutRequest {
+        /// 品牌标识。
+        brand: &'static str,
+    },
     /// 家族不是 HID。
     ProfileTransportMismatch {
         /// 品牌标识。
@@ -431,6 +521,15 @@ impl core::fmt::Display for SpecError {
                 f,
                 "品牌 {brand} 期望间隔 {expected_interval_ms}ms 超出家族 stale={stale_ms}ms 预算（需 stale >= 1.5×间隔）"
             ),
+            Self::FeatureLayoutInvalid { brand } => {
+                write!(f, "品牌 {brand} 的 feature report 布局非法")
+            }
+            Self::FeaturePollHasRequest { brand } => {
+                write!(f, "品牌 {brand} 的 feature 轮询不得声明查询报文")
+            }
+            Self::FeatureQueryWithoutRequest { brand } => {
+                write!(f, "品牌 {brand} 的 feature 查询缺少查询报文")
+            }
             Self::ProfileTransportMismatch { brand } => {
                 write!(f, "品牌 {brand} 只能挂在 HID 家族上")
             }
@@ -522,7 +621,7 @@ mod tests {
         let mut spec = base();
         spec.battery.charging = Some(ChargingField {
             index: spec.battery.percent_index,
-            true_value: 1,
+            true_values: &[1],
         });
         assert_eq!(
             spec.validate(),
@@ -537,11 +636,13 @@ mod tests {
         spec.request = Some(RequestTemplate {
             usage_page: 0xFFB1,
             cmd: 0xFB,
+            prefix: &[],
             report_len: 8,
             cmd_index: 1,
             payload_offset: 5,
             payload: &[0x03],
             interval_ms: Some(10_000),
+            inverted: false,
         });
         assert_eq!(
             spec.validate(),
@@ -555,11 +656,13 @@ mod tests {
         spec.request = Some(RequestTemplate {
             usage_page: 0xFFB1,
             cmd: 0xFB,
+            prefix: &[],
             report_len: 6,
             cmd_index: 1,
             payload_offset: 5,
             payload: &[0x03, 0x00, 0x00],
             interval_ms: None,
+            inverted: false,
         });
         assert_eq!(
             spec.validate(),
@@ -609,11 +712,13 @@ mod tests {
         let req = RequestTemplate {
             usage_page: 0xFFB1,
             cmd: 0xFB,
+            prefix: &[],
             report_len: 8,
             cmd_index: 1,
             payload_offset: 5,
             payload: &[0x03, 0x01],
             interval_ms: Some(10_000),
+            inverted: false,
         };
         assert_eq!(
             req.build(Some(0x06)),
@@ -632,11 +737,13 @@ mod tests {
         let req = RequestTemplate {
             usage_page: 0xFFB1,
             cmd: 0xFB,
+            prefix: &[],
             report_len: 6,
             cmd_index: 1,
             payload_offset: 5,
             payload: &[0x03, 0x01, 0x02],
             interval_ms: None,
+            inverted: false,
         };
         // 声明长度不足时只填能填的部分，不越界 panic（模板本身会被 validate 拒绝）。
         assert_eq!(req.build(Some(0x06)).len(), 6);

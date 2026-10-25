@@ -9,6 +9,9 @@
 //! | 品牌 | UsagePage（读） | 命令字 | 电量下标 | 采集方式 |
 //! |---|---|---|---|---|
 //! | [`brands::ajazz`]（W1 / 星闪代） | `0xFFB2` | `0xFA` | payload[1] | 纯推送 |
+//! | [`brands::rapoo`]（VT9 Pro） | `0xFF0B` | `0x01` | payload[0] | Feature 轮询 |
+//! | [`brands::dareu`]（A950 PRO Mg） | `0xFF02` | `0x04` | payload[0] | Output 查询 |
+//! | [`brands::mchose`]（A7 / M7 / A5） | `0xFF01` / `0xFFFF` | `0x06` / `0x83` | payload[9] / payload[1] | Feature 查询 |
 //!
 //! # 实测约束（对全部品牌适用）
 //! 1. **禁止** `open(vid, pid)`：它会静默打开错误的集合（枚举顺序里第一个 `0x0C/0x01` 集合），拿到「成功但读不到」的句柄。
@@ -38,4 +41,4 @@ pub const READ_BUFFER_LEN: usize = 65;
 
 pub use brands::Registry;
 pub use frame::{BatteryReading, FrameReject, RejectReason};
-pub use spec::{BrandSpec, FrameLayout};
+pub use spec::{BrandSpec, FrameLayout, ReplyTransport};
