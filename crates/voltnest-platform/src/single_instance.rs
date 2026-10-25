@@ -1,7 +1,14 @@
-//! 单实例：当前用户 `Local` 命名空间的互斥体 + 命名事件。
+//! 单实例：二次启动唤醒首实例，不新建窗口。
 //!
-//! 二次启动不新建窗口：第二个进程给命名事件发信号后立即退出，首实例里等待该事件的线程把已有窗口
-//! `show` + `unminimize` + 抢焦点。用 `Local\` 而非 `Global\`：多用户同时登录时各自应有一个实例。
+//! Windows 用当前用户 Local 命名空间的互斥体 + 命名事件：第二个进程给命名事件发信号后立即退出，
+//! 首实例里等待该事件的线程把已有窗口 show + unminimize + 抢焦点。
+//! 用 Local 而非 Global：多用户同时登录时各自应有一个实例。
+//!
+//! Linux 用 Unix domain socket：首实例 bind + listen（$XDG_RUNTIME_DIR/voltnest.sock，
+//! 缺省 /tmp/voltnest-<uid>.sock），第二个进程 connect 成功后直接退出，首实例的监听线程
+//! 收到连接即触发 activation 回调。
+//!
+//! 两平台一致：拿不到锁一律降级为 Unavailable 而不是阻塞启动——宁可多开一个窗口，也不要打不开。
 
 #[cfg(windows)]
 mod imp {
@@ -26,8 +33,8 @@ mod imp {
         s.encode_utf16().chain(std::iter::once(0)).collect()
     }
 
-    /// `windows-sys` 0.61 起 `HANDLE` 是裸指针，默认不 `Send`；内核句柄实际可跨线程用于
-    /// `SetEvent` / `WaitForSingleObject` / `CloseHandle`，故在此显式承担该保证，仅限本模块使用。
+    /// windows-sys 0.61 起 HANDLE 是裸指针，默认不 Send；内核句柄实际可跨线程用于
+    /// SetEvent / WaitForSingleObject / CloseHandle，故在此显式承担该保证，仅限本模块使用。
     #[derive(Clone, Copy)]
     struct Handle(HANDLE);
 
@@ -51,7 +58,7 @@ mod imp {
         Unavailable(String),
     }
 
-    /// 首实例持有的内核对象；`Drop` 时关闭，进程退出后互斥体自动释放。
+    /// 首实例持有的内核对象；Drop 时关闭，进程退出后互斥体自动释放。
     pub struct Guard {
         mutex: Handle,
         event: Handle,
@@ -67,7 +74,7 @@ mod imp {
             unsafe { SetEvent(self.event.0) != 0 }
         }
 
-        /// 起线程等待「二次启动」信号；`stop` 置位后线程自行退出。
+        /// 起线程等待「二次启动」信号；stop 置位后线程自行退出。
         pub fn listen_activation(
             &self,
             stop: Arc<AtomicBool>,
@@ -156,13 +163,325 @@ mod imp {
 #[cfg(windows)]
 pub use imp::{EVENT_NAME, Guard, Instance, MUTEX_NAME, acquire};
 
-#[cfg(not(windows))]
-mod imp_non_windows {
+/// Linux：Unix domain socket。首实例 bind + listen，第二次启动 connect 一下就算唤醒。
+#[cfg(target_os = "linux")]
+mod imp_linux {
+    use std::io::Write;
+    use std::os::unix::fs::{MetadataExt, PermissionsExt};
+    use std::os::unix::net::{UnixListener, UnixStream};
+    use std::path::{Path, PathBuf};
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::thread::JoinHandle;
+    use std::time::Duration;
+
+    /// socket 文件名（放在 XDG_RUNTIME_DIR 下）。
+    pub const SOCKET_FILE_NAME: &str = "voltnest.sock";
+    /// XDG_RUNTIME_DIR 不可用时的回退目录。
+    pub const FALLBACK_SOCKET_DIR: &str = "/tmp";
+    /// 监听线程的轮询间隔：非阻塞 accept + 小睡，既能及时响应，又不会空转烧 CPU。
+    const POLL_INTERVAL: Duration = Duration::from_millis(50);
+
+    /// 单实例判定结果。
+    pub enum Instance {
+        /// 本进程是第一个实例，持有监听 socket。
+        First(Guard),
+        /// 已有实例在运行，本进程已唤醒它，应退出。
+        Second,
+        /// 无法建立 socket（权限异常等）：不阻塞启动，按首实例继续跑。
+        Unavailable(String),
+    }
+
+    /// 首实例持有的监听 socket；Drop 时删除 socket 文件。
+    pub struct Guard {
+        path: PathBuf,
+        listener: UnixListener,
+    }
+
+    impl Guard {
+        /// 通知首实例唤醒窗口（Linux 即连接自己持有的监听 socket）。
+        pub fn activate_existing(&self) -> bool {
+            notify(&self.path)
+        }
+
+        /// 起线程等待「二次启动」连接；stop 置位后线程自行退出。
+        pub fn listen_activation(
+            &self,
+            stop: Arc<AtomicBool>,
+            on_activate: impl Fn() + Send + 'static,
+        ) -> JoinHandle<()> {
+            // fd 复制失败或切不到非阻塞模式时，退化成立刻结束的线程：
+            // 唤醒不可用，但启动流程不受影响（与 Windows 事件创建失败同等对待）。
+            let Ok(listener) = self.listener.try_clone() else {
+                return std::thread::spawn(|| {});
+            };
+            if listener.set_nonblocking(true).is_err() {
+                return std::thread::spawn(|| {});
+            }
+            std::thread::Builder::new()
+                .name("voltnest-activation".into())
+                .spawn(move || {
+                    while !stop.load(Ordering::Relaxed) {
+                        match listener.accept() {
+                            Ok((_stream, _addr)) => {
+                                if !stop.load(Ordering::Relaxed) {
+                                    on_activate();
+                                }
+                            }
+                            // 非阻塞 accept 当前无待处理连接。
+                            Err(err) if err.kind() == std::io::ErrorKind::WouldBlock => {
+                                std::thread::sleep(POLL_INTERVAL);
+                            }
+                            // 监听 socket 出现意外状况：退避重试，不空转。
+                            Err(_) => std::thread::sleep(POLL_INTERVAL),
+                        }
+                    }
+                })
+                .expect("激活监听线程创建失败")
+        }
+    }
+
+    impl Drop for Guard {
+        fn drop(&mut self) {
+            // 主动清理，避免下次启动多走一次「残留清理 + 重绑」；只删自己绑定的路径。
+            let _ = std::fs::remove_file(&self.path);
+        }
+    }
+
+    /// 由 $XDG_RUNTIME_DIR 派生 socket 路径；相对路径或未设置时回退到 /tmp（纯逻辑，便于测试）。
+    pub fn socket_path_from(runtime_dir: Option<&Path>, uid: Option<u32>) -> PathBuf {
+        match runtime_dir {
+            Some(dir) if dir.is_absolute() => dir.join(SOCKET_FILE_NAME),
+            _ => {
+                let name = match uid {
+                    Some(uid) => format!("voltnest-{uid}.sock"),
+                    // 连 uid 都拿不到时退回不带 uid 的名字：可能被别的用户占用，
+                    // 那时的属主检查会给出 Unavailable，不会误判成 Second。
+                    None => "voltnest-anon.sock".to_string(),
+                };
+                Path::new(FALLBACK_SOCKET_DIR).join(name)
+            }
+        }
+    }
+
+    /// 当前用户的 socket 路径。
+    pub fn socket_path() -> PathBuf {
+        let runtime_dir = std::env::var_os("XDG_RUNTIME_DIR")
+            .map(PathBuf::from)
+            .filter(|dir| dir.is_absolute() && dir.is_dir());
+        socket_path_from(runtime_dir.as_deref(), current_uid())
+    }
+
+    /// 当前用户 uid；Linux 上 /proc/self 的属主就是本进程属主。
+    fn current_uid() -> Option<u32> {
+        std::fs::metadata("/proc/self").ok().map(|meta| meta.uid())
+    }
+
+    /// 文件属主不是本用户（只在能确定 uid 时才下结论）。
+    fn foreign_owner(meta: &std::fs::Metadata) -> bool {
+        current_uid().is_some_and(|uid| meta.uid() != uid)
+    }
+
+    /// 连接首实例并写一个字节；连上即说明有人 listen。
+    fn notify(path: &Path) -> bool {
+        match UnixStream::connect(path) {
+            Ok(mut stream) => {
+                // 写入失败不影响判定：连上就说明首实例在跑。
+                let _ = stream.write_all(b"\n");
+                true
+            }
+            Err(_) => false,
+        }
+    }
+
+    /// 获取单实例判定。
+    pub fn acquire() -> Instance {
+        acquire_with(&socket_path())
+    }
+
+    /// acquire 的可注入版本：路径由调用方给出，便于在临时目录里测真实 socket。
+    fn acquire_with(path: &Path) -> Instance {
+        if notify(path) {
+            return Instance::Second;
+        }
+        // 连不上：要么首次启动，要么上次异常退出留下了残留 socket 文件（无监听 → ECONNREFUSED）。
+        match std::fs::metadata(path) {
+            Ok(meta) => {
+                if foreign_owner(&meta) {
+                    return Instance::Unavailable(format!(
+                        "{} 属于其它用户，放弃单实例",
+                        path.display()
+                    ));
+                }
+                if let Err(err) = std::fs::remove_file(path)
+                    && err.kind() != std::io::ErrorKind::NotFound
+                {
+                    return Instance::Unavailable(format!("清理残留 socket 失败：{err}"));
+                }
+            }
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+            Err(err) => return Instance::Unavailable(format!("检查 socket 路径失败：{err}")),
+        }
+        match bind(path) {
+            Ok(listener) => Instance::First(Guard {
+                path: path.to_path_buf(),
+                listener,
+            }),
+            Err(err) => {
+                // 清理与 bind 之间可能有另一个实例抢先绑定：再连一次就当第二实例。
+                if notify(path) {
+                    return Instance::Second;
+                }
+                Instance::Unavailable(format!("绑定 {} 失败：{err}", path.display()))
+            }
+        }
+    }
+
+    /// bind + listen，并把文件权限收紧到属主可读写。
+    ///
+    /// /tmp 回退路径上没有 0700 目录兜底，收紧权限让别的用户连不进来（只能造成拒绝服务，
+    /// 泄漏不了数据，但能收紧就收紧）。
+    fn bind(path: &Path) -> std::io::Result<UnixListener> {
+        let listener = UnixListener::bind(path)?;
+        let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
+        Ok(listener)
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        /// 每次用独立文件名，避免测试并行时互相踩 socket。
+        fn temp_socket(name: &str) -> PathBuf {
+            let path = std::env::temp_dir()
+                .join(format!("voltnest-test-{}-{name}.sock", std::process::id()));
+            let _ = std::fs::remove_file(&path);
+            path
+        }
+
+        fn first_or_panic(path: &Path) -> Guard {
+            match acquire_with(path) {
+                Instance::First(guard) => guard,
+                Instance::Second => panic!("首次获取不应是 Second"),
+                Instance::Unavailable(reason) => panic!("首次获取失败：{reason}"),
+            }
+        }
+
+        #[test]
+        fn runtime_dir_wins_when_absolute() {
+            assert_eq!(
+                socket_path_from(Some(Path::new("/run/user/1000")), Some(1000)),
+                PathBuf::from("/run/user/1000/voltnest.sock")
+            );
+        }
+
+        #[test]
+        fn fallback_carries_uid() {
+            assert_eq!(
+                socket_path_from(None, Some(1000)),
+                PathBuf::from("/tmp/voltnest-1000.sock")
+            );
+        }
+
+        #[test]
+        fn relative_runtime_dir_is_ignored() {
+            assert_eq!(
+                socket_path_from(Some(Path::new("run/user/1000")), Some(7)),
+                PathBuf::from("/tmp/voltnest-7.sock")
+            );
+        }
+
+        #[test]
+        fn unknown_uid_falls_back_to_anon_name() {
+            assert_eq!(
+                socket_path_from(None, None),
+                PathBuf::from("/tmp/voltnest-anon.sock")
+            );
+        }
+
+        #[test]
+        fn first_then_second_instance() {
+            let path = temp_socket("first-second");
+            let guard = first_or_panic(&path);
+            assert!(
+                matches!(acquire_with(&path), Instance::Second),
+                "首实例存活时第二次获取应为 Second"
+            );
+            drop(guard);
+            assert!(!path.exists(), "Guard 释放后应清掉 socket 文件");
+        }
+
+        #[test]
+        fn stale_socket_file_self_heals() {
+            let path = temp_socket("stale");
+            // 绑定后立刻释放：文件留着但没有监听者，等价于上次崩溃留下的残留。
+            let _ = UnixListener::bind(&path).expect("绑定测试 socket 失败");
+            assert!(path.exists(), "残留文件应仍在");
+
+            let guard = match acquire_with(&path) {
+                Instance::First(guard) => guard,
+                Instance::Second => panic!("残留文件不应被判为 Second"),
+                Instance::Unavailable(reason) => panic!("残留文件应能自愈，实际：{reason}"),
+            };
+            assert!(matches!(acquire_with(&path), Instance::Second));
+            drop(guard);
+        }
+
+        #[test]
+        fn bind_failure_degrades_to_unavailable() {
+            // 父目录不存在 → bind 必然失败；必须降级成 Unavailable，不能 panic 也不能阻塞。
+            let path = std::env::temp_dir()
+                .join("voltnest-test-missing-dir")
+                .join("nested.sock");
+            match acquire_with(&path) {
+                Instance::Unavailable(reason) => assert!(reason.contains("绑定"), "{reason}"),
+                Instance::First(guard) => {
+                    drop(guard);
+                    panic!("父目录不存在时不应 bind 成功");
+                }
+                Instance::Second => panic!("不应判为 Second"),
+            }
+        }
+
+        #[test]
+        fn second_instance_wakes_first() {
+            let path = temp_socket("wake");
+            let guard = first_or_panic(&path);
+
+            let (tx, rx) = std::sync::mpsc::channel();
+            let stop = Arc::new(AtomicBool::new(false));
+            let _listener = guard.listen_activation(Arc::clone(&stop), move || {
+                let _ = tx.send(());
+            });
+
+            // 监听 socket 在 acquire 时就已 listen，连接会排在 backlog 里，
+            // 因此不依赖「监听线程先进入循环」的调度先后。
+            assert!(
+                matches!(acquire_with(&path), Instance::Second),
+                "第二实例应成功"
+            );
+            rx.recv_timeout(Duration::from_secs(10))
+                .expect("首实例应被第二次启动唤醒");
+
+            stop.store(true, Ordering::Relaxed);
+            drop(guard);
+        }
+    }
+}
+
+#[cfg(target_os = "linux")]
+pub use imp_linux::{
+    FALLBACK_SOCKET_DIR, Guard, Instance, SOCKET_FILE_NAME, acquire, socket_path, socket_path_from,
+};
+
+/// 其它平台：没有锁实现，恒为首实例（不阻塞启动）。
+#[cfg(all(not(windows), not(target_os = "linux")))]
+mod imp_other {
     use std::sync::Arc;
     use std::sync::atomic::AtomicBool;
     use std::thread::JoinHandle;
 
-    /// 单实例判定结果（非 Windows 只有首实例）。
+    /// 单实例判定结果。
     pub enum Instance {
         /// 首实例。
         First(Guard),
@@ -181,7 +500,7 @@ mod imp_non_windows {
             false
         }
 
-        /// 空监听（非 Windows 不实现唤醒）。
+        /// 空监听。
         pub fn listen_activation(
             &self,
             _stop: Arc<AtomicBool>,
@@ -191,14 +510,14 @@ mod imp_non_windows {
         }
     }
 
-    /// 非 Windows 恒为首实例。
+    /// 恒为首实例。
     pub fn acquire() -> Instance {
         Instance::First(Guard)
     }
 }
 
-#[cfg(not(windows))]
-pub use imp_non_windows::{Guard, Instance, acquire};
+#[cfg(all(not(windows), not(target_os = "linux")))]
+pub use imp_other::{Guard, Instance, acquire};
 
 #[cfg(all(test, windows))]
 mod tests {
