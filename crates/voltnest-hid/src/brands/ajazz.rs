@@ -16,7 +16,7 @@
 //!
 //! `request: None` 是**实测结论**而非缺省：该设备纯推送，不发任何报文也能拿到电量。若某固件只在被查询时才回帧，把 `request` 换成 [`crate::spec::RequestTemplate`] 即可，运行时无需改动。
 
-use crate::spec::{BatteryFields, BrandSpec, ChargingField, FrameLayout};
+use crate::spec::{BatteryFields, BrandSpec, ChargingField, FrameLayout, ReplyTransport};
 
 /// AJAZZ（W1 / 星闪代）的协议描述。
 pub const SPEC: BrandSpec = BrandSpec {
@@ -24,6 +24,9 @@ pub const SPEC: BrandSpec = BrandSpec {
     label: "AJAZZ（W1 / 星闪代）",
     usage_page: 0xFFB2,
     usage_page_write: Some(0xFFB1),
+    transport: ReplyTransport::Push,
+    reply_inverted: false,
+    clamp_percent: false,
     frame: FrameLayout {
         report_id: Some(0x06),
         cmd_index: 1,
@@ -37,7 +40,7 @@ pub const SPEC: BrandSpec = BrandSpec {
         percent_index: 1,
         charging: Some(ChargingField {
             index: 2,
-            true_value: 0x01,
+            true_values: &[0x01],
         }),
     },
     // 纯推送：不向设备发任何报文。

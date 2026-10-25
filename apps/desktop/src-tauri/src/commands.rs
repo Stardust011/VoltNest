@@ -53,7 +53,7 @@ pub fn get_diagnostics(shared: State<'_, Arc<Shared>>) -> DiagnosticsDto {
             .map(DiagEventDto::from)
             .collect();
         let notifications: Vec<NotificationStateDto> = engine
-            .notification_entries()
+            .notification_nodes(clock::now_utc_ms())
             .into_iter()
             .map(NotificationStateDto::from)
             .collect();
