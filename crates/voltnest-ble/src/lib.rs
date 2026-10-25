@@ -2,6 +2,20 @@
 //! 服务 `0x180F` 的 `0x2A19`（READ + NOTIFY）；设备名必须读 GAP `0x2A00`，禁用 `BluetoothLEDevice.Name` /
 //! `properties().local_name`（Windows 注册表缓存，用户可改名）；读取一律 `Uncached`，缓存值不得进状态机；
 //! 充电状态协议层不可得（`0x2BF0`/`0x2BEA` 未实现，`0x2BED` 失真）→ 恒为 Unknown。
+//!
+//! # 平台
+//! `provider` 在 Windows（WinRT 后端）与 Linux（bluez/dbus 后端）上都编译，二者共用同一套协议与调度逻辑，
+//! 只有「枚举来源」「`connect()` 幂等性」「清理链路」三处按平台分支，见 `provider` 模块文档的复核表。
+//!
+//! # Linux（bluez）运行前提
+//! - 必须有 **bluetoothd** 在运行、系统 dbus 可用：`Manager::new()` 只连系统总线，`manager.adapters()`
+//!   才真正问 bluetoothd 要适配器，因此 `bluetoothd` 缺席时的失败点在适配器枚举而不是 `Manager::new()`。
+//! - 当前用户**需在 `bluetooth` 组**，或者能被 **polkit** 授权（否则 dbus 返回 `AccessDenied`，
+//!   这里映射成 `ErrorCode::AccessDenied`）。
+//! - **无适配器**（容器 / WSL2 / rfkill 关闭）：provider 上报一次 `ProviderEvent::TransportDown`
+//!   （码 + 人类可读 detail），线程结束，由宿主 supervisor 按 5s/15s/60s 退避重启，连续 5 次失败标记不可用——
+//!   不 panic、不空转、不伪造空读数。
+//! - 只跟随已连接设备（`Device1.Connected`），不主动拉起配对/连接；失败清理时也只断开自己建立的链路。
 
 #![forbid(unsafe_code)]
 #![deny(clippy::disallowed_types)]
@@ -9,8 +23,6 @@
 
 pub mod bas;
 pub mod policy;
-
-#[cfg(target_os = "windows")]
 pub mod provider;
 
 /// 建链超时：实测已配对无链路的设备 `connect()` 要 7.97s 才返回，
@@ -40,3 +52,15 @@ pub const FAILURES_BEFORE_BACKOFF: u32 = 3;
 
 /// 退避上限。
 pub const BACKOFF_CAP_MS: u64 = 10 * 60_000;
+
+/// 后端初始化（`Manager::new` / 适配器枚举）的总超时。
+///
+/// dbus 上的一次方法调用可能停在「等待服务激活」上很久（bluez 由 dbus 按需拉起），
+/// 而初始化跑在采集线程里、不能长时间占着不报状态：超时就按不可用上报，交给 supervisor 退避重启。
+pub const INIT_TIMEOUT_MS: u64 = 5_000;
+
+/// 连续多少轮巡检失败才判定「后端整体不可用」并上报 `TransportDown`。
+///
+/// 单轮失败常见的是一次 dbus 抖动或设备刚好消失，立刻拆掉整个 transport 会让所有设备闪断；
+/// 连续失败说明后端真的不在了（bluetoothd 退出、适配器被拔出），此时才交给 supervisor 退避重启。
+pub const ENUM_FAILURES_BEFORE_DOWN: u32 = 3;
