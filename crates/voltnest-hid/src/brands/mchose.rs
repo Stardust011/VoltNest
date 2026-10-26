@@ -131,6 +131,9 @@ mod tests {
         report[6] = 0x83;
         report[7] = 1;
         report[8] = 120;
-        assert_eq!(decode_battery(&A5_SPEC, &report).unwrap().percent.get(), 100);
+        assert_eq!(
+            decode_battery(&A5_SPEC, &report).unwrap().percent.get(),
+            100
+        );
     }
 }

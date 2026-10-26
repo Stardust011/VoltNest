@@ -4,16 +4,22 @@
 //! 解析途径有二：开始菜单快捷方式携带 `System.AppUserModel.ID`（正常路径），或
 //! `HKCU\Software\Classes\AppUserModelId\<AUMID>` 下的 `DisplayName` + `IconUri`（兜底）。
 //! 兜底必须成对写：只写 `DisplayName` 时系统仍拿 powershell 图标填位，名字也未必生效。
+//!
+//! Linux 没有 AUMID 这个概念：freedesktop 通知服务按发送通知的进程所对应的 `.desktop` 文件里的
+//! `Name`/`Icon` 决定应用名与图标（该文件由 `autostart` 模块在启用自启时写入），
+//! 因此本模块在 Linux 上只有成功返回的空操作，不需要也没有等价注册表项。
 
 use std::path::Path;
 
 /// AUMID 的注册表位置。
 pub const AUMID_KEY: &str = r"Software\Classes\AppUserModelId\VoltNest.Desktop";
 
-/// 通知里显示的应用名。
+/// 通知里显示的应用名（仅 Windows 注册表项用到）。
+#[cfg(windows)]
 const DISPLAY_NAME_VALUE: &str = "DisplayName";
 
-/// 通知里显示的应用图标（`file:///` URI，指向真实存在的图片）。
+/// 通知里显示的应用图标（`file:///` URI，指向真实存在的图片；仅 Windows 注册表项用到）。
+#[cfg(windows)]
 const ICON_URI_VALUE: &str = "IconUri";
 
 /// 幂等注册，每次启动调用一次。
@@ -36,7 +42,10 @@ pub fn register(display_name: &str, icon: Option<&Path>) -> std::io::Result<()> 
     }
 }
 
-/// 非 Windows 空操作。
+/// 非 Windows（含 Linux）：成功返回的空操作。
+///
+/// Linux 上通知的应用名/图标由 freedesktop 通知服务按 `.desktop` 的 `Name`/`Icon` 解析，
+/// 没有需要预注册的标识；这里返回 `Ok` 是「不需要做」，不是「假装做成了」。
 #[cfg(not(windows))]
 pub fn register(_display_name: &str, _icon: Option<&Path>) -> std::io::Result<()> {
     Ok(())
