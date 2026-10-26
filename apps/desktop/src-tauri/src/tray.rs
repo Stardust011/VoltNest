@@ -2,6 +2,17 @@
 //!
 //! 设备图标用 32×32 RGBA 手工光栅化，不引入图形渲染依赖；语义与前端 `batteryColor()` 一一对应：在线主题色、<20% 橙、<10% 红、充电绿弧加环心闪电、等待读数蓝、过期琥珀、读取失败橙，离线但物理存在时为灰环加横线。图标**存在性只由物理存在决定**：`visibleDeviceIds` 已由核心按 `present && !hidden` 截断到 4 个算好，这里只跟随、不二次判断。
 //!
+//! # 平台差异（Linux 托盘走 libayatana-appindicator / StatusNotifierItem）
+//! - `set_tooltip` 在该后端是**空实现**（`tray-icon` 直接返回 `Ok`，Tauri 文档标注
+//!   「Linux: Unsupported」）：设备 tooltip 与基础图标的汇总 tooltip 都不显示；
+//!   「气泡模式」在那里返回 [`BubbleOutcome::UnsupportedPlatform`]，诊断页记
+//!   `unsupported_platform`（与「没有落脚图标」的 `failed` 分开），而不是一条假的 `tray_tooltip`。
+//! - `TrayIconEvent` 在 Linux 不派发（同样标注 Unsupported）：左键点图标开面板只在
+//!   Windows 生效；Linux 上打开面板走每张图标都带的菜单项。
+//! - `show_menu_on_left_click(false)` 在 Linux 无效：点击由 AppIndicator 自己弹菜单，
+//!   菜单内容与 Windows 完全一致，所以行为仍然可达。
+//! - 图标要有菜单才稳定显现（Tauri 文档）：这里每张图标都挂同一份菜单，正好满足。
+//!
 //! # 基础图标（应用图标）何时显现
 //! 窗口关掉只剩托盘时，**一张图标都没有等于进程失联**（打不开面板也无法退出），故托盘必须始终至少有一张可用图标。占位图标即**应用图标本身**（与任务栏/开始菜单同 PNG）：无设备时用户看到「应用在跑」而非需解读的小图形；手绘蓝环只留给「设备已在列表、还没拿到读数」那一种状态。它仅在「没有设备图标」时现身：有设备图标就让位（电量环本身就是入口，再挂一个会像第二台设备）；设备全拔或全被隐藏时再回来。每张图标右键菜单一致（打开面板 / 退出 VoltNest），任意一张都能退出。
 
@@ -251,11 +262,34 @@ fn current_tooltip(tray_id: &str) -> Option<String> {
     lock(&BASELINE_TOOLTIPS).get(tray_id).cloned()
 }
 
-/// 托盘气泡模式：把提示写进对应图标 tooltip，6 秒后恢复原样。返回是否真的挂上 —— 没有可用图标时不假装发出去（诊断页要能分辨）。
-pub fn bubble(app: &AppHandle, stable_id: &str, text: &str) -> bool {
+/// 托盘气泡投递的三态结果。
+///
+/// 诊断页要靠它分辨「这个平台的托盘后端没有 tooltip」与「托盘里真的没有落脚图标」——
+/// 两种原因对用户的可行动作完全不同（前者只能改用系统通知，后者是设备图标/基础图标都不在）。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BubbleOutcome {
+    /// 提示真的写进了对应图标的 tooltip（6 秒后还原）。
+    Sent,
+    /// 没有可用落脚图标：设备图标不在，基础图标也隐身。
+    NoIcon,
+    /// 平台的托盘后端没有 tooltip 实现（Linux / AppIndicator），写进去也不会显示。
+    UnsupportedPlatform,
+}
+
+/// 托盘气泡模式：把提示写进对应图标 tooltip，6 秒后恢复原样。
+///
+/// 判定顺序就是三态的语义顺序：先找落脚图标（没有 → [`BubbleOutcome::NoIcon`]，
+/// 不假装发出去），再看平台（Linux 的托盘后端把 `set_tooltip` 实现成空操作，见模块文档的
+/// 「平台差异」→ [`BubbleOutcome::UnsupportedPlatform`]），最后才真写 tooltip →
+/// [`BubbleOutcome::Sent`]。
+pub fn bubble(app: &AppHandle, stable_id: &str, text: &str) -> BubbleOutcome {
     let Some(tray) = alert_tray(app, stable_id) else {
-        return false;
+        return BubbleOutcome::NoIcon;
     };
+    if cfg!(target_os = "linux") {
+        log::warn!("托盘气泡模式在 Linux 托盘后端不可用（tooltip 无实现）：请改用系统通知");
+        return BubbleOutcome::UnsupportedPlatform;
+    }
     let tray_id = tray.id().as_ref().to_string();
     let _ = tray.set_tooltip(Some(text));
 
@@ -267,7 +301,7 @@ pub fn bubble(app: &AppHandle, stable_id: &str, text: &str) -> bool {
             let _ = tray.set_tooltip(Some(&text));
         }
     });
-    true
+    BubbleOutcome::Sent
 }
 
 /// 低电量提示挂哪张图标：优先设备自己的，其次**露在托盘里**的基础图标。

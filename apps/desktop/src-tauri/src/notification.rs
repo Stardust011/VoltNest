@@ -51,18 +51,42 @@ pub fn dispatch(
                     "{} 电量 {}%（阈值 {}%）",
                     alert.display_name, alert.battery, alert.threshold
                 );
-                if tray::bubble(app, &alert.stable_id, &text) {
-                    "tray_tooltip"
-                } else {
-                    log::warn!(
+                let outcome = tray::bubble(app, &alert.stable_id, &text);
+                match outcome {
+                    // 真写进 tooltip 了，无需额外动作。
+                    tray::BubbleOutcome::Sent => {}
+                    // 我们真没发（没有落脚图标）：日志交代清楚，诊断页记 `failed`。
+                    tray::BubbleOutcome::NoIcon => log::warn!(
                         "托盘里没有可用图标，低电量提示未送出（{}）",
                         alert.stable_id
-                    );
-                    "failed"
+                    ),
+                    // 平台不支持：既不能记成 `failed`（那会和「没图标」混为一谈），
+                    // 也不能打上面那句归因错误的日志。
+                    tray::BubbleOutcome::UnsupportedPlatform => push_diag(
+                        shared,
+                        DiagLevel::Warn,
+                        "notification_unsupported_platform",
+                        Some(alert.stable_id.clone()),
+                        "托盘气泡模式在当前平台不可用（Linux 托盘后端没有 tooltip 实现）：请改用系统通知",
+                    ),
                 }
+                tray_bubble_result(outcome)
             }
         };
         lock(&shared.engine).mark_notification_result(&alert.stable_id, alert.threshold, result);
+    }
+}
+
+/// 托盘气泡三态 → 写进 `last_result` 的值（诊断页原样展示，前端不做映射）。
+///
+/// 抽成纯函数是为了能直接测：`UnsupportedPlatform` 必须与 `NoIcon` 分成两个值 ——
+/// 让它们共用 `failed`，用户就会把「这个平台的托盘后端没有 tooltip」读成「托盘里没图标」，
+/// 正是本模块开头那条「诊断页要能分辨『系统吞了』与『我们没发』」要禁止的归因混淆。
+fn tray_bubble_result(outcome: tray::BubbleOutcome) -> &'static str {
+    match outcome {
+        tray::BubbleOutcome::Sent => "tray_tooltip",
+        tray::BubbleOutcome::NoIcon => "failed",
+        tray::BubbleOutcome::UnsupportedPlatform => "unsupported_platform",
     }
 }
 
@@ -135,4 +159,36 @@ fn push_diag(
     detail: impl Into<String>,
 ) {
     lock(&shared.engine).push_diag(clock::now_utc_ms(), level, code, device_id, detail);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 三态必须映射成三个互不相同的值：诊断页只原样展示这个字符串，
+    /// 一旦两档共用一个值，用户就分不清「平台不支持」与「托盘里没图标」。
+    #[test]
+    fn tray_bubble_outcomes_map_to_distinct_results() {
+        assert_eq!(
+            tray_bubble_result(tray::BubbleOutcome::Sent),
+            "tray_tooltip"
+        );
+        assert_eq!(tray_bubble_result(tray::BubbleOutcome::NoIcon), "failed");
+        assert_eq!(
+            tray_bubble_result(tray::BubbleOutcome::UnsupportedPlatform),
+            "unsupported_platform",
+            "平台不支持必须是独立取值，不能并进 failed"
+        );
+
+        let values = [
+            tray_bubble_result(tray::BubbleOutcome::Sent),
+            tray_bubble_result(tray::BubbleOutcome::NoIcon),
+            tray_bubble_result(tray::BubbleOutcome::UnsupportedPlatform),
+        ];
+        for (i, a) in values.iter().enumerate() {
+            for b in &values[i + 1..] {
+                assert_ne!(a, b, "三态不能共用一个结果字符串：{values:?}");
+            }
+        }
+    }
 }

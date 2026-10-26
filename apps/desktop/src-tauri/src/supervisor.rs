@@ -1,4 +1,4 @@
-//! Provider 线程组监管：panic 隔离与退避重启。每个 transport 一个监管线程，自身不做 I/O，只做三件事：用 `catch_unwind` 包住 `Provider::run` 起采集线程；把上报事件原样转发宿主；采集线程异常结束时上报 `TransportDown` 并按 5s/15s/60s 退避重启，连续 5 次失败标记「不可用」等手动重启。**panic 不得跨 transport 传播**：HID 解析器崩溃时蓝牙必须照常，故隔离在采集线程边界而非宿主里 catch。
+//! Provider 线程组监管：panic 隔离与退避重启。每个 transport 一个监管线程，自身不做 I/O，只做三件事：用 `catch_unwind` 包住 `Provider::run` 起采集线程；把上报事件原样转发宿主；采集线程异常结束时保证有 `TransportDown`（provider 自己报过就不重复、只沿用它的 code/detail）并按 5s/15s/60s 退避重启，连续 5 次失败标记「不可用」等手动重启。**panic 不得跨 transport 传播**：HID 解析器崩溃时蓝牙必须照常，故隔离在采集线程边界而非宿主里 catch。
 
 use std::panic::AssertUnwindSafe;
 use std::sync::Arc;
@@ -63,9 +63,22 @@ enum RunOutcome {
     /// 收到 `Restart` 指令，需要重置失败计数。
     Restarted,
     /// `run()` 自行返回（未收到停止指令）→ 按失败处理。
-    Returned,
+    ///
+    /// 携带本轮已转发给宿主的 `TransportDown`（`code`, `detail`）：provider 自己报过
+    /// 失败原因时，监管线程不能再拿 `Internal` / 「采集线程自行退出」覆盖它。
+    Returned(Option<(ErrorCode, String)>),
     /// `run()` panic。
     Panicked(String),
+}
+
+/// 一次失败要对外表达的原因。
+struct Failure {
+    /// 进日志、`TransportStatus.last_error` 与 `TransportDown.detail` 的可读原因。
+    detail: String,
+    /// 结构化错误码。
+    code: ErrorCode,
+    /// 是否还需要上报 `TransportDown`（provider 本轮已自己报过就不重复）。
+    report: bool,
 }
 
 /// 启动一个 transport 的监管线程，返回用于发送指令的通道。
@@ -114,16 +127,38 @@ fn supervise(
             None,
         );
 
-        let detail = match run_once(&shared, &spec, &cmd_rx) {
+        let failure = match run_once(&shared, &spec, &cmd_rx) {
             RunOutcome::Stopped => return,
             RunOutcome::Restarted => {
                 failures = 0;
                 restarts = restarts.saturating_add(1);
                 continue;
             }
-            RunOutcome::Returned => "采集线程自行退出".to_string(),
-            RunOutcome::Panicked(msg) => msg,
+            // provider 已经自己上报过 TransportDown（BLE 权限被拒、无 bluetoothd、无适配器
+            // 都是这条路径）：设备已转 Offline，原因也是结构化的。这里沿用它的 code/detail、
+            // 不再重复上报 —— 否则一条 Internal / 「采集线程自行退出」会把它覆盖掉，
+            // 诊断页就丢了「需 bluetoothd」这类唯一有用的提示。
+            RunOutcome::Returned(Some((code, detail))) => Failure {
+                detail,
+                code,
+                report: false,
+            },
+            RunOutcome::Returned(None) => Failure {
+                detail: "采集线程自行退出".to_string(),
+                code: ErrorCode::Internal,
+                report: true,
+            },
+            RunOutcome::Panicked(msg) => Failure {
+                detail: msg,
+                code: ErrorCode::Internal,
+                report: true,
+            },
         };
+        let Failure {
+            detail,
+            code,
+            report,
+        } = failure;
 
         failures = failures.saturating_add(1);
         restarts = restarts.saturating_add(1);
@@ -131,7 +166,9 @@ fn supervise(
             "{} 采集线程失败（连续 {failures} 次）：{detail}",
             spec.transport.as_str()
         );
-        push_down(&shared, &spec, &detail);
+        if report {
+            push_down(&shared, &spec, code, &detail);
+        }
         set_status(
             &shared,
             &spec,
@@ -250,10 +287,13 @@ fn run_once(shared: &Arc<Shared>, spec: &Spec, cmd_rx: &Receiver<SupervisorCmd>)
         Err(err) => return RunOutcome::Panicked(format!("无法创建采集线程: {err}")),
     };
 
+    // 本轮已转发给宿主的 TransportDown（provider 自己上报的失败原因）。
+    let mut reported: Option<(ErrorCode, String)> = None;
+
     let outcome = loop {
         // 1. 采集线程是否已经结束
         match done_rx.try_recv() {
-            Ok(None) => break RunOutcome::Returned,
+            Ok(None) => break RunOutcome::Returned(None),
             Ok(Some(msg)) => break RunOutcome::Panicked(msg),
             Err(TryRecvError::Empty) => {}
             Err(TryRecvError::Disconnected) => {
@@ -271,7 +311,7 @@ fn run_once(shared: &Arc<Shared>, spec: &Spec, cmd_rx: &Receiver<SupervisorCmd>)
         }
         // 3. 转发事件
         match event_rx.recv_timeout(Duration::from_millis(100)) {
-            Ok(event) => forward(shared, spec.transport, event),
+            Ok(event) => forward_tracked(shared, spec.transport, &mut reported, event),
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
             // 采集线程已放下发送端：给它一点时间把 done 消息送出来。
             Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
@@ -284,9 +324,27 @@ fn run_once(shared: &Arc<Shared>, spec: &Spec, cmd_rx: &Receiver<SupervisorCmd>)
     let _ = worker.join();
     // 收尾：把可能残留的事件转发出去（含最后一次读数）。
     while let Ok(event) = event_rx.try_recv() {
-        forward(shared, spec.transport, event);
+        forward_tracked(shared, spec.transport, &mut reported, event);
     }
-    outcome
+    // provider「先发失败原因再返回」时，那条事件只可能在收尾阶段才被转发到，
+    // 故 `reported` 必须等 drain 结束再挂到 `Returned` 上。
+    match outcome {
+        RunOutcome::Returned(_) => RunOutcome::Returned(reported),
+        other => other,
+    }
+}
+
+/// 转发事件，并记下其中的 `TransportDown`（本轮已上报的失败原因）。
+fn forward_tracked(
+    shared: &Arc<Shared>,
+    transport: Transport,
+    reported: &mut Option<(ErrorCode, String)>,
+    event: ProviderEvent,
+) {
+    if let ProviderEvent::TransportDown { code, detail } = &event {
+        *reported = Some((*code, detail.clone()));
+    }
+    forward(shared, transport, event);
 }
 
 /// 把事件塞进宿主队列。队列无界，但入队计数用于积压告警。
@@ -302,12 +360,12 @@ fn forward(shared: &Arc<Shared>, transport: Transport, event: ProviderEvent) {
 }
 
 /// 上报 `TransportDown`：该 transport 的全部设备转 `Offline`，但不动别的 transport。
-fn push_down(shared: &Arc<Shared>, spec: &Spec, detail: &str) {
+fn push_down(shared: &Arc<Shared>, spec: &Spec, code: ErrorCode, detail: &str) {
     forward(
         shared,
         spec.transport,
         ProviderEvent::TransportDown {
-            code: ErrorCode::Internal,
+            code,
             detail: detail.to_string(),
         },
     );
@@ -477,5 +535,76 @@ mod tests {
         // 3. Stop 能让监管线程干净退出（不遗留采集线程）。
         cmd.send(SupervisorCmd::Stop).expect("监管线程仍在");
         handle.join().expect("监管线程应能正常退出");
+    }
+
+    /// 「先自己上报 `TransportDown` 再 `run()` 返回」的采集器：Linux 上 BLE 权限被拒 /
+    /// 无 bluetoothd 时就是这条路径（provider 报结构化失败，然后退出）。
+    struct DownThenExit;
+
+    /// provider 给出的可读原因：监管线程不得把它换成「采集线程自行退出」。
+    const DOWN_DETAIL: &str =
+        "初始化失败: PermissionDenied（Linux/bluez：当前用户需在 bluetooth 组或有 polkit 授权）";
+
+    impl Provider for DownThenExit {
+        fn profile(&self) -> &'static voltnest_provider::ProviderProfile {
+            &voltnest_provider::BLE_BAS
+        }
+
+        fn run(self: Box<Self>, tx: Sender<ProviderEvent>, _stop: Arc<AtomicBool>) {
+            let _ = tx.send(ProviderEvent::TransportDown {
+                code: ErrorCode::AccessDenied,
+                detail: DOWN_DETAIL.to_string(),
+            });
+        }
+    }
+
+    fn ble_spec(make: fn() -> Box<dyn Provider>) -> Spec {
+        Spec {
+            transport: Transport::Ble,
+            family: voltnest_provider::FAMILY_BLE_BAS,
+            make,
+        }
+    }
+
+    #[test]
+    fn provider_failure_reason_survives_the_supervisor() {
+        let (shared, rx) = temp_shared();
+        let (cmd, handle) = start_with(
+            Arc::clone(&shared),
+            ble_spec(|| Box::new(DownThenExit)),
+            &[1, 1, 1, 1],
+        );
+
+        // 每个失败周期只该有一条 TransportDown：provider 自己那条。
+        let mut seen: Vec<(ErrorCode, String)> = Vec::new();
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while seen.len() < 2 && std::time::Instant::now() < deadline {
+            if let Ok(HostEvent::Provider {
+                event: ProviderEvent::TransportDown { code, detail },
+                ..
+            }) = rx.recv_timeout(Duration::from_millis(200))
+            {
+                seen.push((code, detail));
+            }
+        }
+
+        let _ = cmd.send(SupervisorCmd::Stop);
+        handle.join().expect("监管线程应能正常退出");
+
+        assert!(
+            seen.len() >= 2,
+            "provider 自行退出仍要按失败退避重启，不能静默停掉：{seen:?}"
+        );
+        for (code, detail) in &seen {
+            assert_eq!(
+                *code,
+                ErrorCode::AccessDenied,
+                "provider 的结构化错误码不能被 Internal 覆盖：{seen:?}"
+            );
+            assert_eq!(
+                detail, DOWN_DETAIL,
+                "provider 给出的失败原因不能被「采集线程自行退出」覆盖：{seen:?}"
+            );
+        }
     }
 }

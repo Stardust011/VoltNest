@@ -12,5 +12,16 @@ serde.workspace = true
 serde_json.workspace = true
 # 锁定 2.6.x：0.13/2.x 的 API 在集合信息与 open_path 语义上有差异，
 # 已验证通过的路径不能被一次 minor 升级悄悄改掉。
+
+# Windows：走 hid.dll，不需要额外系统库。
 [target.'cfg(windows)'.dependencies]
 hidapi = { version = "~2.6", default-features = false }
+
+# Linux：必须选 linux-static-hidraw（静态链接的 hidraw 后端），不能用默认的 linux-static-libusb。
+# 理由一（能力）：hidraw 从报告描述符解析 usage_page/usage，并在 USB 总线上填 interface_number；
+#   libusb 后端这两个字段恒为 0 与 -1，Usage 规则会被整体跳过，等于 Linux 上少一半识别依据。
+# 理由二（构建）：两个后端都要经 pkg-config 探测 libudev，故构建机须装 libudev 开发文件
+#   （Debian/Ubuntu: sudo apt install libudev-dev；Fedora: sudo dnf install systemd-devel）。
+#   本 crate 只声明依赖，不携带构建期垫片；运行期只依赖系统已装的 libudev.so.1。
+[target.'cfg(target_os = "linux")'.dependencies]
+hidapi = { version = "~2.6", default-features = false, features = ["linux-static-hidraw"] }

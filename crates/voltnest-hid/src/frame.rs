@@ -294,14 +294,11 @@ pub fn decode_battery_detailed(
     };
 
     // 7) 充电标志：协议不提供 → None；字节缺失 → None（不猜测）。
-    let charging = spec
-        .battery
-        .charging
-        .and_then(|field| {
-            payload
-                .get(field.index)
-                .map(|b| field.true_values.contains(b))
-        });
+    let charging = spec.battery.charging.and_then(|field| {
+        payload
+            .get(field.index)
+            .map(|b| field.true_values.contains(b))
+    });
 
     Ok(BatteryReading { percent, charging })
 }
