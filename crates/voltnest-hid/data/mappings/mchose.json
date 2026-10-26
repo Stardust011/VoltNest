@@ -1,0 +1,957 @@
+{
+  "config_version": "v3.16.35",
+  "source": {
+    "file": "",
+    "url": "https://www.mchose.com.cn/",
+    "web_version": "v3.16.35"
+  },
+  "devices": {
+    "0E6A:0111": {
+      "name": "G20",
+      "deviceType": "speaker",
+      "mode": "USB",
+      "ambiguous": true,
+      "conflicts": [
+        "G20 PRO"
+      ]
+    },
+    "19F5:FC30": {
+      "name": "Ace 60",
+      "deviceType": "keyboard",
+      "mode": "USB"
+    },
+    "19F5:FC31": {
+      "name": "Ace 60 Pro",
+      "deviceType": "keyboard",
+      "mode": "USB"
+    },
+    "19F5:FF0F": {
+      "name": "Ace 60 Pro",
+      "deviceType": "keyboard",
+      "mode": "USB"
+    },
+    "19F5:FF1B": {
+      "name": "Ace 60",
+      "deviceType": "keyboard",
+      "mode": "USB"
+    },
+    "291D:385D": {
+      "name": "G9 PRO",
+      "deviceType": "headset",
+      "mode": "USB",
+      "ambiguous": true,
+      "conflicts": [
+        "S9 PRO",
+        "V9",
+        "V9 PRO"
+      ]
+    },
+    "3837:0010": {
+      "name": "A7 Pro",
+      "deviceType": "mouse",
+      "mode": "2.4G"
+    },
+    "3837:0011": {
+      "name": "A7 Ultra",
+      "deviceType": "mouse",
+      "mode": "2.4G"
+    },
+    "3837:0020": {
+      "name": "M7",
+      "deviceType": "mouse",
+      "mode": "2.4G",
+      "ambiguous": true,
+      "conflicts": [
+        "M7 1K"
+      ]
+    },
+    "3837:0030": {
+      "name": "M7 Pro",
+      "deviceType": "mouse",
+      "mode": "2.4G"
+    },
+    "3837:0031": {
+      "name": "M7 Ultra",
+      "deviceType": "mouse",
+      "mode": "2.4G"
+    },
+    "3837:0070": {
+      "name": "A7",
+      "deviceType": "mouse",
+      "mode": "2.4G"
+    },
+    "3837:00A1": {
+      "name": "AX5 V2",
+      "deviceType": "mouse",
+      "mode": "2.4G"
+    },
+    "3837:00B0": {
+      "name": "L7 Pro",
+      "deviceType": "mouse",
+      "mode": "2.4G"
+    },
+    "3837:00B1": {
+      "name": "L7 Ultra",
+      "deviceType": "mouse",
+      "mode": "2.4G"
+    },
+    "3837:00C0": {
+      "name": "L7",
+      "deviceType": "mouse",
+      "mode": "2.4G"
+    },
+    "3837:1001": {
+      "name": "K7 Ultra",
+      "deviceType": "mouse",
+      "mode": "2.4G"
+    },
+    "3837:1009": {
+      "name": "A7X Ultra",
+      "deviceType": "mouse",
+      "mode": "2.4G"
+    },
+    "3837:100A": {
+      "name": "A7 V2 Pro+",
+      "deviceType": "mouse",
+      "mode": "2.4G",
+      "ambiguous": true,
+      "conflicts": [
+        "A7 V2 Ultra+",
+        "A7X Ultra"
+      ]
+    },
+    "3837:100B": {
+      "name": "A7 V2 Pro+",
+      "deviceType": "mouse",
+      "mode": "2.4G",
+      "ambiguous": true,
+      "conflicts": [
+        "A7 V2 Ultra+"
+      ]
+    },
+    "3837:100C": {
+      "name": "A5 V2 Ultra",
+      "deviceType": "mouse",
+      "mode": "2.4G",
+      "ambiguous": true,
+      "conflicts": [
+        "A5 ultra",
+        "G3 Ultra 4K"
+      ]
+    },
+    "3837:1012": {
+      "name": "MagDock",
+      "deviceType": "dock",
+      "mode": "USB"
+    },
+    "3837:1014": {
+      "name": "A7 V3 Pro+",
+      "deviceType": "mouse",
+      "mode": "2.4G",
+      "ambiguous": true,
+      "conflicts": [
+        "A5 V3 Ultra+",
+        "A5 V3 Ultra+(3955)",
+        "A7 V3",
+        "A7 V3 Magnetic",
+        "A7 V3 Ultra+",
+        "A7 V3-X",
+        "K5 Pro",
+        "K5 Ultra",
+        "K7 V2 Pro+",
+        "K7 V2 Ultra+",
+        "R7 Ultra"
+      ]
+    },
+    "3837:1015": {
+      "name": null,
+      "deviceType": "keyboard",
+      "mode": "2.4G",
+      "ambiguous": true,
+      "receiverMatch": "regex",
+      "candidates": [
+        {
+          "name": "G98 V3",
+          "receiverProductName": "MCHOSE G98 V3 2.4G"
+        },
+        {
+          "name": "K87 V3",
+          "receiverProductName": "MCHOSE K87 V3 2.4G"
+        }
+      ],
+      "fallback": "G98 V3"
+    },
+    "3837:1016": {
+      "name": "V7",
+      "deviceType": "mouse",
+      "mode": "2.4G"
+    },
+    "3837:1017": {
+      "name": null,
+      "deviceType": "keyboard",
+      "mode": "2.4G",
+      "ambiguous": true,
+      "receiverMatch": "regex",
+      "candidates": [
+        {
+          "name": "G98 V3",
+          "receiverProductName": "MCHOSE G98 V3 2.4G"
+        },
+        {
+          "name": "K87 V3",
+          "receiverProductName": "MCHOSE K87 V3 2.4G"
+        }
+      ],
+      "fallback": "G98 V3"
+    },
+    "3837:1018": {
+      "name": "A7 V3 Pro+",
+      "deviceType": "mouse",
+      "mode": "2.4G",
+      "ambiguous": true,
+      "conflicts": [
+        "A5 V3 Ultra+",
+        "A5 V3 Ultra+(3955)",
+        "A7 V3",
+        "A7 V3 Magnetic",
+        "A7 V3 Ultra+",
+        "A7 V3-X",
+        "K5 Pro",
+        "K5 Ultra",
+        "K7 V2 Pro+",
+        "K7 V2 Ultra+",
+        "R7 Ultra"
+      ]
+    },
+    "3837:101C": {
+      "name": "K5 V2",
+      "deviceType": "mouse",
+      "mode": "2.4G"
+    },
+    "3837:101D": {
+      "name": "G3",
+      "deviceType": "mouse",
+      "mode": "2.4G",
+      "ambiguous": true,
+      "conflicts": [
+        "G3 V3",
+        "V7 Pro"
+      ]
+    },
+    "3837:1020": {
+      "name": "A7 V2 Pro+",
+      "deviceType": "mouse",
+      "mode": "2.4G",
+      "ambiguous": true,
+      "conflicts": [
+        "A7",
+        "A7 Pro",
+        "A7 Ultra",
+        "A7 Ultra(RE)",
+        "A7 V2 Ultra+",
+        "AX5 V2",
+        "G3 Mouse",
+        "G3 Mouse 4K",
+        "G3 Mouse 8K",
+        "G3 Ultra 4K",
+        "G3 Ultra 8K",
+        "K7 Ultra",
+        "L7",
+        "L7 Pro",
+        "L7 Ultra",
+        "M7",
+        "M7 1K",
+        "M7 Pro",
+        "M7 Ultra"
+      ]
+    },
+    "3837:1021": {
+      "name": "K7 Ultra",
+      "deviceType": "mouse",
+      "mode": "2.4G",
+      "ambiguous": true,
+      "conflicts": [
+        "A7",
+        "A7 Pro",
+        "A7 Ultra",
+        "A7 Ultra(RE)",
+        "AX5 V2",
+        "L7",
+        "L7 Pro",
+        "L7 Ultra",
+        "M7",
+        "M7 1K",
+        "M7 Pro",
+        "M7 Ultra"
+      ]
+    },
+    "3837:1101": {
+      "name": "A5 V2 Ultra",
+      "deviceType": "mouse",
+      "mode": "2.4G"
+    },
+    "3837:1102": {
+      "name": "A5 V2 Ultra",
+      "deviceType": "mouse",
+      "mode": "2.4G"
+    },
+    "3837:200E": {
+      "name": "K87S",
+      "deviceType": "keyboard",
+      "mode": "USB"
+    },
+    "3837:200F": {
+      "name": "K87S",
+      "deviceType": "keyboard",
+      "mode": "USB"
+    },
+    "3837:2010": {
+      "name": null,
+      "deviceType": "keyboard",
+      "mode": "2.4G",
+      "ambiguous": true,
+      "receiverMatch": "contains",
+      "candidates": [
+        {
+          "name": "K87S",
+          "receiverProductName": "MCHOSE K87S 2.4G"
+        },
+        {
+          "name": "G87 V2",
+          "receiverProductName": "MCHOSE G87 V2 2.4G"
+        },
+        {
+          "name": "K99 V3",
+          "receiverProductName": "MCHOSE K99 V3 2.4G"
+        },
+        {
+          "name": "G75 V2",
+          "receiverProductName": "MCHOSE G75 V2 2.4G"
+        }
+      ],
+      "fallback": "K87S"
+    },
+    "3837:2015": {
+      "name": "G87 V2",
+      "deviceType": "keyboard",
+      "mode": "USB"
+    },
+    "3837:2019": {
+      "name": "G87 V2",
+      "deviceType": "keyboard",
+      "mode": "USB"
+    },
+    "3837:201A": {
+      "name": "G87 V2 (1K)",
+      "deviceType": "keyboard",
+      "mode": "USB"
+    },
+    "3837:201B": {
+      "name": "G87 V2 (2.4G)",
+      "deviceType": "keyboard",
+      "mode": "2.4G"
+    },
+    "3837:201F": {
+      "name": "K99 V3",
+      "deviceType": "keyboard",
+      "mode": "USB"
+    },
+    "3837:2020": {
+      "name": "K99 V3",
+      "deviceType": "keyboard",
+      "mode": "USB"
+    },
+    "3837:2021": {
+      "name": "G75 V2",
+      "deviceType": "keyboard",
+      "mode": "USB"
+    },
+    "3837:2022": {
+      "name": "G75 V2",
+      "deviceType": "keyboard",
+      "mode": "USB"
+    },
+    "3837:2023": {
+      "name": "K87 V3",
+      "deviceType": "keyboard",
+      "mode": "USB"
+    },
+    "3837:2024": {
+      "name": "K87 V3",
+      "deviceType": "keyboard",
+      "mode": "USB"
+    },
+    "3837:2025": {
+      "name": "G98 V3",
+      "deviceType": "keyboard",
+      "mode": "USB"
+    },
+    "3837:2026": {
+      "name": "G98 V3",
+      "deviceType": "keyboard",
+      "mode": "USB"
+    },
+    "3837:2B67": {
+      "name": "A5 ultra",
+      "deviceType": "mouse",
+      "mode": "2.4G"
+    },
+    "3837:3002": {
+      "name": "Ace 60 Pro Nordic",
+      "deviceType": "keyboard",
+      "mode": "USB"
+    },
+    "3837:3003": {
+      "name": "Ace 68",
+      "deviceType": "keyboard",
+      "mode": "USB"
+    },
+    "3837:3007": {
+      "name": "Ace 68 GT",
+      "deviceType": "keyboard",
+      "mode": "USB"
+    },
+    "3837:3008": {
+      "name": "Jet 75",
+      "deviceType": "keyboard",
+      "mode": "USB"
+    },
+    "3837:3009": {
+      "name": "Ace 68 GT",
+      "deviceType": "keyboard",
+      "mode": "USB"
+    },
+    "3837:300A": {
+      "name": "Ace 68 Air 2",
+      "deviceType": "keyboard",
+      "mode": "USB"
+    },
+    "3837:300B": {
+      "name": "Ace 68 Air 2",
+      "deviceType": "keyboard",
+      "mode": "USB"
+    },
+    "3837:300D": {
+      "name": "Mix 87",
+      "deviceType": "keyboard",
+      "mode": "USB"
+    },
+    "3837:301A": {
+      "name": "God 60",
+      "deviceType": "keyboard",
+      "mode": "USB"
+    },
+    "3837:301D": {
+      "name": "Ace 75",
+      "deviceType": "keyboard",
+      "mode": "USB"
+    },
+    "3837:3020": {
+      "name": "God 60",
+      "deviceType": "keyboard",
+      "mode": "USB"
+    },
+    "3837:3022": {
+      "name": "Ace 60 Pro Nordic",
+      "deviceType": "keyboard",
+      "mode": "USB"
+    },
+    "3837:3024": {
+      "name": "Ace 68 V2",
+      "deviceType": "keyboard",
+      "mode": "USB"
+    },
+    "3837:3025": {
+      "name": "Ace 68 V2",
+      "deviceType": "keyboard",
+      "mode": "USB"
+    },
+    "3837:3026": {
+      "name": "Ace 68 Turbo",
+      "deviceType": "keyboard",
+      "mode": "USB"
+    },
+    "3837:3027": {
+      "name": "Ace 68 Turbo",
+      "deviceType": "keyboard",
+      "mode": "USB"
+    },
+    "3837:3028": {
+      "name": "Ace 68 Turbo",
+      "deviceType": "keyboard",
+      "mode": "USB"
+    },
+    "3837:3029": {
+      "name": "Ace 68 Turbo",
+      "deviceType": "keyboard",
+      "mode": "USB"
+    },
+    "3837:302A": {
+      "name": "Ace 68",
+      "deviceType": "keyboard",
+      "mode": "USB"
+    },
+    "3837:302B": {
+      "name": "Jet 75",
+      "deviceType": "keyboard",
+      "mode": "USB"
+    },
+    "3837:302C": {
+      "name": "Mix 87",
+      "deviceType": "keyboard",
+      "mode": "USB"
+    },
+    "3837:3033": {
+      "name": null,
+      "deviceType": "keyboard",
+      "mode": "2.4G",
+      "ambiguous": true,
+      "receiverMatch": "contains",
+      "candidates": [
+        {
+          "name": "K87S",
+          "receiverProductName": "MCHOSE K87S 2.4G"
+        },
+        {
+          "name": "G87 V2",
+          "receiverProductName": "MCHOSE G87 V2 2.4G"
+        },
+        {
+          "name": "K99 V3",
+          "receiverProductName": "MCHOSE K99 V3 2.4G"
+        },
+        {
+          "name": "G75 V2",
+          "receiverProductName": "MCHOSE G75 V2 2.4G"
+        }
+      ],
+      "fallback": "K87S"
+    },
+    "3837:303C": {
+      "name": "Ace 75",
+      "deviceType": "keyboard",
+      "mode": "USB"
+    },
+    "3837:303D": {
+      "name": "Ace 75",
+      "deviceType": "keyboard",
+      "mode": "USB"
+    },
+    "3837:3040": {
+      "name": "Ace 60 Pro ISO FR",
+      "deviceType": "keyboard",
+      "mode": "USB"
+    },
+    "3837:3041": {
+      "name": "Ace 60 Pro ISO FR",
+      "deviceType": "keyboard",
+      "mode": "USB"
+    },
+    "3837:4010": {
+      "name": "AX5 V2",
+      "deviceType": "mouse",
+      "mode": "2.4G"
+    },
+    "3837:4011": {
+      "name": "A7X Ultra",
+      "deviceType": "mouse",
+      "mode": "2.4G"
+    },
+    "3837:4015": {
+      "name": "L7 Pro",
+      "deviceType": "mouse",
+      "mode": "2.4G"
+    },
+    "3837:4016": {
+      "name": "L7 Ultra",
+      "deviceType": "mouse",
+      "mode": "2.4G"
+    },
+    "3837:4018": {
+      "name": "A7 V2 Pro+",
+      "deviceType": "mouse",
+      "mode": "2.4G"
+    },
+    "3837:4019": {
+      "name": "A7 V2 Ultra+",
+      "deviceType": "mouse",
+      "mode": "2.4G"
+    },
+    "3837:4021": {
+      "name": "A7 V2 Ultra+",
+      "deviceType": "mouse",
+      "mode": "2.4G"
+    },
+    "3837:4023": {
+      "name": "A7 V2 Pro+",
+      "deviceType": "mouse",
+      "mode": "2.4G"
+    },
+    "3837:4026": {
+      "name": "A5 V3 Ultra+",
+      "deviceType": "mouse",
+      "mode": "USB"
+    },
+    "3837:4027": {
+      "name": "K7 V2 Pro+",
+      "deviceType": "mouse",
+      "mode": "2.4G"
+    },
+    "3837:4028": {
+      "name": "K7 V2 Ultra+",
+      "deviceType": "mouse",
+      "mode": "2.4G"
+    },
+    "3837:4029": {
+      "name": "G3 V3",
+      "deviceType": "mouse",
+      "mode": "2.4G"
+    },
+    "3837:402A": {
+      "name": "V7",
+      "deviceType": "mouse",
+      "mode": "2.4G"
+    },
+    "3837:4030": {
+      "name": "A7 V3",
+      "deviceType": "mouse",
+      "mode": "2.4G"
+    },
+    "3837:4031": {
+      "name": "A7 V3 Pro+",
+      "deviceType": "mouse",
+      "mode": "2.4G"
+    },
+    "3837:4032": {
+      "name": "A7 V3 Pro+",
+      "deviceType": "mouse",
+      "mode": "2.4G"
+    },
+    "3837:4033": {
+      "name": "A7 V3 Ultra+",
+      "deviceType": "mouse",
+      "mode": "2.4G"
+    },
+    "3837:4034": {
+      "name": "A5 V3 Ultra+(3955)",
+      "deviceType": "mouse",
+      "mode": "USB"
+    },
+    "3837:4036": {
+      "name": "R7 Ultra",
+      "deviceType": "mouse",
+      "mode": "2.4G"
+    },
+    "3837:4037": {
+      "name": "K5 Pro",
+      "deviceType": "mouse",
+      "mode": "2.4G"
+    },
+    "3837:4038": {
+      "name": "K5 Ultra",
+      "deviceType": "mouse",
+      "mode": "2.4G"
+    },
+    "3837:403A": {
+      "name": "A7 V3-X",
+      "deviceType": "mouse",
+      "mode": "2.4G"
+    },
+    "3837:403B": {
+      "name": "K7 V2 Pro+",
+      "deviceType": "mouse",
+      "mode": "2.4G"
+    },
+    "3837:403C": {
+      "name": "K7 V2 Ultra+",
+      "deviceType": "mouse",
+      "mode": "2.4G"
+    },
+    "3837:403D": {
+      "name": "A7 V3 Ultra+",
+      "deviceType": "mouse",
+      "mode": "2.4G"
+    },
+    "3837:403E": {
+      "name": "V7 Pro",
+      "deviceType": "mouse",
+      "mode": "2.4G"
+    },
+    "3837:403F": {
+      "name": "A7 V3 Magnetic",
+      "deviceType": "mouse",
+      "mode": "2.4G"
+    },
+    "3837:4040": {
+      "name": "K5 V2",
+      "deviceType": "mouse",
+      "mode": "2.4G"
+    },
+    "3837:4041": {
+      "name": "G3",
+      "deviceType": "mouse",
+      "mode": "2.4G"
+    },
+    "3837:4110": {
+      "name": "A7 Ultra(RE)",
+      "deviceType": "mouse",
+      "mode": "2.4G"
+    },
+    "3837:4150": {
+      "name": "K7 Ultra",
+      "deviceType": "mouse",
+      "mode": "2.4G"
+    },
+    "3837:4762": {
+      "name": "A5 ultra",
+      "deviceType": "mouse",
+      "mode": "2.4G",
+      "ambiguous": true,
+      "conflicts": [
+        "G3 Mouse",
+        "G3 Mouse 4K",
+        "G3 Mouse 8K",
+        "G3 Ultra 4K",
+        "G3 Ultra 8K"
+      ]
+    },
+    "3837:6001": {
+      "name": "K9 ULTRA HEADSET",
+      "deviceType": "headset",
+      "mode": "USB"
+    },
+    "3837:6002": {
+      "name": "K9 UITRA",
+      "deviceType": "keyboard",
+      "mode": "USB",
+      "ambiguous": true,
+      "conflicts": [
+        "K9 ULTRA"
+      ]
+    },
+    "3837:6003": {
+      "name": "K20 PRO",
+      "deviceType": "speaker",
+      "mode": "USB"
+    },
+    "3837:6008": {
+      "name": "V9 TURBO",
+      "deviceType": "headset",
+      "mode": "USB"
+    },
+    "3837:6009": {
+      "name": "V9 TURBO HEADSET",
+      "deviceType": "headset",
+      "mode": "USB"
+    },
+    "3837:600A": {
+      "name": "V9 TURBO",
+      "deviceType": "headset",
+      "mode": "USB"
+    },
+    "3837:600D": {
+      "name": "V9 TURBO",
+      "deviceType": "headset",
+      "mode": "USB"
+    },
+    "3837:6011": {
+      "name": "V9 PRO 2",
+      "deviceType": "headset",
+      "mode": "USB",
+      "ambiguous": true,
+      "conflicts": [
+        "G9 V2-II"
+      ]
+    },
+    "3837:6013": {
+      "name": "R9",
+      "deviceType": "headset",
+      "mode": "USB"
+    },
+    "3837:6045": {
+      "name": "X9",
+      "deviceType": "headset",
+      "mode": "USB"
+    },
+    "3837:6047": {
+      "name": "K9",
+      "deviceType": "keyboard",
+      "mode": "USB"
+    },
+    "3837:6089": {
+      "name": "G9 V2",
+      "deviceType": "mouse",
+      "mode": "USB"
+    },
+    "3837:60C4": {
+      "name": "K20",
+      "deviceType": "speaker",
+      "mode": "USB"
+    },
+    "3837:60C6": {
+      "name": "K20 GT",
+      "deviceType": "speaker",
+      "mode": "USB"
+    },
+    "3837:8080": {
+      "name": "G9 WIRED HEADSET",
+      "deviceType": "headset",
+      "mode": "USB"
+    },
+    "41E4:2101": {
+      "name": "Ace 60",
+      "deviceType": "keyboard",
+      "mode": "USB"
+    },
+    "41E4:2102": {
+      "name": "Ace 60",
+      "deviceType": "keyboard",
+      "mode": "USB"
+    },
+    "41E4:2103": {
+      "name": "Ace 60 Pro",
+      "deviceType": "keyboard",
+      "mode": "USB"
+    },
+    "41E4:2104": {
+      "name": "Ace 60 Pro",
+      "deviceType": "keyboard",
+      "mode": "USB"
+    },
+    "41E4:2112": {
+      "name": "Ace 60X",
+      "deviceType": "keyboard",
+      "mode": "USB"
+    },
+    "41E4:2113": {
+      "name": "Ace 60X",
+      "deviceType": "keyboard",
+      "mode": "USB"
+    },
+    "41E4:2114": {
+      "name": "Ace 68",
+      "deviceType": "keyboard",
+      "mode": "USB"
+    },
+    "41E4:2115": {
+      "name": "Ace 68",
+      "deviceType": "keyboard",
+      "mode": "USB"
+    },
+    "41E4:2116": {
+      "name": "Ace 68",
+      "deviceType": "keyboard",
+      "mode": "USB"
+    },
+    "41E4:2117": {
+      "name": "Ace 68",
+      "deviceType": "keyboard",
+      "mode": "USB"
+    },
+    "41E4:2118": {
+      "name": "Jet 75",
+      "deviceType": "keyboard",
+      "mode": "USB"
+    },
+    "41E4:2119": {
+      "name": "Jet 75",
+      "deviceType": "keyboard",
+      "mode": "USB"
+    },
+    "41E4:211A": {
+      "name": "Jet 75",
+      "deviceType": "keyboard",
+      "mode": "USB"
+    },
+    "41E4:211B": {
+      "name": "Jet 75",
+      "deviceType": "keyboard",
+      "mode": "USB"
+    },
+    "41E4:211C": {
+      "name": "ZERO 75X",
+      "deviceType": "keyboard",
+      "mode": "USB"
+    },
+    "41E4:211D": {
+      "name": "ZERO 75X",
+      "deviceType": "keyboard",
+      "mode": "USB"
+    },
+    "41E4:2120": {
+      "name": "Ace 68 Air",
+      "deviceType": "keyboard",
+      "mode": "USB"
+    },
+    "41E4:2121": {
+      "name": "Ace 68 Air",
+      "deviceType": "keyboard",
+      "mode": "USB"
+    },
+    "41E4:2122": {
+      "name": "Mix 87",
+      "deviceType": "keyboard",
+      "mode": "USB"
+    },
+    "41E4:2123": {
+      "name": "Mix 87",
+      "deviceType": "keyboard",
+      "mode": "USB"
+    },
+    "41E4:2126": {
+      "name": "Ace 60X",
+      "deviceType": "keyboard",
+      "mode": "USB"
+    },
+    "41E4:2127": {
+      "name": "Ace 60X",
+      "deviceType": "keyboard",
+      "mode": "USB"
+    },
+    "41E4:2132": {
+      "name": "Ace 68 Air",
+      "deviceType": "keyboard",
+      "mode": "USB"
+    },
+    "41E4:2133": {
+      "name": "Ace 68 Air",
+      "deviceType": "keyboard",
+      "mode": "USB"
+    },
+    "41E4:3201": {
+      "name": "V9",
+      "deviceType": "headset",
+      "mode": "USB"
+    },
+    "41E4:3202": {
+      "name": "V9 PRO",
+      "deviceType": "headset",
+      "mode": "USB"
+    },
+    "41E4:3402": {
+      "name": "S9 PRO",
+      "deviceType": "headset",
+      "mode": "USB"
+    },
+    "41E4:3502": {
+      "name": "G9 PRO",
+      "deviceType": "headset",
+      "mode": "USB"
+    },
+    "5253:1020": {
+      "name": "A7 V2 Pro+",
+      "deviceType": "mouse",
+      "mode": "2.4G",
+      "ambiguous": true,
+      "conflicts": [
+        "A7 V2 Ultra+",
+        "K7 Ultra"
+      ]
+    },
+    "5253:1021": {
+      "name": "K7 Ultra",
+      "deviceType": "mouse",
+      "mode": "2.4G"
+    }
+  }
+}

@@ -1,0 +1,107 @@
+
+{
+  "config_version": "1.0.0",
+  "source": {
+    "file": "config.xml",
+    "software": "AJAZZ Driver（W1）",
+    "software_version": "1.0.7.6"
+  },
+  "devices": {
+    "7768:6D25": {
+      "name": "AJ159 NL P",
+      "vendorDeviceId": 101,
+      "deviceType": "mouse",
+      "mode": "USB"
+    },
+    "7768:6425": {
+      "name": "AJ159 NL P",
+      "vendorDeviceId": 101,
+      "deviceType": "mouse",
+      "mode": "2.4G"
+    },
+    "7768:6D26": {
+      "name": "AJ159 NL",
+      "vendorDeviceId": 102,
+      "deviceType": "mouse",
+      "mode": "USB"
+    },
+    "7768:6426": {
+      "name": "AJ159 NL",
+      "vendorDeviceId": 102,
+      "deviceType": "mouse",
+      "mode": "2.4G"
+    },
+    "7768:6D2E": {
+      "name": "AJ179 NL P",
+      "vendorDeviceId": 103,
+      "deviceType": "mouse",
+      "mode": "USB"
+    },
+    "7768:642E": {
+      "name": "AJ179 NL P",
+      "vendorDeviceId": 103,
+      "deviceType": "mouse",
+      "mode": "2.4G"
+    },
+    "7768:6D2D": {
+      "name": "AJ179 NL",
+      "vendorDeviceId": 104,
+      "deviceType": "mouse",
+      "mode": "USB"
+    },
+    "7768:642D": {
+      "name": "AJ179 NL",
+      "vendorDeviceId": 104,
+      "deviceType": "mouse",
+      "mode": "2.4G"
+    },
+    "7768:6D32": {
+      "name": "AJ179 V2 NL P",
+      "vendorDeviceId": 105,
+      "deviceType": "mouse",
+      "mode": "USB"
+    },
+    "7768:6432": {
+      "name": "AJ179 V2 NL P",
+      "vendorDeviceId": 105,
+      "deviceType": "mouse",
+      "mode": "2.4G"
+    },
+    "7768:6D31": {
+      "name": "AJ179 V2 NL",
+      "vendorDeviceId": 106,
+      "deviceType": "mouse",
+      "mode": "USB"
+    },
+    "7768:6431": {
+      "name": "AJ179 V2 NL",
+      "vendorDeviceId": 106,
+      "deviceType": "mouse",
+      "mode": "2.4G"
+    },
+    "7768:6D30": {
+      "name": "AJ139 V2 NL P",
+      "vendorDeviceId": 107,
+      "deviceType": "mouse",
+      "mode": "USB"
+    },
+    "7768:6430": {
+      "name": "AJ139 V2 NL P",
+      "vendorDeviceId": 107,
+      "deviceType": "mouse",
+      "mode": "2.4G"
+    },
+    "7768:6D2F": {
+      "name": "AJ139 V2 NL",
+      "vendorDeviceId": 108,
+      "deviceType": "mouse",
+      "mode": "USB"
+    },
+    "7768:642F": {
+      "name": "AJ139 V2 NL",
+      "vendorDeviceId": 108,
+      "deviceType": "mouse",
+      "mode": "2.4G"
+    }
+  }
+}

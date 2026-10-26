@@ -1,0 +1,1651 @@
+{
+  "config_version": "1.0.0",
+  "source": {
+    "file": "",
+    "url": "https://dr.dareu.com/",
+    "web_version": "1.3.26"
+  },
+  "devices": {
+    "260D:0030": {
+      "name": "Z82",
+      "deviceType": "keyboard",
+      "mode": "2.4G",
+      "internalModel": "TK51A",
+      "modes": [
+        "USB",
+        "2.4G"
+      ],
+      "fwType": 0,
+      "hasBattery": true,
+      "note": "TK51A - Z82 - Dongle: 0x1092"
+    },
+    "260D:0043": {
+      "name": "A104",
+      "deviceType": "keyboard",
+      "mode": "USB",
+      "internalModel": "TK51QU",
+      "fwType": 0,
+      "hasBattery": true,
+      "note": "TK51QU"
+    },
+    "260D:0045": {
+      "name": "EK75",
+      "deviceType": "keyboard",
+      "mode": "2.4G",
+      "internalModel": "TK51G",
+      "modes": [
+        "USB",
+        "2.4G"
+      ],
+      "fwType": 0,
+      "hasBattery": true,
+      "note": "TK51G - EK75 - Dongle: 0x0042"
+    },
+    "260D:0051": {
+      "name": "A98",
+      "deviceType": "keyboard",
+      "mode": "2.4G",
+      "internalModel": "TK51V",
+      "modes": [
+        "USB",
+        "2.4G"
+      ],
+      "fwType": 0,
+      "hasBattery": true,
+      "note": "TK51V - A98 - Dongle: 0x0037"
+    },
+    "260D:0056": {
+      "name": "A87 PRO",
+      "deviceType": "keyboard",
+      "mode": "USB",
+      "internalModel": "TK51CU",
+      "fwType": 0,
+      "hasBattery": true,
+      "note": "tk51cu"
+    },
+    "260D:0060": {
+      "name": "EK87 PRO",
+      "deviceType": "keyboard",
+      "mode": "2.4G",
+      "internalModel": "TK51CF",
+      "modes": [
+        "USB",
+        "2.4G"
+      ],
+      "fwType": 0,
+      "hasBattery": true,
+      "note": "TK51CF - EK87 PRO - Dongle: 0x0037"
+    },
+    "260D:0067": {
+      "name": "CK98 PRO RT",
+      "deviceType": "keyboard",
+      "mode": "USB",
+      "internalModel": "TK51WU",
+      "fwType": 4,
+      "hasBattery": false,
+      "note": "TK51WU"
+    },
+    "260D:0070": {
+      "name": "Z82 PRO",
+      "deviceType": "keyboard",
+      "mode": "2.4G",
+      "internalModel": "TK51ARGB",
+      "modes": [
+        "USB",
+        "2.4G"
+      ],
+      "fwType": 0,
+      "hasBattery": true,
+      "note": "TK51ARGB - Z82 Pro - Dongle: 0x0037"
+    },
+    "260D:0074": {
+      "name": "EK106 PRO",
+      "deviceType": "keyboard",
+      "mode": "USB",
+      "internalModel": "TK51QF",
+      "fwType": 0,
+      "hasBattery": false
+    },
+    "260D:0075": {
+      "name": "EK106 RT 8K",
+      "deviceType": "keyboard",
+      "mode": "USB",
+      "internalModel": "TK51QRT8K",
+      "fwType": 4,
+      "hasBattery": false,
+      "note": "TK51QRT - EK106 RT 8K(外贸)"
+    },
+    "260D:0078": {
+      "name": "A75 PRO",
+      "deviceType": "keyboard",
+      "mode": "2.4G",
+      "internalModel": "TK52L",
+      "modes": [
+        "USB",
+        "2.4G",
+        "BLE"
+      ],
+      "fwType": 4,
+      "hasBattery": true,
+      "note": "TK52L三模 - 自研2.4G + 合盈"
+    },
+    "260D:0081": {
+      "name": "EK87 RT 8K",
+      "deviceType": "keyboard",
+      "mode": "USB",
+      "internalModel": "TK51CU",
+      "fwType": 4,
+      "hasBattery": false,
+      "note": "TK51CU"
+    },
+    "260D:0082": {
+      "name": "TK52L",
+      "deviceType": "keyboard",
+      "mode": "USB",
+      "note": "TK52L"
+    },
+    "260D:0083": {
+      "name": "A75 HE",
+      "deviceType": "keyboard",
+      "mode": "USB",
+      "internalModel": "TK52L",
+      "fwType": 4,
+      "hasBattery": false,
+      "note": "TK52L - A75 HE"
+    },
+    "260D:0090": {
+      "name": "EK106 PRO 8K",
+      "deviceType": "keyboard",
+      "mode": "USB",
+      "internalModel": "TK51QU",
+      "fwType": 0,
+      "hasBattery": false,
+      "note": "TK51QU 自研机械 8K"
+    },
+    "260D:0091": {
+      "name": "EK87 PRO 8K",
+      "deviceType": "keyboard",
+      "mode": "USB",
+      "internalModel": "TK51CU",
+      "fwType": 0,
+      "hasBattery": false,
+      "note": "TK51CU 自研机械 8K"
+    },
+    "260D:0092": {
+      "name": "EK815 PRO",
+      "deviceType": "keyboard",
+      "mode": "USB",
+      "internalModel": "TK52K",
+      "fwType": 6,
+      "hasBattery": false,
+      "note": "TK52K - EK815 PRO - 有线磁轴"
+    },
+    "260D:0101": {
+      "name": "EK75",
+      "deviceType": "keyboard",
+      "mode": "USB",
+      "internalModel": "TK51G",
+      "fwType": 0,
+      "hasBattery": true
+    },
+    "260D:0103": {
+      "name": "CK87 MAX",
+      "deviceType": "keyboard",
+      "mode": "USB",
+      "internalModel": "TK52U",
+      "fwType": 6,
+      "hasBattery": false,
+      "note": "TK52U - CK87 MAX - 有线磁轴(网吧)"
+    },
+    "260D:0105": {
+      "name": "EK87RT WP",
+      "deviceType": "keyboard",
+      "mode": "USB",
+      "internalModel": "TK51CU",
+      "fwType": 6,
+      "hasBattery": false,
+      "note": "TK51CU自研磁轴"
+    },
+    "260D:0106": {
+      "name": "EK108 RT",
+      "deviceType": "keyboard",
+      "mode": "USB",
+      "internalModel": "TK51Q",
+      "fwType": 6,
+      "hasBattery": false,
+      "note": "TK51Q 自研"
+    },
+    "260D:0107": {
+      "name": "EK75",
+      "deviceType": "keyboard",
+      "mode": "USB",
+      "internalModel": "TK51G",
+      "fwType": 6,
+      "hasBattery": false,
+      "note": "TK51G集成轴 - EK75"
+    },
+    "260D:0113": {
+      "name": "VICTOR HE",
+      "deviceType": "keyboard",
+      "mode": "USB",
+      "internalModel": "TK51G",
+      "fwType": 6,
+      "hasBattery": false,
+      "note": "TK51G岚枫轴 - VICTOR HE"
+    },
+    "260D:0115": {
+      "name": "EK75",
+      "deviceType": "keyboard",
+      "mode": "USB",
+      "internalModel": "TK51G",
+      "fwType": 6,
+      "hasBattery": false,
+      "note": "TK51G集成轴(有声) - EK75"
+    },
+    "260D:0117": {
+      "name": "COOL 60 / EK60 HE",
+      "deviceType": "keyboard",
+      "mode": "USB",
+      "internalModel": "TK599",
+      "fwType": 6,
+      "hasBattery": false,
+      "note": "TK599 - COOL 60 - 雷创轴"
+    },
+    "260D:0119": {
+      "name": "COOL 60 / EK60 HE",
+      "deviceType": "keyboard",
+      "mode": "USB",
+      "internalModel": "TK599",
+      "fwType": 6,
+      "hasBattery": false,
+      "note": "TK599 - COOL 60 - 有线磁轴"
+    },
+    "260D:0123": {
+      "name": "COOL 60 / EK60 HE",
+      "deviceType": "keyboard",
+      "mode": "USB",
+      "internalModel": "TK599",
+      "fwType": 6,
+      "hasBattery": false,
+      "note": "TK599 - COOL 60 V2 - 有线磁轴"
+    },
+    "260D:0124": {
+      "name": "CK75 PRO",
+      "deviceType": "keyboard",
+      "mode": "USB",
+      "internalModel": "TK51G",
+      "fwType": 6,
+      "hasBattery": false,
+      "note": "TK51G天空轴网吧版 - CK75 PRO(网吧)"
+    },
+    "260D:0126": {
+      "name": "影刃",
+      "deviceType": "keyboard",
+      "mode": "USB",
+      "internalModel": "TK52W",
+      "fwType": 6,
+      "hasBattery": false,
+      "note": "TK52W - 影刃"
+    },
+    "260D:0127": {
+      "name": "COOL 60 / EK60 HE",
+      "deviceType": "keyboard",
+      "mode": "USB",
+      "internalModel": "TK599",
+      "fwType": 6,
+      "hasBattery": false,
+      "note": "TK599 - COOL 60 - 环诺E款磁轴"
+    },
+    "260D:0129": {
+      "name": "CK75",
+      "deviceType": "keyboard",
+      "mode": "USB",
+      "internalModel": "TK51D",
+      "fwType": 6,
+      "hasBattery": false,
+      "note": "TK51D  - CK75"
+    },
+    "260D:0131": {
+      "name": "EK75",
+      "deviceType": "keyboard",
+      "mode": "USB",
+      "internalModel": "TK51G",
+      "fwType": 6,
+      "hasBattery": false,
+      "note": "TK51G大师轴 - EK75"
+    },
+    "260D:0132": {
+      "name": "EK75",
+      "deviceType": "keyboard",
+      "mode": "USB",
+      "internalModel": "TK51G",
+      "fwType": 6,
+      "hasBattery": false,
+      "note": "TK51G天空轴非网吧版 - EK75"
+    },
+    "260D:0136": {
+      "name": "A98 RT",
+      "deviceType": "keyboard",
+      "mode": "USB",
+      "internalModel": "TK51V",
+      "fwType": 6,
+      "hasBattery": true,
+      "note": "TK51V磁轴 - A98 - 双芯片"
+    },
+    "260D:0137": {
+      "name": "A104 Master  8K",
+      "deviceType": "keyboard",
+      "mode": "2.4G",
+      "internalModel": "TK51Q",
+      "modes": [
+        "USB",
+        "2.4G"
+      ],
+      "fwType": 2,
+      "hasBattery": false,
+      "note": "TK51Q 匠盟"
+    },
+    "260D:0138": {
+      "name": "A87 Master 8K",
+      "deviceType": "keyboard",
+      "mode": "USB",
+      "internalModel": "TK51CU",
+      "fwType": 2,
+      "hasBattery": false,
+      "note": "匠盟键盘"
+    },
+    "260D:0139": {
+      "name": "CK100",
+      "deviceType": "keyboard",
+      "mode": "USB",
+      "internalModel": "TK51N",
+      "fwType": 6,
+      "hasBattery": false,
+      "note": "TK51N - CK100 - 有线磁轴"
+    },
+    "260D:0140": {
+      "name": "CK98 MAX",
+      "deviceType": "keyboard",
+      "mode": "USB",
+      "internalModel": "TK50TRT",
+      "fwType": 6,
+      "hasBattery": false,
+      "note": "TK50TRT - CK98 MAX - 有线磁轴(网吧)"
+    },
+    "260D:0145": {
+      "name": "A75 HE",
+      "deviceType": "keyboard",
+      "mode": "USB",
+      "internalModel": "TK52L",
+      "fwType": 4,
+      "hasBattery": false,
+      "note": "TK52L - A75 HE(外贸)"
+    },
+    "260D:0150": {
+      "name": "EK81 MAX",
+      "deviceType": "keyboard",
+      "mode": "USB",
+      "internalModel": "TK51D",
+      "fwType": 0,
+      "hasBattery": false,
+      "note": "TK51D"
+    },
+    "260D:0152": {
+      "name": "CK75 PRO",
+      "deviceType": "keyboard",
+      "mode": "USB",
+      "internalModel": "TK51G",
+      "fwType": 6,
+      "hasBattery": false,
+      "note": "TK51G宙斯轴网吧版 - CK75 PRO(网吧)"
+    },
+    "260D:0159": {
+      "name": "EK87 RT 8K",
+      "deviceType": "keyboard",
+      "mode": "USB",
+      "internalModel": "TK51C",
+      "fwType": 4,
+      "hasBattery": false,
+      "note": "TK51C 静音磁轴"
+    },
+    "260D:0160": {
+      "name": "EK106 RT 8K",
+      "deviceType": "keyboard",
+      "mode": "USB",
+      "internalModel": "TK51Q",
+      "fwType": 4,
+      "hasBattery": false,
+      "note": "EK106 RT 8K"
+    },
+    "260D:0161": {
+      "name": "COOL 98",
+      "deviceType": "keyboard",
+      "mode": "USB",
+      "internalModel": "TK52Q",
+      "fwType": 0,
+      "hasBattery": true,
+      "note": "TK52Q自研磁轴  CK98 Ultra"
+    },
+    "260D:0162": {
+      "name": "CK75 08G",
+      "deviceType": "keyboard",
+      "mode": "USB",
+      "internalModel": "TK51D",
+      "fwType": 4,
+      "hasBattery": false,
+      "note": "TK51D CK75 08G 合盈"
+    },
+    "260D:0163": {
+      "name": "DK108 PRO",
+      "deviceType": "keyboard",
+      "mode": "USB",
+      "internalModel": "TK51Q",
+      "fwType": 0,
+      "hasBattery": false,
+      "note": "TK51Q"
+    },
+    "260D:0164": {
+      "name": "CK100",
+      "deviceType": "keyboard",
+      "mode": "USB",
+      "internalModel": "TK51N",
+      "fwType": 6,
+      "hasBattery": false,
+      "note": "5K51N"
+    },
+    "260D:0165": {
+      "name": "CK98 MAX",
+      "deviceType": "keyboard",
+      "mode": "USB",
+      "internalModel": "TK50TRT",
+      "fwType": 6,
+      "hasBattery": false
+    },
+    "260D:0166": {
+      "name": "CK98 Ultra",
+      "deviceType": "keyboard",
+      "mode": "USB",
+      "internalModel": "TK52Q",
+      "fwType": 6,
+      "hasBattery": false,
+      "note": "TK52Q"
+    },
+    "260D:0167": {
+      "name": "DK87 PRO",
+      "deviceType": "keyboard",
+      "mode": "USB",
+      "internalModel": "TK529",
+      "fwType": 0,
+      "hasBattery": false,
+      "note": "TK529 自研磁轴"
+    },
+    "260D:0169": {
+      "name": "CK87 MAX",
+      "deviceType": "keyboard",
+      "mode": "USB",
+      "internalModel": "TK52U",
+      "fwType": 6,
+      "hasBattery": false,
+      "note": "TK52U"
+    },
+    "260D:0170": {
+      "name": "EK815 MAX",
+      "deviceType": "keyboard",
+      "mode": "USB",
+      "internalModel": "TK52K",
+      "fwType": 0,
+      "hasBattery": false,
+      "note": "TK52K"
+    },
+    "260D:0174": {
+      "name": "CK75 PRO",
+      "deviceType": "keyboard",
+      "mode": "USB",
+      "internalModel": "TK51G",
+      "fwType": 6,
+      "hasBattery": false,
+      "note": "自研磁轴"
+    },
+    "260D:0175": {
+      "name": "A68",
+      "deviceType": "keyboard",
+      "mode": "USB",
+      "internalModel": "TK53H",
+      "fwType": 6,
+      "hasBattery": false,
+      "note": "自研磁轴"
+    },
+    "260D:0178": {
+      "name": "FK98",
+      "deviceType": "keyboard",
+      "mode": "USB",
+      "internalModel": "TK51V",
+      "fwType": 0,
+      "hasBattery": true,
+      "note": "TK51V Dongle 是"
+    },
+    "260D:0179": {
+      "name": "EK108 RT",
+      "deviceType": "keyboard",
+      "mode": "USB",
+      "internalModel": "TK51Q",
+      "fwType": 6,
+      "hasBattery": false
+    },
+    "260D:0180": {
+      "name": "EK87RT WP",
+      "deviceType": "keyboard",
+      "mode": "USB",
+      "internalModel": "TK51C",
+      "fwType": 6,
+      "hasBattery": false
+    },
+    "260D:0187": {
+      "name": "CK75 PRO",
+      "deviceType": "keyboard",
+      "mode": "USB",
+      "internalModel": "TK51G",
+      "fwType": 6,
+      "hasBattery": false
+    },
+    "260D:0188": {
+      "name": "猎光75",
+      "deviceType": "keyboard",
+      "mode": "USB",
+      "internalModel": "TK51G",
+      "fwType": 6,
+      "hasBattery": false
+    },
+    "260D:0191": {
+      "name": "COOL 98",
+      "deviceType": "keyboard",
+      "mode": "USB",
+      "internalModel": "TK52Q",
+      "fwType": 6,
+      "hasBattery": false,
+      "note": "52Q"
+    },
+    "260D:0192": {
+      "name": "CK75 PRO",
+      "deviceType": "keyboard",
+      "mode": "USB",
+      "internalModel": "TK51G",
+      "fwType": 6,
+      "hasBattery": false,
+      "note": "51G"
+    },
+    "260D:0193": {
+      "name": "CK75",
+      "deviceType": "keyboard",
+      "mode": "USB",
+      "internalModel": "TK51D",
+      "fwType": 6,
+      "hasBattery": false
+    },
+    "260D:0194": {
+      "name": "CK98 Ultra",
+      "deviceType": "keyboard",
+      "mode": "USB",
+      "internalModel": "TK52Q",
+      "fwType": 6,
+      "hasBattery": false,
+      "note": "52Q"
+    },
+    "260D:0195": {
+      "name": "CK98 Ultra",
+      "deviceType": "keyboard",
+      "mode": "USB",
+      "internalModel": "TK52Q",
+      "fwType": 6,
+      "hasBattery": false
+    },
+    "260D:0196": {
+      "name": "CK98 Ultra",
+      "deviceType": "keyboard",
+      "mode": "USB",
+      "internalModel": "TK52Q",
+      "fwType": 6,
+      "hasBattery": false
+    },
+    "260D:0198": {
+      "name": "COOL 60 / EK60 HE",
+      "deviceType": "keyboard",
+      "mode": "USB",
+      "internalModel": "TK599",
+      "fwType": 6,
+      "hasBattery": false
+    },
+    "260D:0199": {
+      "name": "COOL 60 / EK60 HE",
+      "deviceType": "keyboard",
+      "mode": "USB",
+      "internalModel": "TK599",
+      "fwType": 6,
+      "hasBattery": false
+    },
+    "260D:0201": {
+      "name": "CK75",
+      "deviceType": "keyboard",
+      "mode": "USB",
+      "internalModel": "TK51D",
+      "fwType": 6,
+      "hasBattery": false,
+      "note": "TK51D"
+    },
+    "260D:0202": {
+      "name": "FLEX 75",
+      "deviceType": "keyboard",
+      "mode": "USB",
+      "internalModel": "TK53N",
+      "fwType": 0,
+      "hasBattery": false,
+      "note": "TK53N"
+    },
+    "260D:0205": {
+      "name": "CK100",
+      "deviceType": "keyboard",
+      "mode": "USB",
+      "internalModel": "TK51N",
+      "fwType": 6,
+      "hasBattery": false,
+      "note": "TK51N"
+    },
+    "260D:0206": {
+      "name": "A104PRO8K V2",
+      "deviceType": "keyboard",
+      "mode": "USB",
+      "internalModel": "TK51QU",
+      "fwType": 0,
+      "hasBattery": true,
+      "note": "TK51QU A104 PRO+"
+    },
+    "260D:0208": {
+      "name": "CK98 MAX",
+      "deviceType": "keyboard",
+      "mode": "USB",
+      "internalModel": "TK50TRT",
+      "fwType": 6,
+      "hasBattery": false,
+      "note": "TK50T"
+    },
+    "260D:0209": {
+      "name": "CK98 Ultra",
+      "deviceType": "keyboard",
+      "mode": "USB",
+      "internalModel": "TK52Q",
+      "fwType": 6,
+      "hasBattery": false,
+      "note": "TK52Q"
+    },
+    "260D:0210": {
+      "name": "FLEX 87",
+      "deviceType": "keyboard",
+      "mode": "USB",
+      "internalModel": "TK53P",
+      "fwType": 1,
+      "hasBattery": true,
+      "note": "TK53P"
+    },
+    "260D:0214": {
+      "name": "COOL 60 / EK60 HE",
+      "deviceType": "keyboard",
+      "mode": "USB",
+      "internalModel": "TK599",
+      "fwType": 6,
+      "hasBattery": false,
+      "note": "TK599"
+    },
+    "260D:0215": {
+      "name": "TK52L",
+      "deviceType": "keyboard",
+      "mode": "USB",
+      "note": "TK52L"
+    },
+    "260D:0216": {
+      "name": "CK98 Ultra",
+      "deviceType": "keyboard",
+      "mode": "USB",
+      "internalModel": "TK52Q",
+      "fwType": 6,
+      "hasBattery": false,
+      "note": "TK52Q"
+    },
+    "260D:0223": {
+      "name": "CK75",
+      "deviceType": "keyboard",
+      "mode": "USB",
+      "internalModel": "TK51D",
+      "fwType": 6,
+      "hasBattery": false,
+      "note": "TK51D"
+    },
+    "260D:0224": {
+      "name": "CK100",
+      "deviceType": "keyboard",
+      "mode": "USB",
+      "internalModel": "TK51N",
+      "fwType": 6,
+      "hasBattery": false
+    },
+    "260D:0229": {
+      "name": "COOL 60 / EK60 HE",
+      "deviceType": "keyboard",
+      "mode": "USB",
+      "internalModel": "TK599",
+      "fwType": 6,
+      "hasBattery": false
+    },
+    "260D:0230": {
+      "name": "CK75",
+      "deviceType": "keyboard",
+      "mode": "USB",
+      "internalModel": "TK51D",
+      "fwType": 6,
+      "hasBattery": false
+    },
+    "260D:0232": {
+      "name": "CK75",
+      "deviceType": "keyboard",
+      "mode": "USB",
+      "internalModel": "TK51D",
+      "fwType": 6,
+      "hasBattery": false
+    },
+    "260D:0233": {
+      "name": "Flex 98",
+      "deviceType": "keyboard",
+      "mode": "USB",
+      "internalModel": "TK53M",
+      "fwType": 1,
+      "hasBattery": false,
+      "note": "tk53m flex98"
+    },
+    "260D:0234": {
+      "name": "FLEX 75",
+      "deviceType": "keyboard",
+      "mode": "USB",
+      "internalModel": "TK53N",
+      "fwType": 6,
+      "hasBattery": false,
+      "note": "tk53n"
+    },
+    "260D:0236": {
+      "name": "影刃75",
+      "deviceType": "keyboard",
+      "mode": "USB",
+      "internalModel": "TK53Q",
+      "fwType": 6,
+      "hasBattery": false,
+      "note": "TK53Q"
+    },
+    "260D:0237": {
+      "name": "EK87RT WP",
+      "deviceType": "keyboard",
+      "mode": "USB",
+      "internalModel": "TK51C",
+      "fwType": 6,
+      "hasBattery": false
+    },
+    "260D:0238": {
+      "name": "EK108 RT",
+      "deviceType": "keyboard",
+      "mode": "USB",
+      "internalModel": "TK51Q",
+      "fwType": 6,
+      "hasBattery": false,
+      "note": "TK51Q"
+    },
+    "260D:0239": {
+      "name": "猎光75",
+      "deviceType": "keyboard",
+      "mode": "USB",
+      "internalModel": "TK51G",
+      "fwType": 6,
+      "hasBattery": false,
+      "note": "TK51G"
+    },
+    "260D:0241": {
+      "name": "CK87 MAX",
+      "deviceType": "keyboard",
+      "mode": "USB",
+      "internalModel": "TK52U",
+      "fwType": 6,
+      "hasBattery": false,
+      "note": "TK52U"
+    },
+    "260D:0244": {
+      "name": "冰刃75",
+      "deviceType": "keyboard",
+      "mode": "USB",
+      "internalModel": "TK53V",
+      "fwType": 6,
+      "hasBattery": false,
+      "note": "TK53V"
+    },
+    "260D:0246": {
+      "name": "锋刃 75",
+      "deviceType": "keyboard",
+      "mode": "USB",
+      "internalModel": "TK50G",
+      "fwType": 6,
+      "hasBattery": false,
+      "note": "TK50G"
+    },
+    "260D:0249": {
+      "name": "CK75",
+      "deviceType": "keyboard",
+      "mode": "USB",
+      "internalModel": "TK51D",
+      "fwType": 6,
+      "hasBattery": false,
+      "note": "TK51D"
+    },
+    "260D:0252": {
+      "name": "CK108 HE",
+      "deviceType": "keyboard",
+      "mode": "USB",
+      "internalModel": "TK51Q",
+      "fwType": 6,
+      "hasBattery": false,
+      "note": "TK51Q"
+    },
+    "260D:0253": {
+      "name": "CK87 MAX",
+      "deviceType": "keyboard",
+      "mode": "USB",
+      "internalModel": "TK52U",
+      "fwType": 6,
+      "hasBattery": false
+    },
+    "260D:1045": {
+      "name": "A980",
+      "deviceType": "mouse",
+      "mode": "USB",
+      "internalModel": "TM238",
+      "fwType": 0,
+      "hasBattery": false,
+      "note": "TM238 - A980 - 有线"
+    },
+    "260D:1082": {
+      "name": "CM610 PRO",
+      "deviceType": "mouse",
+      "mode": "USB",
+      "internalModel": "TM243",
+      "fwType": 0,
+      "hasBattery": true,
+      "note": "TM243"
+    },
+    "260D:1084": {
+      "name": "A950",
+      "deviceType": "mouse",
+      "mode": "2.4G",
+      "internalModel": "TM243F",
+      "modes": [
+        "USB",
+        "2.4G"
+      ],
+      "fwType": 2,
+      "hasBattery": true,
+      "note": "TM243F08001G/02G/03G AIM-WL + CX52850"
+    },
+    "260D:1107": {
+      "name": "EM903",
+      "deviceType": "mouse",
+      "mode": "2.4G",
+      "internalModel": "TM230G",
+      "modes": [
+        "USB",
+        "2.4G"
+      ],
+      "fwType": 2,
+      "hasBattery": true,
+      "note": "TM230G"
+    },
+    "260D:1112": {
+      "name": "A950 PRO",
+      "deviceType": "mouse",
+      "mode": "2.4G",
+      "internalModel": "TM265",
+      "modes": [
+        "USB",
+        "2.4G"
+      ],
+      "fwType": 2,
+      "hasBattery": true,
+      "note": "TM265"
+    },
+    "260D:1117": {
+      "name": "A950 PRO Mg",
+      "deviceType": "mouse",
+      "mode": "2.4G",
+      "internalModel": "TM271F",
+      "modes": [
+        "USB",
+        "2.4G"
+      ],
+      "fwType": 2,
+      "hasBattery": true,
+      "note": "TM271"
+    },
+    "260D:1118": {
+      "name": "A950G",
+      "deviceType": "mouse",
+      "mode": "2.4G",
+      "internalModel": "TM265KR",
+      "modes": [
+        "USB",
+        "2.4G"
+      ],
+      "fwType": 2,
+      "hasBattery": true,
+      "note": "TM265KR"
+    },
+    "260D:1129": {
+      "name": "A980 PRO MAX",
+      "deviceType": "mouse",
+      "mode": "USB",
+      "internalModel": "TM270LCD",
+      "fwType": 1,
+      "hasBattery": true,
+      "note": "TM270LCD - A980 PRO MAX"
+    },
+    "260D:1130": {
+      "name": "A980 PRO",
+      "deviceType": "mouse",
+      "mode": "USB",
+      "internalModel": "TM270",
+      "fwType": 1,
+      "hasBattery": true,
+      "note": "TM270 - A980 PRO"
+    },
+    "260D:1134": {
+      "name": "CM610 PRO",
+      "deviceType": "mouse",
+      "mode": "2.4G",
+      "internalModel": "TM243F",
+      "modes": [
+        "USB",
+        "2.4G"
+      ],
+      "fwType": 2,
+      "hasBattery": true,
+      "note": "TM243F"
+    },
+    "260D:1136": {
+      "name": "CM670 PRO",
+      "deviceType": "mouse",
+      "mode": "2.4G",
+      "internalModel": "TM242F",
+      "modes": [
+        "USB",
+        "2.4G"
+      ],
+      "fwType": 2,
+      "hasBattery": true,
+      "note": "TM242F"
+    },
+    "260D:1141": {
+      "name": "CM610 V2",
+      "deviceType": "mouse",
+      "mode": "USB",
+      "internalModel": "TM265U",
+      "fwType": 0,
+      "hasBattery": false,
+      "note": "TM265U - CM610 V2 - 有线"
+    },
+    "260D:1147": {
+      "name": "A950 AIR",
+      "deviceType": "mouse",
+      "mode": "USB",
+      "internalModel": "TM275F",
+      "fwType": 1,
+      "hasBattery": true,
+      "note": "TM275F A950 AIR"
+    },
+    "260D:1148": {
+      "name": "A980 PRO",
+      "deviceType": "mouse",
+      "mode": "USB",
+      "internalModel": "TM270FAIM",
+      "fwType": 1,
+      "hasBattery": true,
+      "note": "TM270FAIM - A980 PRO"
+    },
+    "260D:1150": {
+      "name": "A980 PRO MAX",
+      "deviceType": "mouse",
+      "mode": "USB",
+      "internalModel": "TM270FAIMLCD",
+      "fwType": 1,
+      "hasBattery": true,
+      "note": "TM270FAIMLCD - A980 PRO MAX (CN)"
+    },
+    "260D:1151": {
+      "name": "A980 PRO MAX",
+      "deviceType": "mouse",
+      "mode": "USB",
+      "internalModel": "TM270FAIMLCD",
+      "fwType": 1,
+      "hasBattery": true,
+      "note": "TM270FAIMLCD - A980 PRO MAX (EN)"
+    },
+    "260D:1152": {
+      "name": "CM610 V2",
+      "deviceType": "mouse",
+      "mode": "USB",
+      "internalModel": "TM265U",
+      "fwType": 0,
+      "hasBattery": false,
+      "note": "TM265U - CM610 V2 - 有线"
+    },
+    "260D:1153": {
+      "name": "A950 PRO Mg",
+      "deviceType": "mouse",
+      "mode": "2.4G",
+      "internalModel": "TM271F",
+      "modes": [
+        "USB",
+        "2.4G"
+      ],
+      "fwType": 2,
+      "hasBattery": true,
+      "note": "TM271F"
+    },
+    "260D:1155": {
+      "name": "CM610 MAX",
+      "deviceType": "mouse",
+      "mode": "2.4G",
+      "internalModel": "TM243G",
+      "modes": [
+        "USB",
+        "2.4G"
+      ],
+      "fwType": 2,
+      "hasBattery": true,
+      "note": "TM243F08010G/11G(TM243G?)"
+    },
+    "260D:1159": {
+      "name": "CM610 V2",
+      "deviceType": "mouse",
+      "mode": "USB",
+      "internalModel": "TM265U",
+      "fwType": 0,
+      "hasBattery": false,
+      "note": "TM265U - CM610 V2 - 有线"
+    },
+    "260D:1165": {
+      "name": "CM610 V2 MAX",
+      "deviceType": "mouse",
+      "mode": "2.4G",
+      "internalModel": "TM265D",
+      "modes": [
+        "USB",
+        "2.4G"
+      ],
+      "fwType": 2,
+      "hasBattery": true,
+      "note": "TM265D08005G/08G"
+    },
+    "260D:1166": {
+      "name": "A980 PRO",
+      "deviceType": "mouse",
+      "mode": "USB",
+      "internalModel": "TM270F",
+      "fwType": 1,
+      "hasBattery": true,
+      "note": "TM270F Charge - A980 PRO (充电版)"
+    },
+    "260D:1168": {
+      "name": "CM610 MAX",
+      "deviceType": "mouse",
+      "mode": "2.4G",
+      "internalModel": "TM243F",
+      "modes": [
+        "USB",
+        "2.4G"
+      ],
+      "fwType": 2,
+      "hasBattery": true,
+      "note": "TM243F08012G?"
+    },
+    "260D:1169": {
+      "name": "A950 AIR",
+      "deviceType": "mouse",
+      "mode": "USB",
+      "internalModel": "TM275F",
+      "fwType": 1,
+      "hasBattery": true,
+      "note": "TM275F A950 AIR (外贸版)"
+    },
+    "260D:1174": {
+      "name": "A950 AIR",
+      "deviceType": "mouse",
+      "mode": "2.4G",
+      "internalModel": "TM275F",
+      "modes": [
+        "USB",
+        "2.4G"
+      ],
+      "fwType": 2,
+      "hasBattery": true,
+      "note": "TM275F (P3395+CX52850P2) // 改DPI按键功能无效???"
+    },
+    "260D:1181": {
+      "name": "CM610 V2 MAX",
+      "deviceType": "mouse",
+      "mode": "2.4G",
+      "internalModel": "TM265D",
+      "modes": [
+        "USB",
+        "2.4G"
+      ],
+      "fwType": 2,
+      "hasBattery": true,
+      "note": "TM265D08001G/02G/03G/04G"
+    },
+    "260D:1182": {
+      "name": "A950 LCD",
+      "deviceType": "mouse",
+      "mode": "2.4G",
+      "internalModel": "TM265D",
+      "modes": [
+        "USB",
+        "2.4G"
+      ],
+      "fwType": 2,
+      "hasBattery": true,
+      "note": "TM265D AIM-750U + CX52850P2"
+    },
+    "260D:1185": {
+      "name": "A950 AIR",
+      "deviceType": "mouse",
+      "mode": "2.4G",
+      "internalModel": "TM275D",
+      "modes": [
+        "USB",
+        "2.4G"
+      ],
+      "fwType": 2,
+      "hasBattery": true,
+      "note": "TM275D (AIM750U + Nordic)"
+    },
+    "260D:1193": {
+      "name": "A950 AIR",
+      "deviceType": "mouse",
+      "mode": "2.4G",
+      "internalModel": "TM275D",
+      "modes": [
+        "USB",
+        "2.4G"
+      ],
+      "fwType": 2,
+      "hasBattery": true,
+      "note": "TM275D08007G/08G P3395 + CX52850P2（BK）"
+    },
+    "260D:1196": {
+      "name": "A950 Wing",
+      "deviceType": "mouse",
+      "mode": "2.4G",
+      "internalModel": "TM275D",
+      "modes": [
+        "USB",
+        "2.4G"
+      ],
+      "fwType": 2,
+      "hasBattery": true,
+      "note": "TM275D KR P3395 + CX52850P2（BK）"
+    },
+    "260D:1217": {
+      "name": "A950 Ultra",
+      "deviceType": "mouse",
+      "mode": "2.4G",
+      "internalModel": "TM283",
+      "modes": [
+        "USB",
+        "2.4G"
+      ],
+      "fwType": 2,
+      "hasBattery": true,
+      "note": "TM283 (A950 Ultra)"
+    },
+    "260D:1218": {
+      "name": "极风",
+      "deviceType": "mouse",
+      "mode": "2.4G",
+      "internalModel": "TM290D",
+      "modes": [
+        "USB",
+        "2.4G"
+      ],
+      "fwType": 2,
+      "hasBattery": true,
+      "note": "TM290D (AIM750U + CX52860)"
+    },
+    "260D:1220": {
+      "name": "羽翼",
+      "deviceType": "mouse",
+      "mode": "2.4G",
+      "internalModel": "TM287D",
+      "modes": [
+        "USB",
+        "2.4G"
+      ],
+      "fwType": 2,
+      "hasBattery": true,
+      "note": "TM287D (AIM750U + CX52860)"
+    },
+    "260D:1226": {
+      "name": "AE6",
+      "deviceType": "mouse",
+      "mode": "2.4G",
+      "internalModel": "TM290F",
+      "modes": [
+        "USB",
+        "2.4G"
+      ],
+      "fwType": 2,
+      "hasBattery": true,
+      "note": "TM290F"
+    },
+    "260D:1233": {
+      "name": "AE6 PRO",
+      "deviceType": "mouse",
+      "mode": "2.4G",
+      "internalModel": "TM290F",
+      "modes": [
+        "USB",
+        "2.4G"
+      ],
+      "fwType": 2,
+      "hasBattery": true,
+      "note": "TM290F - (AIM750U + CX52860) - 宝飞亚马逊客户"
+    },
+    "260D:1235": {
+      "name": "AE7 PRO",
+      "deviceType": "mouse",
+      "mode": "2.4G",
+      "internalModel": "TM287F",
+      "modes": [
+        "USB",
+        "2.4G"
+      ],
+      "fwType": 2,
+      "hasBattery": true,
+      "note": "TM287F - (AIM750U + CX52860) - 宝飞亚马逊客户"
+    },
+    "260D:1237": {
+      "name": "极风Max",
+      "deviceType": "mouse",
+      "mode": "2.4G",
+      "internalModel": "TM290F",
+      "modes": [
+        "USB",
+        "2.4G"
+      ],
+      "fwType": 2,
+      "hasBattery": true,
+      "note": "TM290 极风Max 网吧版"
+    },
+    "260D:1244": {
+      "name": "A950 GM",
+      "deviceType": "mouse",
+      "mode": "2.4G",
+      "internalModel": "TM265F",
+      "modes": [
+        "USB",
+        "2.4G"
+      ],
+      "fwType": 2,
+      "hasBattery": true,
+      "note": "A950GM"
+    },
+    "260D:1245": {
+      "name": "A950GD",
+      "deviceType": "mouse",
+      "mode": "2.4G",
+      "internalModel": "TM265",
+      "modes": [
+        "USB",
+        "2.4G"
+      ],
+      "fwType": 2,
+      "hasBattery": true,
+      "note": "TM265"
+    },
+    "260D:1250": {
+      "name": "AE7",
+      "deviceType": "mouse",
+      "mode": "2.4G",
+      "internalModel": "TM287",
+      "modes": [
+        "USB",
+        "2.4G"
+      ],
+      "fwType": 2,
+      "hasBattery": true
+    },
+    "260D:1259": {
+      "name": "A950GD",
+      "deviceType": "mouse",
+      "mode": "2.4G",
+      "internalModel": "TM265F",
+      "modes": [
+        "USB",
+        "2.4G"
+      ],
+      "fwType": 2,
+      "hasBattery": true,
+      "note": "TM265F A950GD"
+    },
+    "260D:1260": {
+      "name": "Ultra 07",
+      "deviceType": "mouse",
+      "mode": "2.4G",
+      "internalModel": "TM00J",
+      "modes": [
+        "USB",
+        "2.4G"
+      ],
+      "fwType": 2,
+      "hasBattery": true,
+      "note": "TM00J"
+    },
+    "260D:1263": {
+      "name": "CM620",
+      "deviceType": "mouse",
+      "mode": "USB",
+      "internalModel": "TM290",
+      "fwType": 1,
+      "hasBattery": false
+    },
+    "260D:1264": {
+      "name": "AE6",
+      "deviceType": "mouse",
+      "mode": "2.4G",
+      "internalModel": "TM290",
+      "modes": [
+        "USB",
+        "2.4G"
+      ],
+      "fwType": 2,
+      "hasBattery": true
+    },
+    "260D:1265": {
+      "name": "AE6",
+      "deviceType": "mouse",
+      "mode": "2.4G",
+      "internalModel": "TM290",
+      "modes": [
+        "USB",
+        "2.4G"
+      ],
+      "fwType": 2,
+      "hasBattery": true
+    },
+    "260D:1271": {
+      "name": "LM180T",
+      "deviceType": "mouse",
+      "mode": "2.4G",
+      "internalModel": "TM00AF",
+      "modes": [
+        "USB",
+        "2.4G"
+      ],
+      "fwType": 2,
+      "hasBattery": true
+    },
+    "260D:1283": {
+      "name": "A950G",
+      "deviceType": "mouse",
+      "mode": "2.4G",
+      "internalModel": "TM265F",
+      "modes": [
+        "USB",
+        "2.4G"
+      ],
+      "fwType": 2,
+      "hasBattery": true,
+      "note": "TM256F"
+    },
+    "260D:1284": {
+      "name": "A950G",
+      "deviceType": "mouse",
+      "mode": "2.4G",
+      "internalModel": "TM265D",
+      "modes": [
+        "USB",
+        "2.4G"
+      ],
+      "fwType": 2,
+      "hasBattery": true,
+      "note": "TM265D 韩国"
+    },
+    "260D:1286": {
+      "name": "A950GD",
+      "deviceType": "mouse",
+      "mode": "2.4G",
+      "internalModel": "TM265F",
+      "modes": [
+        "USB",
+        "2.4G"
+      ],
+      "fwType": 2,
+      "hasBattery": true,
+      "note": "TM265F 韩国"
+    },
+    "260D:1287": {
+      "name": "极光",
+      "deviceType": "mouse",
+      "mode": "2.4G",
+      "internalModel": "TM01A",
+      "modes": [
+        "USB",
+        "2.4G"
+      ],
+      "fwType": 2,
+      "hasBattery": true,
+      "note": "TM01A"
+    },
+    "260D:1289": {
+      "name": "猎风V3",
+      "deviceType": "mouse",
+      "mode": "2.4G",
+      "internalModel": "TM00P",
+      "modes": [
+        "USB",
+        "2.4G"
+      ],
+      "fwType": 2,
+      "hasBattery": true
+    },
+    "260D:1292": {
+      "name": "Ultra09",
+      "deviceType": "mouse",
+      "mode": "USB",
+      "internalModel": "TM00T",
+      "fwType": 2,
+      "hasBattery": true,
+      "note": "TM00T"
+    },
+    "260D:1293": {
+      "name": "Ultra07",
+      "deviceType": "mouse",
+      "mode": "USB",
+      "internalModel": "TP040",
+      "fwType": 2,
+      "hasBattery": true,
+      "note": "TP040"
+    },
+    "260D:1295": {
+      "name": "极风3",
+      "deviceType": "mouse",
+      "mode": "2.4G",
+      "internalModel": "TM290D",
+      "modes": [
+        "USB",
+        "2.4G"
+      ],
+      "fwType": 2,
+      "hasBattery": true
+    },
+    "260D:1298": {
+      "name": "EM910G",
+      "deviceType": "mouse",
+      "mode": "2.4G",
+      "internalModel": "TM00PF",
+      "modes": [
+        "USB",
+        "2.4G"
+      ],
+      "fwType": 2,
+      "hasBattery": true
+    },
+    "260D:1299": {
+      "name": "AE6",
+      "deviceType": "mouse",
+      "mode": "2.4G",
+      "internalModel": "TM290F",
+      "modes": [
+        "USB",
+        "2.4G"
+      ],
+      "fwType": 2,
+      "hasBattery": true
+    },
+    "260D:1301": {
+      "name": "A950XH",
+      "deviceType": "mouse",
+      "mode": "2.4G",
+      "internalModel": "TM01AF",
+      "modes": [
+        "USB",
+        "2.4G"
+      ],
+      "fwType": 2,
+      "hasBattery": true,
+      "note": "TM01AF A950星河"
+    },
+    "260D:1302": {
+      "name": "CM610 ultra v2",
+      "deviceType": "mouse",
+      "mode": "2.4G",
+      "internalModel": "TM265D",
+      "modes": [
+        "USB",
+        "2.4G"
+      ],
+      "fwType": 2,
+      "hasBattery": true,
+      "note": "TM265"
+    },
+    "260D:1303": {
+      "name": "A950GD PRO",
+      "deviceType": "mouse",
+      "mode": "2.4G",
+      "internalModel": "TM265D",
+      "modes": [
+        "USB",
+        "2.4G"
+      ],
+      "fwType": 2,
+      "hasBattery": true
+    },
+    "260D:1304": {
+      "name": "CM620",
+      "deviceType": "mouse",
+      "mode": "2.4G",
+      "internalModel": "TM290",
+      "modes": [
+        "USB",
+        "2.4G"
+      ],
+      "fwType": 2,
+      "hasBattery": true
+    },
+    "260D:1305": {
+      "name": "EM905 Pro",
+      "deviceType": "mouse",
+      "mode": "2.4G",
+      "internalModel": "TM173",
+      "modes": [
+        "USB",
+        "2.4G"
+      ],
+      "fwType": 2,
+      "hasBattery": true,
+      "note": "TM173"
+    },
+    "260D:1328": {
+      "name": "AE6",
+      "deviceType": "mouse",
+      "mode": "2.4G",
+      "internalModel": "TM290F",
+      "modes": [
+        "USB",
+        "2.4G"
+      ],
+      "fwType": 2,
+      "hasBattery": true,
+      "note": "TM290F"
+    },
+    "260D:1329": {
+      "name": "A950 SE",
+      "deviceType": "mouse",
+      "mode": "2.4G",
+      "internalModel": "TM265D",
+      "modes": [
+        "USB",
+        "2.4G"
+      ],
+      "fwType": 2,
+      "hasBattery": true,
+      "note": "TM265D"
+    },
+    "260D:1330": {
+      "name": "AE6 V2",
+      "deviceType": "mouse",
+      "mode": "2.4G",
+      "internalModel": "TM290F",
+      "modes": [
+        "USB",
+        "2.4G"
+      ],
+      "fwType": 2,
+      "hasBattery": true,
+      "note": "TM290F"
+    },
+    "260D:1335": {
+      "name": "EM911T",
+      "deviceType": "mouse",
+      "mode": "2.4G",
+      "internalModel": "TM259F",
+      "modes": [
+        "USB",
+        "2.4G"
+      ],
+      "fwType": 2,
+      "hasBattery": true,
+      "note": "TM259F"
+    },
+    "260D:1337": {
+      "name": "AE6",
+      "deviceType": "mouse",
+      "mode": "2.4G",
+      "internalModel": "TM290D",
+      "modes": [
+        "USB",
+        "2.4G"
+      ],
+      "fwType": 2,
+      "hasBattery": false,
+      "note": "TM290D"
+    },
+    "260D:F055": {
+      "name": "A75 HE",
+      "deviceType": "keyboard",
+      "mode": "USB",
+      "internalModel": "TK52L",
+      "note": "TK52L - A75 HE"
+    }
+  }
+}

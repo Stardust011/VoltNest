@@ -197,7 +197,7 @@ fn evidence_goes_to_debug_and_conclusion_stays_short() {
             "HID Usage 0x0001/0x0006 = Keyboard".to_string(),
             "HID Usage 0x0001/0x0002 = Mouse".to_string(),
             "复合集合：keyboard + mouse".to_string(),
-            "可核验映射 → mouse（config.xml 1.0.7.6 · ajazz device_attr=mouse）".to_string(),
+            "可核验映射 → mouse（config.xml 1.0.7.6 · ajazz deviceType=mouse）".to_string(),
         ],
     );
     c.skipped.push("HID Usage 0x000c/0x0001 未支持".to_string());
@@ -223,7 +223,7 @@ fn evidence_goes_to_debug_and_conclusion_stays_short() {
     for want in [
         "HID Usage 0x0001/0x0002 = Mouse",
         "复合集合：keyboard + mouse",
-        "ajazz device_attr=mouse",
+        "ajazz deviceType=mouse",
         "HID Usage 0x000c/0x0001 未支持",
     ] {
         assert!(
