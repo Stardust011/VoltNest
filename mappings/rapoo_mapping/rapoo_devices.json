@@ -1515,22 +1515,6 @@
         "china_game",
         "global"
       ]
-    },
-    "2E3C:5745": {
-      "name": "ESK800-75RT",
-      "deviceType": "keyboard",
-      "mode": "USB",
-      "channels": [
-        "china_cybercafe"
-      ]
-    },
-    "3837:3026": {
-      "name": "Ace 68 Turbo",
-      "deviceType": "keyboard",
-      "mode": "USB",
-      "channels": [
-        "global"
-      ]
     }
   }
 }

@@ -40,6 +40,9 @@ USER_AGENT = (
     "(KHTML, like Gecko) Chrome/124.0 Safari/537.36"
 )
 
+# 只接受该 USB vendorId 的设备，其余（OEM 定制 VID）一律丢弃
+RAPOO_VENDOR_ID = 0x24AE
+
 # manifest 中 type 的已知取值（用于兜底识别，排除 filters 里的 type:"default"）
 KNOWN_DEVICE_TYPES = {
     "mouse", "keyboard", "base", "dock", "headset", "gamepad",
@@ -274,6 +277,11 @@ def run(args: argparse.Namespace) -> dict:
         source = {"file": "", "url": index_url, "web_version": derive_web_version(bundle_url)}
 
     rows = extract_manifests(js)
+    total = len(rows)
+    rows = [r for r in rows if r["vendorId"] == RAPOO_VENDOR_ID]
+    if not args.quiet and len(rows) != total:
+        print(f"[info] vendorId 过滤：丢弃 {total - len(rows)} 个非 "
+              f"{RAPOO_VENDOR_ID:04X} 设备，保留 {len(rows)} 个", file=sys.stderr)
     if args.channel:
         rows = [r for r in rows if args.channel in (r.get("channels") or [])]
     if not rows:
