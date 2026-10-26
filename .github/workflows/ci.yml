@@ -25,10 +25,11 @@ jobs:
           components: rustfmt
       - run: cargo fmt --all --check
 
-  clippy:
-    name: clippy
-    # clippy.toml 把 SystemTime 列为禁用类型，因此必须在能编译 Windows
-    # 专有模块的 runner 上跑，否则 #[cfg(windows)] 的代码不会被检查。
+  # 两个平台都要跑：项目已双平台，#[cfg(windows)]（Toast / AUMID / 托盘气泡）与
+  # #[cfg(not(windows))]（notification 插件 / hidraw / bluez）是两组互斥代码，只有各自的
+  # runner 会真正编译并 lint 它们。clippy.toml 把 SystemTime 列为禁用类型的门禁两边同样有效。
+  clippy-windows:
+    name: clippy (windows)
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -38,13 +39,33 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo clippy --workspace --all-targets -- -D warnings
 
-  test:
-    name: cargo test
+  test-windows:
+    name: cargo test (windows)
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+      - run: cargo test --workspace
+
+  clippy-test-linux:
+    name: clippy + test (linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      # 构建期依赖：libudev（hidapi 的 hidraw 后端用 pkg-config 探测）、Tauri 的
+      # webkit2gtk / gtk3 / libsoup3、托盘（libayatana-appindicator3）、bluez 与通知（dbus）。
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libudev-dev libdbus-1-dev libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev \
+            libayatana-appindicator3-dev
+      - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace
 
   coverage:
@@ -58,6 +79,10 @@ jobs:
         with:
           components: llvm-tools-preview
       - uses: taiki-e/install-action@cargo-llvm-cov
+      # hidapi 的 hidraw 后端在构建期用 pkg-config 探测 libudev（libudev.pc + libudev.h）；
+      # 覆盖率门禁会真编 voltnest-hid / voltnest-ble，故这里同样要装开发文件。
+      - name: Install libudev (hidapi build dependency)
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libudev-dev
       - run: cargo llvm-cov -p voltnest-core --fail-under-lines 90
       - run: cargo llvm-cov -p voltnest-hid --fail-under-lines 85
       - run: cargo llvm-cov -p voltnest-ble --fail-under-lines 85
