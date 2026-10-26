@@ -17,7 +17,7 @@
 //! ```
 //!
 //! - `devices` 的键是 `VID:PID`（大端十六进制、无 `0x` 前缀、冒号分隔），值是唯一的型号条目来源；不再有并行的 `by_vid_pid` 副本。
-//! - `source` 可用 `{url, web_version}` 替代 `{software, software_version}`（网页版驱动抓取的映射表）。
+//! - `source` 只供展示，结构不校验：桌面驱动的 `{file, software, software_version}`、网页版驱动的 `{url, web_version}` 乃至任意形状都会被压成一行来源摘要。
 //! - `vendorDeviceId` 是厂商驱动内的设备编号（如 AJAZZ 的 101..108），**不是**设备类型，禁止映射成 [`DeviceType`]。
 //! - `deviceType` 是厂商声明的类型词（`mouse` / `keyboard` …），只有恰好等于规范类型词时才被采纳，见 [`Entry::declared_device_type`]。
 //!
@@ -70,44 +70,38 @@ impl Entry {
 #[derive(Deserialize)]
 struct RawMap {
     config_version: String,
-    source: RawSource,
+    /// 来源元数据仅供展示，结构不做校验。
+    #[serde(default)]
+    source: serde_json::Value,
     devices: HashMap<String, Entry>,
 }
 
-#[derive(Default, Deserialize)]
-struct RawSource {
-    #[serde(default)]
-    file: String,
-    #[serde(default)]
-    software: String,
-    #[serde(default)]
-    software_version: String,
-    #[serde(default)]
-    url: String,
-    #[serde(default)]
-    web_version: String,
-}
-
-impl RawSource {
-    /// 统一成「来源文件 / 来源软件 / 版本」三段，桌面驱动与网页驱动两种写法都归一到这里。
-    fn normalized(self) -> (String, String, String) {
-        let file = if self.file.trim().is_empty() {
-            self.url.clone()
-        } else {
-            self.file
-        };
-        let software = if self.software.trim().is_empty() {
-            self.url
-        } else {
-            self.software
-        };
-        let version = if self.software_version.trim().is_empty() {
-            self.web_version
-        } else {
-            self.software_version
-        };
-        (file, software, version)
+/// 把任意形状的 `source` 压成一行展示文本（桌面驱动 `{file,software,software_version}` 与网页驱动 `{url,web_version}` 都走这里）。
+fn source_label(source: &serde_json::Value) -> String {
+    if source.is_null() {
+        return String::new();
     }
+    let str_at = |key: &str| {
+        source
+            .get(key)
+            .and_then(serde_json::Value::as_str)
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
+    };
+    if !source.is_object() {
+        return source.as_str().unwrap_or_default().trim().to_string();
+    }
+    let origin = str_at("file").or_else(|| str_at("url"));
+    let software = str_at("software");
+    let version = str_at("software_version").or_else(|| str_at("web_version"));
+    let mut parts: Vec<String> = Vec::new();
+    for part in [origin, software, version].into_iter().flatten() {
+        if parts.last() != Some(&part) {
+            parts.push(part);
+        }
+    }
+    parts.join(" · ")
 }
 
 /// 一个品牌编译期嵌入的型号表。
@@ -116,12 +110,8 @@ pub struct DeviceTable {
     map: HashMap<(u16, u16), Entry>,
     /// 数据规范版本（诊断页展示）。
     pub config_version: String,
-    /// 数据来源文件（诊断页展示）。
-    pub source_file: String,
-    /// 数据来源软件（诊断页展示）。
-    pub source_software: String,
-    /// 官方驱动版本（诊断页展示）。
-    pub source_version: String,
+    /// 来源摘要（诊断页展示）。
+    pub source: String,
 }
 
 fn parse_hex_u16(s: &str) -> Option<u16> {
@@ -153,13 +143,10 @@ impl DeviceTable {
         if map.is_empty() {
             return Err("型号表为空".to_string());
         }
-        let (source_file, source_software, source_version) = raw.source.normalized();
         Ok(Self {
             map,
             config_version: raw.config_version,
-            source_file,
-            source_software,
-            source_version,
+            source: source_label(&raw.source),
         })
     }
 
@@ -217,9 +204,7 @@ mod tests {
         let t = DeviceTable::parse(JSON).unwrap();
         assert_eq!(t.len(), 2);
         assert_eq!(t.config_version, "1.0.0");
-        assert_eq!(t.source_file, "config.xml");
-        assert_eq!(t.source_software, "Driver");
-        assert_eq!(t.source_version, "9.9.9");
+        assert_eq!(t.source, "config.xml · Driver · 9.9.9");
         assert_eq!(t.name(0x7768, 0x6426), Some("M1"));
         assert_eq!(t.lookup(0x7768, 0x6426).unwrap().mode, "2.4G");
         assert_eq!(t.lookup(0x7768, 0x6D26).unwrap().mode, "USB");
@@ -281,8 +266,7 @@ mod tests {
         }"#;
         let t = DeviceTable::parse(web).unwrap();
         assert_eq!(t.len(), 2);
-        assert_eq!(t.source_file, "https://hub.rapoo.cn/");
-        assert_eq!(t.source_version, "3ShGzFuu");
+        assert_eq!(t.source, "https://hub.rapoo.cn/ · 3ShGzFuu");
         assert_eq!(t.name(0x24AE, 0x1410), Some("VT0"));
         assert_eq!(t.name(0x3837, 0x1015), None, "无名称的条目不得给出空型号名");
         assert!(t.lookup(0x3837, 0x1015).unwrap().vendor_device_id.is_none());
@@ -292,6 +276,23 @@ mod tests {
                 .extra
                 .contains_key("candidates")
         );
+    }
+
+    /// `source` 只供展示：任意形状、缺失都不能让解析失败。
+    #[test]
+    fn parse_tolerates_arbitrary_source() {
+        for source in [r#""抓取于 2026-10-26""#, "[1,2]", r#"{"note":"x"}"#] {
+            let json = format!(
+                r#"{{"config_version":"1.0.0","source":{source},"devices":{{"7768:6426":{{"deviceType":"mouse","mode":"2.4G"}}}}}}"#
+            );
+            let t = DeviceTable::parse(&json).unwrap();
+            assert_eq!(t.len(), 1, "source={source}");
+        }
+        let no_source = r#"{"config_version":"1.0.0","devices":{"7768:6426":{"deviceType":"mouse","mode":"2.4G"}}}"#;
+        let t = DeviceTable::parse(no_source).unwrap();
+        assert_eq!(t.source, "");
+        assert!(t.lookup(0x7768, 0x6426).unwrap().name.is_none());
+        assert!(t.lookup(0x7768, 0x6426).unwrap().vendor_device_id.is_none());
     }
 
     #[test]

@@ -235,9 +235,7 @@ mod tests {
         let table = crate::table::DeviceTable::parse(super::SPEC.device_table_json).unwrap();
         assert_eq!(table.len(), 16, "8 型号 × 2 模式");
         assert_eq!(table.config_version, "1.0.0");
-        assert_eq!(table.source_file, "config.xml");
-        assert_eq!(table.source_software, "AJAZZ Driver（W1）");
-        assert_eq!(table.source_version, "1.0.7.6");
+        assert_eq!(table.source, "config.xml · AJAZZ Driver（W1） · 1.0.7.6");
         assert_eq!(table.name(0x7768, 0x6426), Some("AJ159 NL"));
         assert_eq!(table.name(0x7768, 0x6425), Some("AJ159 NL P"));
         assert_eq!(table.name(0x7768, 0x6427), None, "6427 不存在，必须 miss");
