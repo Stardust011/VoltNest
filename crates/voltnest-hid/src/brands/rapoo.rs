@@ -28,7 +28,7 @@ pub const SPEC: BrandSpec = BrandSpec {
     },
     request: None,
     expected_interval_ms: 30_000,
-    device_table_json: include_str!("../../data/vbas/rapoo.json"),
+    device_table_json: include_str!("../../data/mappings/rapoo.json"),
 };
 
 #[cfg(test)]

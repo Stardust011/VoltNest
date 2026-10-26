@@ -1,7 +1,7 @@
 //! 品牌注册表：`hid-vbas` 家族下的所有已知品牌。
 //!
 //! **新增品牌 = 新增一个模块 + 在 [`BRANDS`] 里加一项**，运行时只按传输类型分派：
-//! 1. `src/brands/<brand>.rs` 声明 BrandSpec；2. `data/vbas/<brand>.json` 型号表快照；3. `BRANDS` 加一行（唯一要改的既有代码）。
+//! 1. `src/brands/<brand>.rs` 声明 BrandSpec；2. `data/mappings/<brand>.json` 型号表快照；3. `BRANDS` 加一行（唯一要改的既有代码）。
 //!
 //! 注册表在首次枚举前建立一次（[`Registry::embedded`]），建立时逐个跑
 //! [`BrandSpec::validate`]，写错字段下标即 panic —— 早于任何设备 I/O。
@@ -17,14 +17,7 @@ use std::sync::OnceLock;
 use voltnest_provider::ProviderProfile;
 
 /// 全部已知品牌（编译期常量数组）。顺序无关匹配结果：同一 VID:PID 被两品牌同时登记属配置错误，[`Registry::embedded`] 会 panic。
-pub static BRANDS: &[&BrandSpec] = &[
-    &ajazz::SPEC,
-    &rapoo::SPEC,
-    &dareu::SPEC,
-    &mchose::A7_SPEC,
-    &mchose::M7_SPEC,
-    &mchose::A5_SPEC,
-];
+pub static BRANDS: &[&BrandSpec] = &[&ajazz::SPEC, &rapoo::SPEC, &dareu::SPEC, &mchose::SPEC];
 
 /// 一个品牌：协议描述 + 已解析的型号表。
 #[derive(Debug)]
@@ -130,18 +123,22 @@ mod tests {
         let reg = Registry::embedded();
         let (brand, entry) = reg.lookup(0x7768, 0x6426).expect("已验证设备必须在表内");
         assert_eq!(brand.spec.id, "ajazz");
-        assert_eq!(entry.name, "AJ159 NL");
+        assert_eq!(entry.name.as_deref(), Some("AJ159 NL"));
         assert_eq!(entry.mode, "2.4G");
-        assert_eq!(entry.interface_index(), Some(1));
+        assert_eq!(entry.vendor_device_id, Some(102));
+        assert_eq!(entry.device_type, "mouse");
         assert!(
             reg.lookup(0x249A, 0x5C2F).is_none(),
             "不同代际 VID 不得复用"
         );
-        assert_eq!(reg.lookup(0x24AE, 0x1205).unwrap().0.spec.id, "rapoo");
-        assert_eq!(reg.lookup(0x260D, 0x1114).unwrap().0.spec.id, "dareu");
-        assert_eq!(reg.lookup(0x3837, 0x100B).unwrap().0.spec.id, "mchose-a7");
-        assert_eq!(reg.lookup(0x5253, 0x1020).unwrap().0.spec.id, "mchose-m7");
-        assert_eq!(reg.lookup(0x2023, 0xF013).unwrap().0.spec.id, "mchose-a5");
+        assert_eq!(reg.lookup(0x24AE, 0x1410).unwrap().0.spec.id, "rapoo");
+        assert_eq!(reg.lookup(0x260D, 0x1117).unwrap().0.spec.id, "dareu");
+        assert_eq!(reg.lookup(0x3837, 0x100B).unwrap().0.spec.id, "mchose");
+        assert_eq!(reg.lookup(0x5253, 0x1020).unwrap().0.spec.id, "mchose");
+        assert!(
+            reg.lookup(0x2023, 0xF013).is_none(),
+            "旧 A5 段已从厂商表移除"
+        );
     }
 
     #[test]

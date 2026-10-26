@@ -16,7 +16,7 @@
 //! | HID Usage `0x01/0x01,0x02,0x04..0x08` | USB-IF HID Usage Tables 1.4（Generic Desktop） | 单测覆盖；本机为厂商自定义 UsagePage，未命中 |
 //! | BLE Appearance `0x03C1..0x03C4 / 0x0841..0x0844 / 0x0942,0x0943` | Bluetooth SIG Assigned Numbers，值 = `category << 6 \| subcategory` | 单测覆盖；本机 BLE 设备为 Unknown |
 //! | BLE 服务 `0x180F / 0x1812 / 0x180A` | Battery Service / HOGP / DIS 规范 | 只作上下文证据，不单独定型 |
-//! | 可核验设备映射 | 品牌型号表（官方驱动 `config.xml` 的 `device_attr`） | 仅 `device_attr` 恰为规范类型词时生效 |
+//! | 可核验设备映射 | 品牌型号表（官方驱动 `config.xml` 的 `deviceType`） | 仅 `deviceType` 恰为规范类型词时生效 |
 //!
 //! 未列入上表的 Usage / Appearance / 服务一律不映射：标准没定义或本项目未验证的组合，返回 `Unknown` 比猜一个类型更有价值。
 
@@ -682,7 +682,7 @@ mod tests {
     /// 实测回归：本仓库 2.4G 接收器 `7768:6426` 的真实集合清单（本机枚举记录）。
     ///
     /// 它同时声明鼠标与键盘集合，所以标准侧只能判成「复合」；结论来自
-    /// 官方驱动配置的 `device_attr=mouse`。这条用例保证真实设备不会因为
+    /// 官方驱动配置的 `deviceType=mouse`。这条用例保证真实设备不会因为
     /// 复合集合而被降级成 Unknown。
     #[test]
     fn real_2_4g_receiver_is_resolved_by_mapping() {
