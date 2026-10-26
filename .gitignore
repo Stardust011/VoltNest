@@ -16,6 +16,9 @@ __pycache__/
 *.log
 logs/
 %APPDATA%/
+# DataPaths 的最后兜底（HOME/XDG 全缺时落到 cwd）；正常路径是 XDG/APPDATA 目录。
+# 防住「从仓库根误启动」在 git status 里留下的噪音。
+.voltnest/
 
 # 工具链与编辑器
 .vscode/
