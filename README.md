@@ -1,6 +1,6 @@
 # VoltNest
 
-Windows 上的 HID / BLE 设备电量监控应用。单进程 Rust（Tauri 2）+ Vue 3，托盘常驻，
+Windows 与 Linux 上的 HID / BLE 设备电量监控应用。单进程 Rust（Tauri 2）+ Vue 3，托盘常驻，
 聚合 2.4G 接收器与 BLE Battery Service 的电量、在线与充电状态。
 
 架构上只有一条数据流：Provider 采集原始事实（设备出现、读数、结构化错误、链路状态），
@@ -14,7 +14,7 @@ crates/
   voltnest-core/       状态机、归一化、分组、通知策略、Snapshot（纯逻辑，无时钟无线程）
   voltnest-hid/        hid-vbas：枚举、读取、通用帧解析、品牌描述（brands/）与型号表
   voltnest-ble/        ble-bas：发现、连接、通知、轮询、解析
-  voltnest-platform/   Windows 适配（自启、单实例、AUMID）
+  voltnest-platform/   平台适配（自启、单实例；Windows 另含 AUMID 注册）
   voltnest-storage/    settings.json / state.json 原子读写
 apps/desktop/          Tauri 宿主（src-tauri）+ Vue 前端（src）
 ```
@@ -35,23 +35,70 @@ crates/voltnest-hid/
 
 ## 开发
 
-需要 Rust 稳定版（见 `rust-toolchain.toml`）、Node 22、WebView2（Windows 11 自带）。
+需要 Rust 稳定版（见 `rust-toolchain.toml`）与 Node 22+（前端用 npm，仓库带 `package-lock.json`）。
+两个平台共用的门禁：
 
 ```bash
 cargo test --workspace          # 全部单元测试（200+）
 cargo clippy --workspace --all-targets -- -D warnings
-cargo fmt --check
+cargo fmt --all -- --check
+```
 
+`cargo clippy` 是**门禁**而不只是建议：`clippy.toml` 把 `std::time::SystemTime`
+列为禁用类型，全仓只有 `voltnest_provider::clock::now_utc_ms()` 能读时钟。
+
+### Windows
+
+另需 WebView2（Windows 11 自带）。
+
+```bash
 cd apps/desktop
-npm install
+npm ci
 npm run test                    # Vitest，只测纯函数
 npm run build                   # vue-tsc + vite build
 npm run tauri dev               # 开发调试（会先起 Vite）
 npm run tauri build             # 出 NSIS 安装包
 ```
 
-`cargo clippy` 是**门禁**而不只是建议：`clippy.toml` 把 `std::time::SystemTime`
-列为禁用类型，全仓只有 `voltnest_provider::clock::now_utc_ms()` 能读时钟。
+### Linux
+
+构建前置（Debian / Ubuntu；Fedora 对应 `webkit2gtk4.1-devel gtk3-devel libsoup3-devel
+libayatana-appindicator-gtk3-devel systemd-devel dbus-devel`）：
+
+```bash
+sudo apt install libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev \
+  libayatana-appindicator3-dev libudev-dev libdbus-1-dev
+```
+
+- `libudev-dev`：hidapi 的 hidraw 后端在**构建期**用 pkg-config 探测 libudev（并把 C 源码静态编进来），
+  运行期只依赖发行版自带的 `libudev.so.1`；缺它编译 `hidapi` 时直接报 `libudev.pc` / `libudev.h` 缺失。
+- `libwebkit2gtk-4.1-dev` / `libgtk-3-dev` / `libsoup-3.0-dev`：Tauri 的 wry / WebView 依赖。
+- `libayatana-appindicator3-dev`：托盘（StatusNotifierItem）。
+- `libdbus-1-dev`：bluez（BLE）与系统通知的 D-Bus 绑定。
+
+命令与 Windows 完全相同（`npm ci` → `npm run test` → `npm run build` → `npm run tauri dev|build`）。
+
+### 打包
+
+| 平台 | 命令 | 产物 |
+|---|---|---|
+| Windows | `npm run tauri build` | NSIS 安装包（`bundle.targets: ["nsis"]`，`currentUser` 安装模式） |
+| Linux | `npm run tauri build` | `deb` + `AppImage`（`tauri.linux.conf.json` 把 `bundle.targets` 覆盖为 `["deb", "appimage"]`） |
+
+Tauri 2 会自动把同目录的 `tauri.linux.conf.json` 合并进 `tauri.conf.json`（对象递归合并、数组整体替换），
+所以 Linux 侧不动基础配置、Windows 侧仍是 NSIS。deb / AppImage 的运行期依赖由 Tauri 依据链接到的库
+自动生成，因此不在配置里手写 `depends`（手写会在 Ubuntu 24.04 这类 `t64` 重命名的发行版上写错）。
+
+## Linux 运行期前提
+
+- **HID（2.4G 接收器）**：读 `/dev/hidraw*` 需要当前用户有权限（发行版通常用 `plugdev` 组或 udev 规则放行）。
+  本程序**不安装任何 udev 规则**；缺权限时该设备报 `access_denied` 诊断，不会静默丢读数。
+- **BLE（`ble-bas`）**：需要 **`bluetoothd` 在运行**且系统 dbus 可用，当前用户需在 `bluetooth` 组
+  或持有 polkit 授权。无 bluetoothd / 无适配器（容器、`rfkill` 关闭、WSL2 未直通）时，provider 上报一次
+  结构化 `TransportDown`（detail 里直接写该查什么），诊断页把该 transport 标成「不可用」，
+  HID 那条链路不受影响；连续 5 次失败后停止自动重启，可在诊断页手动重启。
+- **托盘**：需要桌面环境提供 StatusNotifierItem 宿主（KDE 原生，GNOME 需 AppIndicator 扩展）。
+- **系统通知**：走 `org.freedesktop.Notifications`，需要通知守护进程在跑；发不出去时诊断页记 `failed`。
 
 ## 运行时行为要点
 
@@ -66,8 +113,8 @@ npm run tauri build             # 出 NSIS 安装包
   注明「上次读数」），一圈读数都没有时画一整圈压暗一档的蓝环。**一张设备图标都没有时
   占位的是应用图标本身**（和任务栏、开始菜单同一个 PNG）；有设备图标时它隐身让位，
   不会多出一个像第二台设备的环。
-- **数据目录**：`%APPDATA%\VoltNest\`（`settings.json` / `state.json` / `logs/`），
-  安装目录只读，运行时不写入。
+- **数据目录**：Windows 为 `%APPDATA%\VoltNest\`（`settings.json` / `state.json` / `logs/`），
+  安装目录只读，运行时不写入；Linux 为 `$XDG_DATA_HOME/VoltNest/`（缺省 `~/.local/share/VoltNest/`）。
 - **采集异常隔离**：每个 transport 独立监管线程，`catch_unwind` 兜住 panic 后按
   5s / 15s / 60s 退避重启，连续 5 次失败转「不可用」，由诊断页手动重启。
 
@@ -92,10 +139,23 @@ npm run tauri build             # 出 NSIS 安装包
 7. **托盘气泡模式**以「对应托盘的 tooltip 提示 6 秒」实现：Tauri 2 未暴露
    `Shell_NotifyIcon` 的气泡接口，v1 不为它引入自绘托盘窗口。提示挂在设备自己的
    图标上（没有则挂基础图标），6 秒后还原原 tooltip。选项仍是
-   「系统通知 / 托盘气泡 / 关闭」三档，不自动降级。
+   「系统通知 / 托盘气泡 / 关闭」三档，不自动降级。**这条实现是 Windows 语义**，
+   Linux 的托盘后端没有 tooltip，见第 10 条。
 8. 分支覆盖率（core ≥90%）暂由评审保证：`cargo llvm-cov` 的分支统计仍需 nightly。
 9. **系统通知的「应用名 + 图标」由 AUMID 决定**：启动时写
    `HKCU\Software\Classes\AppUserModelId\VoltNest.Desktop`（`DisplayName` + `IconUri`，
    图标落在 `%APPDATA%\VoltNest\toast-icon.png`）。这两项缺一，Windows 会回落成
    `powershell.exe` 的蓝色图标和「Windows PowerShell」标题。Toast 由本程序直接走
-   WinRT 发送（不经过 `tauri-plugin-notification`），开发运行同样显示 VoltNest。
+   WinRT 发送（不经过 `tauri-plugin-notification`），开发运行同样显示 VoltNest。AUMID / Toast 是
+   Windows 概念：Linux 上没有这一步，系统通知由 `tauri-plugin-notification`（libnotify →
+   `org.freedesktop.Notifications`）发送，应用名与图标由打包生成的 `.desktop` 文件决定。
+10. **Linux 托盘不显示 tooltip，也不派发点击事件**：托盘走 libayatana-appindicator（StatusNotifierItem），
+    Tauri 在该后端把 `set_tooltip` 实现成空操作（`tray-icon` 直接返回 `Ok`）、`TrayIconEvent` 根本不发。
+    这个空实现同时废掉**设备 tooltip**（`型号 · 92%`）和**基础图标的汇总 tooltip**
+    （`VoltNest · N 台设备`），读数以面板为准；左键点图标也开不了面板，打开面板走每张图标菜单里的
+    「打开面板」。因此「托盘气泡」档在 Linux 上不可用，但**诊断页能分辨原因**：这条路径记
+    `unsupported_platform`（与「托盘里真没有落脚图标」的 `failed` 分开，不是「等价为 tooltip」——
+    那个后端没有 tooltip），日志另提示改用系统通知。
+11. **Linux 侧只做过启动验收**（WSLg + 可写数据目录）：进程能起来、托盘初始化成功、HID 打「枚举无
+    HID 设备」、BLE 按退避重启并保留 provider 的结构化原因（`需 bluetoothd…`）。仍**没有**在带
+    蓝牙适配器的真机上跑过真实采集，也没有在真桌面会话里确认托盘的视觉呈现与通知投递。
