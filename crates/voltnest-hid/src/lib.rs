@@ -15,14 +15,14 @@
 //!
 //! # 实测约束（对全部品牌适用）
 //! 1. **禁止** `open(vid, pid)`：它会静默打开错误的集合（枚举顺序里第一个 `0x0C/0x01` 集合），拿到「成功但读不到」的句柄。
-//! 2. 集合选择必须「VID/PID 精确 → 表内 MI_xx → UsagePage」三步。
+//! 2. 集合选择必须「VID/PID 精确 → 品牌声明的 UsagePage」两步；型号表只按 `VID:PID` 提供型号（统一数据规范见 [`table`]），不含接口号。
 //! 3. 声明为只写的通道（AJAZZ 的 `0xFFB1`）不得用读句柄打开。
 //!
 //! # 平台支持
-//! - **Windows**：hidapi 走 `hid.dll`，集合记录提供 `usage_page` / `usage` / `interface_number`，行为与已验证版本一致。
+//! - **Windows**：hidapi 走 `hid.dll`，集合记录提供 `usage_page` / `usage`，行为与已验证版本一致。
 //! - **Linux**：hidapi 走静态 hidraw 后端（特性 `linux-static-hidraw`），集合路径形如 `/dev/hidraw3`。
 //!   1. **权限**：读写 `/dev/hidraw*` 需要当前用户被放行，发行版通常用 `plugdev` 组或 udev 规则做到；**本实现不安装任何 udev 规则**，缺权限时表现为 `open_path` 失败并上报 `access_denied`，不会静默丢数据。
-//!   2. **能力**：hidraw 从报告描述符解析真实 `usage_page` / `usage`（只有 libusb 后端恒为 0），USB 总线上也提供 `interface_number`——Usage 与 MI_xx 规则在 Linux 无需退化。
+//!   2. **能力**：hidraw 从报告描述符解析真实 `usage_page` / `usage`（只有 libusb 后端恒为 0）——集合选择的两项判据在 Linux 无需退化。
 //!   3. **无设备**：机器上没有 `/dev/hidraw*` 时枚举为空——不报错、不 panic、不阻塞，只打一条诊断后继续按 [`PRESENCE_POLL_MS`] 轮询。
 //!   4. **构建期依赖**：hidapi 的 hidraw 后端在构建期用 pkg-config 探测 `libudev`（需要 `libudev.pc` 与 `libudev.h`，并把 C 源码静态编进来），因此构建机须安装 libudev 的开发文件：Debian / Ubuntu `sudo apt install libudev-dev`，Fedora `sudo dnf install systemd-devel`。本 crate 只声明这条依赖，**不携带、不 vendor 任何构建期垫片**；运行期只依赖系统已装的 `libudev.so.1`（发行版默认就有）。
 

@@ -44,7 +44,7 @@ pub const SPEC: BrandSpec = BrandSpec {
         inverted: false,
     }),
     expected_interval_ms: 30_000,
-    device_table_json: include_str!("../../data/vbas/dareu.json"),
+    device_table_json: include_str!("../../data/mappings/dareu.json"),
 };
 
 #[cfg(test)]

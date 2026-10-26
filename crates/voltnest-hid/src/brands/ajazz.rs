@@ -46,7 +46,7 @@ pub const SPEC: BrandSpec = BrandSpec {
     // 纯推送：不向设备发任何报文。
     request: None,
     expected_interval_ms: 30_000,
-    device_table_json: include_str!("../../data/vbas/ajazz.json"),
+    device_table_json: include_str!("../../data/mappings/ajazz.json"),
 };
 
 #[cfg(test)]
@@ -234,11 +234,19 @@ mod tests {
     fn device_table_covers_verified_generation() {
         let table = crate::table::DeviceTable::parse(super::SPEC.device_table_json).unwrap();
         assert_eq!(table.len(), 16, "8 型号 × 2 模式");
+        assert_eq!(table.config_version, "1.0.0");
         assert_eq!(table.source_file, "config.xml");
+        assert_eq!(table.source_software, "AJAZZ Driver（W1）");
         assert_eq!(table.source_version, "1.0.7.6");
         assert_eq!(table.name(0x7768, 0x6426), Some("AJ159 NL"));
         assert_eq!(table.name(0x7768, 0x6425), Some("AJ159 NL P"));
         assert_eq!(table.name(0x7768, 0x6427), None, "6427 不存在，必须 miss");
+        assert_eq!(
+            table.lookup(0x7768, 0x6426).unwrap().vendor_device_id,
+            Some(102),
+            "vendorDeviceId 是驱动内部型号编号"
+        );
+        assert_eq!(table.lookup(0x7768, 0x6426).unwrap().device_type, "mouse");
         let usb = table.lookup(0x7768, 0x6D26).unwrap();
         let g24 = table.lookup(0x7768, 0x6426).unwrap();
         assert_eq!(usb.name, g24.name);
