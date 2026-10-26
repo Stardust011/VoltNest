@@ -160,6 +160,7 @@ mod tests {
         }
     }
 
+    #[cfg(target_os = "linux")]
     fn home_tree() -> PathBuf {
         Path::new("/home/u")
             .join(".local")
@@ -197,12 +198,16 @@ mod tests {
         assert!(paths.root().ends_with("VoltNest") || paths.root().ends_with(".voltnest"));
     }
 
+    /// Linux 路径语义依赖宿主平台的 `Path::is_absolute`：Windows 上 `/data` 不算绝对路径，
+    /// 这组断言只在 Linux 有意义。
+    #[cfg(target_os = "linux")]
     #[test]
     fn linux_root_prefers_absolute_xdg_data_home() {
         let root = linux_root(&env_of(&[("XDG_DATA_HOME", "/data"), ("HOME", "/home/u")]));
         assert_eq!(root, Some(Path::new("/data").join(APP_DIR)));
     }
 
+    #[cfg(target_os = "linux")]
     #[test]
     fn linux_root_ignores_relative_xdg_data_home() {
         // XDG 规范：相对路径视为未设置，于是回落 HOME。
@@ -213,12 +218,14 @@ mod tests {
         assert_eq!(root, Some(home_tree()));
     }
 
+    #[cfg(target_os = "linux")]
     #[test]
     fn linux_root_falls_back_to_home() {
         let root = linux_root(&env_of(&[("HOME", "/home/u")]));
         assert_eq!(root, Some(home_tree()));
     }
 
+    #[cfg(target_os = "linux")]
     #[test]
     fn linux_root_ignores_empty_variables() {
         let root = linux_root(&env_of(&[("XDG_DATA_HOME", ""), ("HOME", "")]));
