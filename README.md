@@ -26,8 +26,9 @@ apps/desktop/          Tauri 宿主（src-tauri）+ Vue 前端（src）
 crates/voltnest-hid/
   src/spec.rs         BrandSpec / FrameLayout / BatteryFields / RequestTemplate（品牌无关）
   src/frame.rs        通用解码器：按 BrandSpec 取字段，唯一解析入口
+  src/mappings.rs     型号表目录定位 + 运行时加载（不再编译期嵌入，安装包须带上该目录）
   src/brands/ajazz.rs 已验证品牌：UsagePage 0xFFB2 / cmd 0xFA / payload[1] 为电量
-  data/vbas/ajazz.json VID:PID → 型号（编译期嵌入）
+  data/mappings/*.json VID:PID → 型号（运行时按文件名加载，见 BrandSpec::device_table_file）
 ```
 
 依赖方向只能向下：`core → provider`、`hid/ble → provider`、`src-tauri → 全部`。
@@ -97,7 +98,8 @@ Tauri 2 会自动把同目录的 `tauri.linux.conf.json` 合并进 `tauri.conf.j
 
 CI 侧：`git tag v0.1.0 && git push origin v0.1.0` 会双平台打包并挂到 Draft Release
 （`.github/workflows/release.yml`，v1 不签名，需手动发布）；`cargo-deny` 与工具链漂移扫描每周一跑
-（`.github/workflows/security.yml`）。
+（`.github/workflows/security.yml`）；型号表每月 1 日抓取厂商网页驱动并开 PR
+（`.github/workflows/mappings.yml`，脚本在 `mappings/scripts/`，只在 `devices` 内容有差异时才开 PR）。
 
 ## Linux 运行期前提
 
