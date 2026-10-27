@@ -402,9 +402,13 @@
       "mode": "USB"
     },
     "3837:3003": {
-      "name": "Ace 68",
+      "name": "Ace 68 III",
       "deviceType": "keyboard",
-      "mode": "USB"
+      "mode": "USB",
+      "ambiguous": true,
+      "conflicts": [
+        "Ace 68"
+      ]
     },
     "3837:3007": {
       "name": "Ace 68 GT",
@@ -432,9 +436,13 @@
       "mode": "USB"
     },
     "3837:300D": {
-      "name": "Mix 87",
+      "name": "Mix 87 III",
       "deviceType": "keyboard",
-      "mode": "USB"
+      "mode": "USB",
+      "ambiguous": true,
+      "conflicts": [
+        "Mix 87"
+      ]
     },
     "3837:301A": {
       "name": "God 60",
@@ -457,47 +465,54 @@
       "mode": "USB"
     },
     "3837:3024": {
-      "name": "Ace 68 V2",
+      "name": "Ace 68 V2 III",
       "deviceType": "keyboard",
-      "mode": "USB"
+      "mode": "USB",
+      "ambiguous": true,
+      "conflicts": [
+        "Ace 68 V2"
+      ]
     },
     "3837:3025": {
-      "name": "Ace 68 V2",
+      "name": "Ace 68 V2 III",
       "deviceType": "keyboard",
       "mode": "USB"
     },
     "3837:3026": {
-      "name": "Ace 68 Turbo",
+      "name": "Ace 68 Turbo 16K",
       "deviceType": "keyboard",
-      "mode": "USB"
+      "mode": "USB",
+      "ambiguous": true,
+      "conflicts": [
+        "Ace 68 Turbo"
+      ]
     },
     "3837:3027": {
-      "name": "Ace 68 Turbo",
+      "name": "Ace 68 Turbo 16K",
       "deviceType": "keyboard",
       "mode": "USB"
     },
     "3837:3028": {
-      "name": "Ace 68 Turbo",
+      "name": "Ace 68 Turbo 8K",
       "deviceType": "keyboard",
-      "mode": "USB"
+      "mode": "USB",
+      "ambiguous": true,
+      "conflicts": [
+        "Ace 68 Turbo"
+      ]
     },
     "3837:3029": {
-      "name": "Ace 68 Turbo",
+      "name": "Ace 68 Turbo 8K",
       "deviceType": "keyboard",
       "mode": "USB"
     },
     "3837:302A": {
-      "name": "Ace 68",
-      "deviceType": "keyboard",
-      "mode": "USB"
-    },
-    "3837:302B": {
-      "name": "Jet 75",
+      "name": "Ace 68 III",
       "deviceType": "keyboard",
       "mode": "USB"
     },
     "3837:302C": {
-      "name": "Mix 87",
+      "name": "Mix 87 III",
       "deviceType": "keyboard",
       "mode": "USB"
     },
@@ -528,12 +543,16 @@
       "fallback": "K87S"
     },
     "3837:303C": {
-      "name": "Ace 75",
+      "name": "Ace 75 8K",
       "deviceType": "keyboard",
-      "mode": "USB"
+      "mode": "USB",
+      "ambiguous": true,
+      "conflicts": [
+        "Ace 75"
+      ]
     },
     "3837:303D": {
-      "name": "Ace 75",
+      "name": "Ace 75 8K",
       "deviceType": "keyboard",
       "mode": "USB"
     },
@@ -819,52 +838,72 @@
       "mode": "USB"
     },
     "41E4:2112": {
-      "name": "Ace 60X",
+      "name": "Ace 60X II",
       "deviceType": "keyboard",
-      "mode": "USB"
+      "mode": "USB",
+      "ambiguous": true,
+      "conflicts": [
+        "Ace 60X"
+      ]
     },
     "41E4:2113": {
-      "name": "Ace 60X",
+      "name": "Ace 60X II",
       "deviceType": "keyboard",
       "mode": "USB"
     },
     "41E4:2114": {
-      "name": "Ace 68",
+      "name": "Ace 68 I",
       "deviceType": "keyboard",
-      "mode": "USB"
+      "mode": "USB",
+      "ambiguous": true,
+      "conflicts": [
+        "Ace 68"
+      ]
     },
     "41E4:2115": {
-      "name": "Ace 68",
+      "name": "Ace 68 I",
       "deviceType": "keyboard",
       "mode": "USB"
     },
     "41E4:2116": {
-      "name": "Ace 68",
+      "name": "Ace 68 Pro",
       "deviceType": "keyboard",
-      "mode": "USB"
+      "mode": "USB",
+      "ambiguous": true,
+      "conflicts": [
+        "Ace 68"
+      ]
     },
     "41E4:2117": {
-      "name": "Ace 68",
+      "name": "Ace 68 Pro",
       "deviceType": "keyboard",
       "mode": "USB"
     },
     "41E4:2118": {
-      "name": "Jet 75",
+      "name": "Jet 75 I",
       "deviceType": "keyboard",
-      "mode": "USB"
+      "mode": "USB",
+      "ambiguous": true,
+      "conflicts": [
+        "Jet 75"
+      ]
     },
     "41E4:2119": {
-      "name": "Jet 75",
+      "name": "Jet 75 I",
       "deviceType": "keyboard",
       "mode": "USB"
     },
     "41E4:211A": {
-      "name": "Jet 75",
+      "name": "Jet 75 II",
       "deviceType": "keyboard",
-      "mode": "USB"
+      "mode": "USB",
+      "ambiguous": true,
+      "conflicts": [
+        "Jet 75"
+      ]
     },
     "41E4:211B": {
-      "name": "Jet 75",
+      "name": "Jet 75 II",
       "deviceType": "keyboard",
       "mode": "USB"
     },
@@ -879,42 +918,58 @@
       "mode": "USB"
     },
     "41E4:2120": {
-      "name": "Ace 68 Air",
+      "name": "Ace 68 Air II",
       "deviceType": "keyboard",
-      "mode": "USB"
+      "mode": "USB",
+      "ambiguous": true,
+      "conflicts": [
+        "Ace 68 Air"
+      ]
     },
     "41E4:2121": {
-      "name": "Ace 68 Air",
+      "name": "Ace 68 Air II",
       "deviceType": "keyboard",
       "mode": "USB"
     },
     "41E4:2122": {
-      "name": "Mix 87",
+      "name": "Mix 87 I",
       "deviceType": "keyboard",
-      "mode": "USB"
+      "mode": "USB",
+      "ambiguous": true,
+      "conflicts": [
+        "Mix 87"
+      ]
     },
     "41E4:2123": {
-      "name": "Mix 87",
+      "name": "Mix 87 I",
       "deviceType": "keyboard",
       "mode": "USB"
     },
     "41E4:2126": {
-      "name": "Ace 60X",
+      "name": "Ace 60X I",
       "deviceType": "keyboard",
-      "mode": "USB"
+      "mode": "USB",
+      "ambiguous": true,
+      "conflicts": [
+        "Ace 60X"
+      ]
     },
     "41E4:2127": {
-      "name": "Ace 60X",
+      "name": "Ace 60X I",
       "deviceType": "keyboard",
       "mode": "USB"
     },
     "41E4:2132": {
-      "name": "Ace 68 Air",
+      "name": "Ace 68 Air III",
       "deviceType": "keyboard",
-      "mode": "USB"
+      "mode": "USB",
+      "ambiguous": true,
+      "conflicts": [
+        "Ace 68 Air"
+      ]
     },
     "41E4:2133": {
-      "name": "Ace 68 Air",
+      "name": "Ace 68 Air III",
       "deviceType": "keyboard",
       "mode": "USB"
     },
