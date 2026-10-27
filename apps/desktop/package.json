@@ -9,8 +9,12 @@
     "build": "vue-tsc --noEmit && vite build",
     "preview": "vite preview",
     "test": "vitest run",
-    "format": "prettier --write .",
-    "format:check": "prettier --check .",
+    "format": "npm run format:rust && npm run format:web",
+    "format:check": "npm run format:check:rust && npm run format:check:web",
+    "format:rust": "cargo fmt --all --manifest-path ../../Cargo.toml",
+    "format:check:rust": "cargo fmt --all --manifest-path ../../Cargo.toml --check",
+    "format:web": "prettier --write .",
+    "format:check:web": "prettier --check .",
     "tauri": "tauri"
   },
   "dependencies": {
