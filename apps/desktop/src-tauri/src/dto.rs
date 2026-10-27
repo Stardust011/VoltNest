@@ -71,7 +71,8 @@ impl SettingsDto {
             target.set_sensitivity(sensitivity);
         }
         target.notifications.mode = self.notifications.mode;
-        target.notifications.low_thresholds = clamp_low_battery_levels(self.notifications.low_thresholds);
+        target.notifications.low_thresholds =
+            clamp_low_battery_levels(self.notifications.low_thresholds);
         target.autostart = self.autostart;
         target.start_minimized = self.start_minimized;
         target.onboarding_completed = self.onboarding_completed;

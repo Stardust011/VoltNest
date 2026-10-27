@@ -482,7 +482,10 @@ mod tests {
 
         // 不带报告 ID 时同样成立（官方解析器的输入就是这种形态）。
         let bare = [0x0A, 0x05, 0x37, 0x00];
-        assert_eq!(decode_listen(&MOUSE_WIRED, &bare).unwrap().charging, Some(false));
+        assert_eq!(
+            decode_listen(&MOUSE_WIRED, &bare).unwrap().charging,
+            Some(false)
+        );
     }
 
     /// 无线实时上报：多 3 字节 `space0`，type/电量/状态整体后移。
@@ -531,7 +534,10 @@ mod tests {
 
     #[test]
     fn audio_request_matches_official_payload() {
-        let query = AUDIO.request.expect("音频必须声明查询模板").build(Some(0x55));
+        let query = AUDIO
+            .request
+            .expect("音频必须声明查询模板")
+            .build(Some(0x55));
         assert_eq!(query.len(), 64);
         assert_eq!(&query[..3], &[0x55, 0x65, 0x01]);
         assert!(query[3..].iter().all(|b| *b == 0));
@@ -556,7 +562,10 @@ mod tests {
             .unwrap();
         assert_eq!(wireless_keyboard.frame.report_id, Some(0x13));
         assert_eq!(wireless_keyboard.request.unwrap().cmd, 0x4A);
-        assert!(wireless_keyboard.reassembly.is_some(), "2.4G 键盘是多包应答");
+        assert!(
+            wireless_keyboard.reassembly.is_some(),
+            "2.4G 键盘是多包应答"
+        );
 
         // 鼠标（2.4G）：A7 Pro —— 仍是鼠标那套 0x11/0x06。
         let wireless = SPEC
@@ -647,7 +656,10 @@ mod tests {
         let req = KEYBOARD_WIRED.request.expect("键盘必须声明查询模板");
         let query = req.build(Some(0x06));
         assert_eq!(query.len(), 520, "官方特征报告是 520 字节");
-        assert_eq!(&query[..8], &[0x06, 0x87, 0x00, 0x00, 0x01, 0x00, 0x02, 0x00]);
+        assert_eq!(
+            &query[..8],
+            &[0x06, 0x87, 0x00, 0x00, 0x01, 0x00, 0x02, 0x00]
+        );
         assert!(query[8..].iter().all(|b| *b == 0x00));
         // 官方有线读是一次「发 + 收」，不重问。
         assert_eq!(req.retry, 0);

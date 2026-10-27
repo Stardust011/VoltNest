@@ -269,7 +269,11 @@ fn wait_cmd(cmd_rx: &Receiver<SupervisorCmd>, delay_ms: u64, shared: &HostState)
 }
 
 /// 起一次采集线程并把它跑完。
-fn run_once(shared: &Arc<HostState>, spec: &TransportSpec, cmd_rx: &Receiver<SupervisorCmd>) -> RunOutcome {
+fn run_once(
+    shared: &Arc<HostState>,
+    spec: &TransportSpec,
+    cmd_rx: &Receiver<SupervisorCmd>,
+) -> RunOutcome {
     let (event_tx, event_rx) = std::sync::mpsc::channel();
     let (done_tx, done_rx) = std::sync::mpsc::channel();
     let stop = Arc::new(AtomicBool::new(false));

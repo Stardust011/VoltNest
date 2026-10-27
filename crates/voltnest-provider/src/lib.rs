@@ -32,8 +32,8 @@ pub use error::ErrorCode;
 pub use event::{DeviceFact, ProviderEvent, RemovalReason, ValidReading};
 pub use ids::{Percent, StableId};
 pub use profile::{
-    BLE_BAS, Cadence, ChargingSupport, HID_VBAS, PollPolicy, ProfileError, ProviderProfile,
-    Sensitivity, DegradationThresholds, validate_registry,
+    BLE_BAS, Cadence, ChargingSupport, DegradationThresholds, HID_VBAS, PollPolicy, ProfileError,
+    ProviderProfile, Sensitivity, validate_registry,
 };
 pub use transport::Transport;
 

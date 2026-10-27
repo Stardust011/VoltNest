@@ -469,12 +469,7 @@ impl Reassembler {
     ///
     /// 只认命令字对上的包；序号不符的包直接丢（官方同样只接受 `current === expected`，
     /// 迟到/重发的包会造成重复字节，比丢一包更难查）。
-    pub fn feed(
-        &mut self,
-        spec: &BrandSpec,
-        report: &[u8],
-        now: Instant,
-    ) -> Option<Vec<u8>> {
+    pub fn feed(&mut self, spec: &BrandSpec, report: &[u8], now: Instant) -> Option<Vec<u8>> {
         let reasm = spec.reassembly?;
         // 半包超时：先丢，再按「这条包属于新一次应答」继续。
         if let Some(deadline) = self.deadline
@@ -656,7 +651,8 @@ mod tests {
         let mut r = Reassembler::new();
         let t0 = Instant::now();
         assert!(
-            r.feed(&REASSEMBLED, &packet(2, 0, &[0x3C, 0x01], true), t0).is_none(),
+            r.feed(&REASSEMBLED, &packet(2, 0, &[0x3C, 0x01], true), t0)
+                .is_none(),
             "第一包不够，必须等第二包"
         );
         let done = r
@@ -678,7 +674,10 @@ mod tests {
         let done = r
             .feed(&REASSEMBLED, &packet(1, 0, &[0x50, 0x00], false), t0)
             .expect("单包应答必须立即完成");
-        assert_eq!(decode_assembled(&REASSEMBLED, &done).unwrap().percent.get(), 80);
+        assert_eq!(
+            decode_assembled(&REASSEMBLED, &done).unwrap().percent.get(),
+            80
+        );
     }
 
     #[test]
@@ -693,9 +692,15 @@ mod tests {
     fn out_of_order_packet_is_dropped() {
         let mut r = Reassembler::new();
         let t0 = Instant::now();
-        assert!(r.feed(&REASSEMBLED, &packet(2, 0, &[0x3C, 0x00], true), t0).is_none());
+        assert!(
+            r.feed(&REASSEMBLED, &packet(2, 0, &[0x3C, 0x00], true), t0)
+                .is_none()
+        );
         // 序号 2 越界（total=2 合法序号只有 0/1）：丢弃，不破坏已收到的第一包。
-        assert!(r.feed(&REASSEMBLED, &packet(2, 2, &[0x00, 0x00], true), t0).is_none());
+        assert!(
+            r.feed(&REASSEMBLED, &packet(2, 2, &[0x00, 0x00], true), t0)
+                .is_none()
+        );
         let done = r.feed(&REASSEMBLED, &packet(2, 1, &[0x00, 0x00], true), t0);
         assert!(done.is_some(), "丢掉乱序包后仍应能凑齐");
     }
@@ -710,7 +715,9 @@ mod tests {
             .feed(&REASSEMBLED, &packet(2, 0, &[0x3C, 0x00], true), t0)
             .is_none();
         assert!(done);
-        let done = r.feed(&REASSEMBLED, &packet(2, 1, &[0x00, 0x00], true), t0).unwrap();
+        let done = r
+            .feed(&REASSEMBLED, &packet(2, 1, &[0x00, 0x00], true), t0)
+            .unwrap();
         assert_eq!(done, vec![0x3C, 0x00, 0x00, 0x00]);
     }
 
@@ -721,15 +728,20 @@ mod tests {
         r.feed(&REASSEMBLED, &packet(2, 0, &[0xFF, 0x00], true), t0);
         // 超过 timeout_ms（5s）后到达的第二包：半包已过期，必须丢弃而不是拼上去。
         let late = t0 + Duration::from_secs(6);
-        assert!(r.feed(&REASSEMBLED, &packet(2, 1, &[0x00, 0x00], true), late).is_none());
+        assert!(
+            r.feed(&REASSEMBLED, &packet(2, 1, &[0x00, 0x00], true), late)
+                .is_none()
+        );
     }
 
     #[test]
     fn truncated_packet_is_ignored() {
         let mut r = Reassembler::new();
-        assert!(r.feed(&REASSEMBLED, &[0x33, 0x4A, 0x01], Instant::now()).is_none());
+        assert!(
+            r.feed(&REASSEMBLED, &[0x33, 0x4A, 0x01], Instant::now())
+                .is_none()
+        );
     }
-
 
     #[test]
     fn fixed_length_payload_shorter_than_declared_is_malformed() {

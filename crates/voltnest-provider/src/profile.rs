@@ -391,7 +391,9 @@ impl std::error::Error for ProfileError {}
 pub static HID_VBAS: ProviderProfile = ProviderProfile {
     family_id: crate::FAMILY_HID_VBAS,
     transport: Transport::Hid,
-    cadence: Cadence::Polled { interval_ms: 30_000 },
+    cadence: Cadence::Polled {
+        interval_ms: 30_000,
+    },
     thresholds: DegradationThresholds {
         stale_ms: 45_000,
         unavailable_ms: 60_000,
@@ -776,7 +778,9 @@ mod tests {
     fn cadence_matches_spec() {
         assert_eq!(
             HID_VBAS.cadence,
-            Cadence::Polled { interval_ms: 30_000 }
+            Cadence::Polled {
+                interval_ms: 30_000
+            }
         );
         assert_eq!(
             BLE_BAS.cadence,
@@ -844,7 +848,9 @@ mod tests {
         static DUP: ProviderProfile = ProviderProfile {
             family_id: "hid-vbas-other",
             transport: Transport::Hid,
-            cadence: Cadence::Polled { interval_ms: 30_000 },
+            cadence: Cadence::Polled {
+                interval_ms: 30_000,
+            },
             thresholds: DegradationThresholds {
                 stale_ms: 45_000,
                 unavailable_ms: 60_000,
@@ -866,7 +872,9 @@ mod tests {
         static BROKEN: ProviderProfile = ProviderProfile {
             family_id: "hid-vbas-broken",
             transport: Transport::Hid,
-            cadence: Cadence::Polled { interval_ms: 30_000 },
+            cadence: Cadence::Polled {
+                interval_ms: 30_000,
+            },
             thresholds: DegradationThresholds {
                 stale_ms: 10_000,
                 unavailable_ms: 60_000,
