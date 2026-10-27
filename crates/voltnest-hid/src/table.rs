@@ -1,6 +1,9 @@
 //! 「VID:PID → 型号」快照表（品牌无关的加载器）。
 //!
-//! 每品牌一份 JSON 快照，由 [`crate::spec::BrandSpec::device_table_json`] 编译期嵌入（`include_str!`），安装目录无需带数据文件，也不会与二进制版本分叉。新增品牌只加数据文件 + 注册项，本文件不变。
+//! 每品牌一份 JSON 型号表，由 [`crate::spec::BrandSpec::device_table_file`] 声明文件名，进程启动时
+//! 由 [`crate::mappings`] 从 `data/mappings/` **运行时读取**（不再 `include_str!` 编译期嵌入）：
+//! 换表只换文件、不必重编二进制，代价是安装包必须随二进制带上该目录，目录定位见 [`crate::mappings`]。
+//! 新增品牌只加数据文件 + 注册项，本文件不变。
 //!
 //! # 统一数据规范
 //!
@@ -127,8 +130,11 @@ fn source_label(source: &serde_json::Value) -> String {
     parts.join(" · ")
 }
 
-/// 一个品牌编译期嵌入的型号表。
-#[derive(Debug)]
+/// 一个品牌从型号表目录里加载到的型号表。
+///
+/// `Clone` 仅供注册表使用：多个协议共用同一份表文件时（达尔优 3 套、迈从 5 套、雷柏 4 套）
+/// 各自持有一份副本，避免为「读同一份数据」引入共享所有权。
+#[derive(Clone, Debug)]
 pub struct DeviceTable {
     map: HashMap<(u16, u16), Entry>,
     /// 数据规范版本（诊断页展示）。

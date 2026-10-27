@@ -26,8 +26,9 @@ apps/desktop/          Tauri 宿主（src-tauri）+ Vue 前端（src）
 crates/voltnest-hid/
   src/spec.rs         BrandSpec / FrameLayout / BatteryFields / RequestTemplate（品牌无关）
   src/frame.rs        通用解码器：按 BrandSpec 取字段，唯一解析入口
+  src/mappings.rs     型号表目录定位 + 运行时加载（不再编译期嵌入，安装包须带上该目录）
   src/brands/ajazz.rs 已验证品牌：UsagePage 0xFFB2 / cmd 0xFA / payload[1] 为电量
-  data/vbas/ajazz.json VID:PID → 型号（编译期嵌入）
+  data/mappings/*.json VID:PID → 型号（运行时按文件名加载，见 BrandSpec::device_table_file）
 ```
 
 依赖方向只能向下：`core → provider`、`hid/ble → provider`、`src-tauri → 全部`。

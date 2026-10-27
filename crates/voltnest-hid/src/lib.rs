@@ -5,6 +5,19 @@
 //! # 分层：家族 == 协议形状，品牌 == 字段差异
 //! 设备满足「HID 私有通道 + 命令字 + 定长报告」即属本家族；电量从哪几个字节读、是否要先发查询报文，是**品牌差异**。解析器（[`frame::decode_battery`]）与运行时（[`runtime`]）只读 [`spec::BrandSpec`] 字段，无 `match brand_id` 分支；新增品牌仅追加一份 [`spec::BrandSpec`] 与型号表并在 [`brands::BRANDS`] 登记。
 //!
+//! # 型号表：运行时从文件系统加载
+//! 型号表（`data/mappings/*.json`）**不再**编译期嵌入：进程首次枚举前由 [`mappings`] 定位目录、
+//! 扫描并解析全部 `*.json`，再按 [`spec::BrandSpec::device_table_file`] 交给对应品牌。因此
+//! **安装包必须随二进制带上型号表目录**（Tauri 打包见 `bundle.resources`），定位顺序：
+//! `VOLTNEST_HID_MAPPINGS_DIR` 环境变量 → 可执行文件同级 / 上一级（`mappings`、`data/mappings`、
+//! `resources/mappings`、macOS `Resources/mappings`、`share/voltnest/mappings`）→ 源码树
+//! `CARGO_MANIFEST_DIR/data/mappings`（开发期）。目录找不到时 [`brands::Registry::embedded`] 直接
+//! panic 并在信息里列出全部已尝试路径；需要优雅降级时用 [`brands::Registry::try_embedded`]。
+//!
+//! 单份型号表读不出或解析失败**只跳过对应品牌**（记入 [`brands::Registry::skipped`]，并在
+//! `try_embedded` 里打一条 `voltnest-hid:` 诊断），其它品牌照常采集；只有「一个品牌都不可用」
+//! 才算部署事故（`RegistryError::NoUsableBrand`）。
+//!
 //! # 已验证品牌
 //! | 品牌 | 接入的协议数 | 分派依据 | 通道 / 采集方式 |
 //! |---|---|---|---|
@@ -36,6 +49,7 @@
 
 pub mod brands;
 pub mod frame;
+pub mod mappings;
 pub mod spec;
 pub mod table;
 

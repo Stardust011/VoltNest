@@ -140,7 +140,7 @@ pub const MOUSE_WIRED: BrandSpec = BrandSpec {
     ack: None,
     fallback_report_id: None,
     expected_interval_ms: 30_000,
-    device_table_json: include_str!("../../data/mappings/mchose.json"),
+    device_table_file: "mchose.json",
     variants: &[],
     route: None,
 };
@@ -212,7 +212,7 @@ pub const AUDIO: BrandSpec = BrandSpec {
     ack: None,
     fallback_report_id: None,
     expected_interval_ms: 30_000,
-    device_table_json: include_str!("../../data/mappings/mchose.json"),
+    device_table_file: "mchose.json",
     variants: &[],
     route: None,
 };
@@ -284,7 +284,7 @@ pub const KEYBOARD_WIRED: BrandSpec = BrandSpec {
     // `0x09` 而不是 `0x06`。型号名对不上型号表，故不在 route 里按名字猜，交给运行时「主 → 备」探测。
     fallback_report_id: Some(0x09),
     expected_interval_ms: 30_000,
-    device_table_json: include_str!("../../data/mappings/mchose.json"),
+    device_table_file: "mchose.json",
     variants: &[],
     route: None,
 };
@@ -361,7 +361,7 @@ pub const KEYBOARD_WIRELESS: BrandSpec = BrandSpec {
     ack: None,
     fallback_report_id: None,
     expected_interval_ms: 30_000,
-    device_table_json: include_str!("../../data/mappings/mchose.json"),
+    device_table_file: "mchose.json",
     variants: &[],
     route: None,
 };
@@ -421,7 +421,7 @@ mod tests {
     use crate::table::DeviceTable;
 
     fn table() -> DeviceTable {
-        DeviceTable::parse(SPEC.device_table_json).unwrap()
+        crate::mappings::load_table(SPEC.device_table_file).unwrap()
     }
 
     /// 有线应答：`[0]=0x11 [1]=~cmd [2..]=~payload`，电量 `payload[9]`、充电 `payload[10]`。
