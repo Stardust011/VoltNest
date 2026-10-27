@@ -29,7 +29,7 @@ use tauri::{AppHandle, Manager};
 
 use voltnest_core::{DeviceDto, DeviceState, Snapshot};
 
-use crate::host::{Shared, lock};
+use crate::host::{HostState, lock};
 
 /// 基础托盘图标的 id（没有设备图标时占位，点它打开面板）。
 pub const BASE_TRAY_ID: &str = "voltnest";
@@ -113,7 +113,7 @@ fn quit(app: &AppHandle) {
 }
 
 /// 按快照同步设备托盘图标：增、改、删。
-pub fn sync(app: &AppHandle, shared: &Arc<Shared>, snap: &Snapshot) {
+pub fn sync_tray_icons(app: &AppHandle, shared: &Arc<HostState>, snap: &Snapshot) {
     let mut known = lock(&shared.tray_ids);
     let visible = &snap.tray.visible_device_ids;
     // 被上限截断的设备数：基础图标退位之后，「还有 N 台」只能挂在最后一张设备图标上。
@@ -283,7 +283,7 @@ pub enum BubbleOutcome {
 /// 「平台差异」→ [`BubbleOutcome::UnsupportedPlatform`]），最后才真写 tooltip →
 /// [`BubbleOutcome::Sent`]。
 pub fn bubble(app: &AppHandle, stable_id: &str, text: &str) -> BubbleOutcome {
-    let Some(tray) = alert_tray(app, stable_id) else {
+    let Some(tray) = notification_tray(app, stable_id) else {
         return BubbleOutcome::NoIcon;
     };
     if cfg!(target_os = "linux") {
@@ -305,7 +305,7 @@ pub fn bubble(app: &AppHandle, stable_id: &str, text: &str) -> BubbleOutcome {
 }
 
 /// 低电量提示挂哪张图标：优先设备自己的，其次**露在托盘里**的基础图标。
-fn alert_tray(app: &AppHandle, stable_id: &str) -> Option<TrayIcon> {
+fn notification_tray(app: &AppHandle, stable_id: &str) -> Option<TrayIcon> {
     if let Some(tray) = app.tray_by_id(&TrayIconId::new(tray_id_for(stable_id))) {
         return Some(tray);
     }
@@ -372,9 +372,11 @@ fn clamp_chars(text: String, limit: usize) -> String {
     out
 }
 
-/// 托盘用的一次读数。
+/// 托盘要展示的一次电量读数（实时值或 `state.json` 缓存值）。
+///
+/// 曾名 `DisplayedBattery`，与 `ProviderEvent::DisplayedBattery`（采集事件）撞词，故按用途命名。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct Reading {
+struct DisplayedBattery {
     /// 百分比。
     percent: u8,
     /// 本次会话是否还没拿到实时读数（来自 `state.json` 缓存）。
@@ -382,15 +384,15 @@ struct Reading {
 }
 
 /// 与前端 `displayedBattery()` 同规则：首读未到（`state == Unknown`）时用 `lastKnownBattery` 撑住图标与 tooltip，免得启动瞬间托盘变成无比例、无读数的空环。`Unavailable`/`Offline` 不算 —— 那是「确定读不到」，不能假装还有实时读数。
-fn displayed_battery(device: &DeviceDto) -> Option<Reading> {
+fn displayed_battery(device: &DeviceDto) -> Option<DisplayedBattery> {
     if let Some(percent) = device.battery {
-        return Some(Reading {
+        return Some(DisplayedBattery {
             percent,
             from_cache: false,
         });
     }
     match device.state {
-        DeviceState::Unknown => device.last_known_battery.map(|percent| Reading {
+        DeviceState::Unknown => device.last_known_battery.map(|percent| DisplayedBattery {
             percent,
             from_cache: true,
         }),
@@ -591,7 +593,6 @@ mod tests {
             is_charging: Some(false),
             state,
             last_valid_at_ms: None,
-            last_push_at_ms: None,
             last_error: None,
         }
     }
@@ -602,7 +603,7 @@ mod tests {
             server_now_ms: 0,
             devices: Vec::new(),
             cards: Vec::new(),
-            tray: voltnest_core::TrayDto {
+            tray: voltnest_core::TraySnapshotDto {
                 visible_device_ids: Vec::new(),
             },
         };
@@ -790,7 +791,7 @@ mod tests {
         d.last_known_battery = Some(87);
         assert_eq!(
             displayed_battery(&d),
-            Some(Reading {
+            Some(DisplayedBattery {
                 percent: 87,
                 from_cache: true
             }),

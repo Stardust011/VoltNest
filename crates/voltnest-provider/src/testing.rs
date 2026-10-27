@@ -203,8 +203,8 @@ mod tests {
             ble_fact("AJ159 NL").stable_id.as_str(),
             "ble:01:00:00:23:04:35"
         );
-        assert_eq!(hid_fact("AJ159 NL").provider, "hid-vbas");
-        assert_eq!(ble_fact("AJ159 NL").provider, "ble-bas");
+        assert_eq!(hid_fact("AJ159 NL").family_id, "hid-vbas");
+        assert_eq!(ble_fact("AJ159 NL").family_id, "ble-bas");
     }
 
     #[test]

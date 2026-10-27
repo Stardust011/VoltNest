@@ -5,7 +5,7 @@
 use crate::state::DeviceState;
 use voltnest_provider::{DeviceClassification, ErrorCode, Percent, StableId, Transport};
 
-/// 单台设备在一次「出现」里最多记住多少种坏帧（见 [`Record::unreadable_kinds`]）。
+/// 单台设备在一次「出现」里最多记住多少种坏帧（见 [`DeviceRecord::unreadable_kinds`]）。
 ///
 /// 兜住「每帧字节都不同」的极端情况（如帧内带计数器）：达上限后新种类不再留痕，
 /// 宁可少一条诊断，也不让环形缓冲被刷空。
@@ -13,13 +13,13 @@ pub const UNREADABLE_KINDS_MAX: usize = 32;
 
 /// 一个 transport 上的一台设备。
 #[derive(Clone, Debug)]
-pub struct Record {
+pub struct DeviceRecord {
     /// 稳定标识。
     pub stable_id: StableId,
     /// 传输层。
     pub transport: Transport,
     /// 协议家族 ID。
-    pub provider: &'static str,
+    pub family_id: &'static str,
     /// 表查得的型号名（HID）/ GAP `0x2A00` 原文（BLE），由 Provider 上报。
     pub display_name: String,
     /// 未归一化的型号原文。
@@ -41,8 +41,6 @@ pub struct Record {
     pub state: DeviceState,
     /// 唯一退化依据。
     pub last_valid_at_ms: Option<u64>,
-    /// 仅用于诊断页展示节奏偏离。
-    pub last_push_at_ms: Option<u64>,
     /// 最近一次结构化错误。
     pub last_error: Option<ErrorCode>,
     /// 本次「出现」以来记录过的坏帧诊断文本（错误码 + 成因 + 原始字节）。
@@ -63,12 +61,12 @@ pub struct Record {
     pub conflict: Option<String>,
 }
 
-impl Record {
+impl DeviceRecord {
     /// 新建一条 `Unknown` 记录。
     pub fn new(
         stable_id: StableId,
         transport: Transport,
-        provider: &'static str,
+        family_id: &'static str,
         display_name: impl Into<String>,
         model_name_raw: impl Into<String>,
         now_ms: u64,
@@ -78,7 +76,7 @@ impl Record {
         Self {
             stable_id,
             transport,
-            provider,
+            family_id,
             display_name: display_name.into(),
             model_name_raw: raw,
             model_key,
@@ -89,7 +87,6 @@ impl Record {
             charging: None,
             state: DeviceState::Unknown,
             last_valid_at_ms: None,
-            last_push_at_ms: None,
             last_error: None,
             unreadable_kinds: Vec::new(),
             present: true,
@@ -117,8 +114,8 @@ impl Record {
 mod tests {
     use super::*;
 
-    fn rec() -> Record {
-        Record::new(
+    fn rec() -> DeviceRecord {
+        DeviceRecord::new(
             StableId::hid(0x7768, 0x6426),
             Transport::Hid,
             "hid-vbas",

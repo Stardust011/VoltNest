@@ -227,7 +227,7 @@ fn notification_nodes_merge_and_follow_grouping() {
     common::feed(&mut e, &hid_reading(15), Transport::Hid, T0);
     common::feed(&mut e, &ble_arrived(), Transport::Ble, T0);
     common::feed(&mut e, &ble_reading(14), Transport::Ble, T0);
-    e.take_alerts();
+    e.take_notifications();
     // 两条链路都退场后合并成一台设备。
     e.tick(T0 + 400_000);
 

@@ -56,6 +56,8 @@ cd apps/desktop
 npm ci
 npm run test                    # Vitest，只测纯函数
 npm run build                   # vue-tsc + vite build
+npm run format                  # 全仓格式化：cargo fmt --all + prettier
+npm run format:check            # 同上的只检查模式，CI 用
 npm run tauri dev               # 开发调试（会先起 Vite）
 npm run tauri build             # 出 NSIS 安装包
 ```
@@ -77,6 +79,10 @@ sudo apt install libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev \
 - `libdbus-1-dev`：bluez（BLE）与系统通知的 D-Bus 绑定。
 
 命令与 Windows 完全相同（`npm ci` → `npm run test` → `npm run build` → `npm run tauri dev|build`）。
+
+格式化统一从 `apps/desktop` 发起：`npm run format` 先跑 `cargo fmt --all`（借用
+`--manifest-path ../../Cargo.toml` 覆盖整个 workspace，含 `src-tauri`），再跑 `prettier --write .`；
+`npm run format:check` 是同一套的只检查模式。
 
 ### 打包
 

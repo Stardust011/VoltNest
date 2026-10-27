@@ -1,10 +1,10 @@
 //! 「VID:PID → 型号」快照表（品牌无关的加载器）。
 //!
-//! 每品牌一份 JSON 快照，由 [`crate::brands::BrandSpec::device_table_json`] 编译期嵌入（`include_str!`），安装目录无需带数据文件，也不会与二进制版本分叉。新增品牌只加数据文件 + 注册项，本文件不变。
+//! 每品牌一份 JSON 快照，由 [`crate::spec::BrandSpec::device_table_json`] 编译期嵌入（`include_str!`），安装目录无需带数据文件，也不会与二进制版本分叉。新增品牌只加数据文件 + 注册项，本文件不变。
 //!
 //! # 统一数据规范
 //!
-//! 全部品牌共用同一结构；`name` / `vendorDeviceId` 可缺省，其余字段（如 `internalModel`、`channels`、`ambiguous`）按原样保留在 [`Entry::extra`]：
+//! 全部品牌共用同一结构；`name` / `vendorDeviceId` 可缺省，其余字段（如 `internalModel`、`channels`、`ambiguous`、`driver`）按原样保留在 [`Entry::extra`]：
 //!
 //! ```json
 //! {
@@ -18,7 +18,6 @@
 //!
 //! - `devices` 的键是 `VID:PID`（大端十六进制、无 `0x` 前缀、冒号分隔），值是唯一的型号条目来源；不再有并行的 `by_vid_pid` 副本。
 //! - `source` 只供展示，结构不校验：桌面驱动的 `{file, software, software_version}`、网页版驱动的 `{url, web_version}` 乃至任意形状都会被压成一行来源摘要。
-//! - `vendorDeviceId` 是厂商驱动内的设备编号（如 AJAZZ 的 101..108），**不是**设备类型，禁止映射成 [`DeviceType`]。
 //! - `deviceType` 是厂商声明的类型词（`mouse` / `keyboard` …），只有恰好等于规范类型词时才被采纳，见 [`Entry::declared_device_type`]。
 //!
 //! 匹配必须**精确**：`0x6425 = AJ159 NL P`、`0x6426 = AJ159 NL`，只差一位，任何前缀/区间匹配都会搞错型号。
@@ -52,7 +51,31 @@ pub struct Entry {
 }
 
 impl Entry {
-    /// 厂商驱动配置里的设备类型词 → [`DeviceType`]。`deviceType` 是厂商自定义字段而非标准：只有恰好等于规范类型词才映射，其余一律 `None`——把型号族名当类型猜正是规范禁止的「厂商自定义数据当标准」。另 `vendorDeviceId`（101..108）是驱动内部型号编号，非类型，禁止映射。
+    /// 厂商声明的固件家族码（网页驱动的 `fwType`）。用来在同一品牌的型号表里分派协议实现
+    /// （达尔优：`0x00` 自研 / `0x01` 海思 / `0x02` 匠盟 / `0x04` 合盈 / `0x06` 自研磁轴）。
+    ///
+    /// 缺失或超出 `u8` 一律 `None` —— 拿不到家族码时宁可「没有协议」，也不假设某一套。
+    pub fn declared_fw_type(&self) -> Option<u8> {
+        self.extra
+            .get("fwType")
+            .and_then(serde_json::Value::as_u64)
+            .and_then(|raw| u8::try_from(raw).ok())
+    }
+
+    /// 厂商声明的协议家族名（网页驱动 manifest 的 `driver`）。用来在同一品牌的型号表里
+    /// 分派协议实现（雷柏：`VT_nrf54L` / `VT_CH584` / `LM20RT` / `Telink3228C_Mouse` …，
+    /// 各家族的报告 ID、字段下标与取电方式都不同）。
+    ///
+    /// 缺失或非字符串一律 `None` —— 拿不到家族名时宁可「没有协议」，也不假设某一套。
+    pub fn declared_driver(&self) -> Option<&str> {
+        self.extra
+            .get("driver")
+            .and_then(serde_json::Value::as_str)
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+    }
+
+    /// 厂商声明的设备类型词 → [`DeviceType`]。`deviceType` 是厂商自定义字段而非标准：只有恰好等于规范类型词才映射，其余一律 `None`——把型号族名当类型猜正是规范禁止的「厂商自定义数据当标准」。另 `vendorDeviceId`（101..108）是驱动内部型号编号，非类型，禁止映射。
     pub fn declared_device_type(&self) -> Option<DeviceType> {
         match self.device_type.trim().to_ascii_lowercase().as_str() {
             "mouse" => Some(DeviceType::Mouse),
