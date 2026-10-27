@@ -11,7 +11,7 @@
 //!
 //! ```json
 //! {
-//!   "config_version": "1.0.0",
+//!   "config_version": "2026-10-27T08",
 //!   "source": { "file": "config.xml", "software": "AJAZZ Driver（W1）", "software_version": "1.0.7.6" },
 //!   "devices": {
 //!     "7768:6426": { "name": "AJ159 NL", "vendorDeviceId": 102, "deviceType": "mouse", "mode": "2.4G" }
@@ -19,6 +19,7 @@
 //! }
 //! ```
 //!
+//! - `config_version` 是型号表的抓取时刻（UTC、精确到小时，形如 `2026-10-27T08`），只做非空校验，格式不限定。
 //! - `devices` 的键是 `VID:PID`（大端十六进制、无 `0x` 前缀、冒号分隔），值是唯一的型号条目来源；不再有并行的 `by_vid_pid` 副本。
 //! - `source` 只供展示，结构不校验：桌面驱动的 `{file, software, software_version}`、网页版驱动的 `{url, web_version}` 乃至任意形状都会被压成一行来源摘要。
 //! - `deviceType` 是厂商声明的类型词（`mouse` / `keyboard` …），只有恰好等于规范类型词时才被采纳，见 [`Entry::declared_device_type`]。
@@ -137,7 +138,7 @@ fn source_label(source: &serde_json::Value) -> String {
 #[derive(Clone, Debug)]
 pub struct DeviceTable {
     map: HashMap<(u16, u16), Entry>,
-    /// 数据规范版本（诊断页展示）。
+    /// 型号表抓取时刻（UTC、精确到小时；诊断页展示）。
     pub config_version: String,
     /// 来源摘要（诊断页展示）。
     pub source: String,

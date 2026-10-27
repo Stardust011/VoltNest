@@ -22,6 +22,7 @@ rapoo_device_map.py
 from __future__ import annotations
 
 import argparse
+import datetime
 import gzip
 import io
 import json
@@ -250,14 +251,18 @@ def build_output(rows: Iterable[dict], *, key_format: str, source: dict) -> dict
         print(f"[warn] 发现 {len(uniq)} 个重复设备标识，已合并: {', '.join(uniq[:5])}"
               + (" ..." if len(uniq) > 5 else ""), file=sys.stderr)
 
-    versions = Counter(r["version"] for r in rows if r.get("version"))
-    config_version = versions.most_common(1)[0][0] if versions else "1.0.0"
+    config_version = fetch_stamp()
 
     return {
         "config_version": config_version,
         "source": source,
         "devices": dict(sorted(devices.items())),
     }
+
+
+def fetch_stamp() -> str:
+    """抓取时刻（UTC，精确到小时），作为 config_version。"""
+    return datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H")
 
 
 def derive_web_version(bundle_url: str) -> str:
@@ -327,7 +332,7 @@ def main(argv: list[str] | None = None) -> int:
                       indent=None if args.compact else 2,
                       separators=(",", ":") if args.compact else None)
     if args.output:
-        with open(args.output, "w", encoding="utf-8") as fh:
+        with open(args.output, "w", encoding="utf-8", newline="\n") as fh:
             fh.write(text)
             fh.write("\n")
         if not args.quiet:
