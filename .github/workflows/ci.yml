@@ -102,6 +102,7 @@ jobs:
           cache: npm
           cache-dependency-path: apps/desktop/package-lock.json
       - run: npm ci
-      - run: npm run format:check
+      # Rust 侧的格式由上面的 `rustfmt` job 负责；本 job 没有 Rust 工具链。
+      - run: npm run format:check:web
       - run: npm run test
       - run: npm run build
