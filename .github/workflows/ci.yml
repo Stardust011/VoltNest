@@ -2,9 +2,12 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [master]
   pull_request:
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 env:
   CARGO_TERM_COLOR: always
@@ -18,12 +21,25 @@ jobs:
   fmt:
     name: rustfmt
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
       - run: cargo fmt --all --check
+      # rust-toolchain.toml 只锁 stable 通道，最低版本在这里断言。
+      - name: Assert rustc >= 1.98
+        shell: bash
+        run: |
+          rustc -vV
+          required=1.98
+          current=$(rustc --version | awk '{print $2}')
+          lowest=$(printf '%s\n%s\n' "$required" "$current" | sort -V | head -1)
+          if [ "$lowest" != "$required" ]; then
+            echo "rustc $current < $required" >&2
+            exit 1
+          fi
 
   # 两个平台都要跑：项目已双平台，#[cfg(windows)]（Toast / AUMID / 托盘气泡）与
   # #[cfg(not(windows))]（notification 插件 / hidraw / bluez）是两组互斥代码，只有各自的
@@ -31,6 +47,7 @@ jobs:
   clippy-windows:
     name: clippy (windows)
     runs-on: windows-latest
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -42,15 +59,30 @@ jobs:
   test-windows:
     name: cargo test (windows)
     runs-on: windows-latest
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --workspace
 
+  # clippy 只做 check；release profile 的 lto / strip / panic 策略只有真链接才会暴露问题。
+  build-smoke:
+    name: release build (windows)
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --workspace --release
+        env:
+          CARGO_INCREMENTAL: 0
+
   clippy-test-linux:
     name: clippy + test (linux)
     runs-on: ubuntu-latest
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -73,11 +105,13 @@ jobs:
     # 覆盖率只对纯逻辑与解析器设门槛；platform / Tauri / 托盘光栅
     # 走手工验收，不在这里衡量。
     runs-on: ubuntu-latest
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: llvm-tools-preview
+      - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@cargo-llvm-cov
       # hidapi 的 hidraw 后端在构建期用 pkg-config 探测 libudev（libudev.pc + libudev.h）；
       # 覆盖率门禁会真编 voltnest-hid / voltnest-ble，故这里同样要装开发文件。
@@ -91,6 +125,7 @@ jobs:
   frontend:
     name: frontend
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: apps/desktop
