@@ -7,3 +7,7 @@ license.workspace = true
 description = "VoltNest Provider 抽象层：纯类型，不含 I/O、状态机或平台 API"
 
 [dependencies]
+
+[build-dependencies]
+serde.workspace = true
+serde_json.workspace = true

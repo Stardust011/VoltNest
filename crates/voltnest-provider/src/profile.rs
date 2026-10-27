@@ -1,7 +1,19 @@
-//! Provider 能力声明：能力与节奏是编译期常量，不是 Profile 数据文件、不是 `settings.json`。
+//! Provider 能力声明：能力与节奏是编译期常量，不是 `settings.json`。
 //! 型号表加一行不改这里，而阈值链与状态机不变量强耦合，写坏即「永不过期」。
+//!
+//! 可调数值（采集节奏、出现检测间隔、三档阈值链）集中在 `data/profiles.json`，
+//! 由 `build.rs` 生成本文件的常量；充电语义仍写死在下方声明里。
 
 use crate::transport::Transport;
+
+mod generated {
+    include!(concat!(env!("OUT_DIR"), "/profiles_generated.rs"));
+}
+
+use generated::{
+    BLE_BAS_CADENCE, BLE_BAS_PRESENCE_POLL_MS, BLE_BAS_THRESHOLDS, HID_VBAS_CADENCE,
+    HID_VBAS_PRESENCE_POLL_MS, HID_VBAS_THRESHOLDS,
+};
 
 /// 充电状态的可获得性。
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -27,39 +39,25 @@ pub struct DegradationThresholds {
     pub offline_ms: u64,
 }
 
-impl DegradationThresholds {
-    /// 档位乘数作用于整条链，用整数 `(num, den)`：`(2,1)`/`(1,1)`/`(1,2)`。
-    /// 全部阈值都是 500ms 的整数倍，`/2` 无损；若将来引入奇数毫秒值，须先把分母改为 1000 并向下取整，
-    /// 不得引入浮点（会让边界测试出现 ±1ms 抖动）。
-    pub fn scaled(self, sensitivity: Sensitivity) -> Self {
-        let (num, den) = sensitivity.ratio();
-        Self {
-            stale_ms: self.stale_ms * num / den,
-            unavailable_ms: self.unavailable_ms * num / den,
-            offline_ms: self.offline_ms * num / den,
-        }
-    }
-}
-
 /// 用户可选的阈值档位。设置里只存档位，**不存毫秒**。
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub enum Sensitivity {
-    /// 敏感 ×0.5。
+    /// 快：判定过期最灵敏。
     Sensitive,
-    /// 标准 ×1。
+    /// 标准。
     #[default]
     Standard,
-    /// 宽松 ×2。
+    /// 慢：容忍更久没有读数。
     Loose,
 }
 
 impl Sensitivity {
-    /// 整数乘数 `(num, den)`。
-    pub const fn ratio(self) -> (u64, u64) {
+    /// 在 [`ProviderProfile::thresholds`] 里的下标。
+    pub const fn index(self) -> usize {
         match self {
-            Self::Sensitive => (1, 2),
-            Self::Standard => (1, 1),
-            Self::Loose => (2, 1),
+            Self::Sensitive => 0,
+            Self::Standard => 1,
+            Self::Loose => 2,
         }
     }
 
@@ -123,8 +121,8 @@ pub struct ProviderProfile {
     pub transport: Transport,
     /// 采集节奏。
     pub cadence: Cadence,
-    /// 标准档阈值链。
-    pub thresholds: DegradationThresholds,
+    /// 三档阈值链，下标由 [`Sensitivity::index`] 给出。
+    pub thresholds: [DegradationThresholds; 3],
     /// 充电状态可获得性。
     pub charging: ChargingSupport,
     /// 出现检测间隔；`None` = 复用轮询周期。仅允许 HID。
@@ -134,7 +132,7 @@ pub struct ProviderProfile {
 impl ProviderProfile {
     /// 取该档位下的阈值链。
     pub fn thresholds_for(&self, sensitivity: Sensitivity) -> DegradationThresholds {
-        self.thresholds.scaled(sensitivity)
+        self.thresholds[sensitivity.index()]
     }
 
     /// 充电语义收敛的唯一实现点：充电不可得时把任何 `Some(bool)` 压成 `None`。
@@ -175,17 +173,27 @@ impl ProviderProfile {
             }
         }
 
-        // stale < unavailable < offline。
-        let t = self.thresholds;
-        if !(t.stale_ms < t.unavailable_ms && t.unavailable_ms < t.offline_ms) {
-            return Err(ProfileError::ThresholdOrder {
-                stale_ms: t.stale_ms,
-                unavailable_ms: t.unavailable_ms,
-                offline_ms: t.offline_ms,
+        // 三档都要满足 stale < unavailable < offline，且档位越宽松阈值越大。
+        for level in self.thresholds {
+            if !(level.stale_ms < level.unavailable_ms && level.unavailable_ms < level.offline_ms) {
+                return Err(ProfileError::ThresholdOrder {
+                    stale_ms: level.stale_ms,
+                    unavailable_ms: level.unavailable_ms,
+                    offline_ms: level.offline_ms,
+                });
+            }
+        }
+        if self.thresholds[0].stale_ms > self.thresholds[1].stale_ms
+            || self.thresholds[1].stale_ms > self.thresholds[2].stale_ms
+        {
+            return Err(ProfileError::SensitivityNotMonotonic {
+                family_id: self.family_id,
             });
         }
 
-        // 阈值必须显著大于采集周期，否则边界抖动。
+        // 标准档阈值必须显著大于采集周期，否则边界抖动。
+        // 快档可能有意小于周期（更灵敏），只在构建期告警，不在此拒绝。
+        let t = self.thresholds_for(Sensitivity::Standard);
         match self.cadence {
             Cadence::NotifyWithPoll { poll } => {
                 // 先校验区间，再校验与周期之间的关系。
@@ -313,6 +321,11 @@ pub enum ProfileError {
         /// 重复的 transport。
         transport: Transport,
     },
+    /// 三档阈值未随档位单调放宽。
+    SensitivityNotMonotonic {
+        /// 家族 ID。
+        family_id: &'static str,
+    },
 }
 
 impl core::fmt::Display for ProfileError {
@@ -374,13 +387,17 @@ impl core::fmt::Display for ProfileError {
             Self::DuplicateTransport { transport } => {
                 write!(f, "transport {} 被多个 Provider 占用", transport.as_str())
             }
+            Self::SensitivityNotMonotonic { family_id } => write!(
+                f,
+                "家族 {family_id} 的三档阈值必须随档位放宽（快 ≤ 标准 ≤ 慢）"
+            ),
         }
     }
 }
 
 impl std::error::Error for ProfileError {}
 
-/// `hid-vbas` 的能力声明。三档阈值与轮询节奏在此固定，有测试断言防止漂移。
+/// `hid-vbas` 的能力声明。节奏与三档阈值链在 `data/profiles.json`，有测试断言防止漂移。
 /// 家族级能力声明只有一份：品牌再多也不新增家族；品牌各自的上报节奏由
 /// `voltnest-hid` 的品牌描述声明，并在启动期与本声明做兼容校验。
 ///
@@ -391,39 +408,23 @@ impl std::error::Error for ProfileError {}
 pub static HID_VBAS: ProviderProfile = ProviderProfile {
     family_id: crate::FAMILY_HID_VBAS,
     transport: Transport::Hid,
-    cadence: Cadence::Polled {
-        interval_ms: 30_000,
-    },
-    thresholds: DegradationThresholds {
-        stale_ms: 45_000,
-        unavailable_ms: 60_000,
-        offline_ms: 180_000,
-    },
+    cadence: HID_VBAS_CADENCE,
+    thresholds: HID_VBAS_THRESHOLDS,
     charging: ChargingSupport::FromReading,
     // 内部常量，不进 settings.json。
-    presence_poll_ms: Some(5_000),
+    presence_poll_ms: HID_VBAS_PRESENCE_POLL_MS,
 };
 
-/// `ble-bas` 的能力声明。
+/// `ble-bas` 的能力声明。节奏与三档阈值链在 `data/profiles.json`。
 pub static BLE_BAS: ProviderProfile = ProviderProfile {
     family_id: crate::FAMILY_BLE_BAS,
     transport: Transport::Ble,
-    cadence: Cadence::NotifyWithPoll {
-        poll: PollPolicy {
-            min_ms: 60_000,
-            max_ms: 300_000,
-            default_ms: 60_000,
-        },
-    },
-    thresholds: DegradationThresholds {
-        stale_ms: 90_000,
-        unavailable_ms: 120_000,
-        offline_ms: 360_000,
-    },
+    cadence: BLE_BAS_CADENCE,
+    thresholds: BLE_BAS_THRESHOLDS,
     // 0x2BF0 / 0x2BEA 未实现，0x2BED 失真（BLE 充电状态不可用）。
     charging: ChargingSupport::Unavailable,
-    // 出现由 60s 巡检天然覆盖。
-    presence_poll_ms: None,
+    // 出现由兜底轮询天然覆盖。
+    presence_poll_ms: BLE_BAS_PRESENCE_POLL_MS,
 };
 
 /// 启动期自检，断言 `(family_id, transport)` 唯一。违反时宿主不启动该 Provider，
@@ -461,6 +462,11 @@ mod tests {
         BLE_BAS
     }
 
+    /// 标准档阈值链的可变引用。
+    fn standard_level(p: &mut ProviderProfile) -> &mut DegradationThresholds {
+        &mut p.thresholds[Sensitivity::Standard.index()]
+    }
+
     // ---------- 阈值链顺序 ----------
 
     #[test]
@@ -472,36 +478,65 @@ mod tests {
     #[test]
     fn pc1_rejects_equal_or_inverted_chain() {
         let mut p = base_hid();
-        p.thresholds.unavailable_ms = p.thresholds.stale_ms;
+        let level = standard_level(&mut p);
+        level.unavailable_ms = level.stale_ms;
         assert!(matches!(
             p.validate(),
             Err(ProfileError::ThresholdOrder { .. })
         ));
 
         let mut p = base_hid();
-        p.thresholds.offline_ms = p.thresholds.unavailable_ms;
+        let level = standard_level(&mut p);
+        level.offline_ms = level.unavailable_ms;
         assert!(matches!(
             p.validate(),
             Err(ProfileError::ThresholdOrder { .. })
         ));
 
         let mut p = base_hid();
-        p.thresholds.stale_ms = 200_000; // 大于 offline
+        standard_level(&mut p).stale_ms = 200_000; // 大于 offline
         assert!(matches!(
             p.validate(),
             Err(ProfileError::ThresholdOrder { .. })
         ));
     }
 
+    #[test]
+    fn pc1_rejects_non_monotonic_levels() {
+        // 快档不得比标准档更宽松。
+        let mut p = base_hid();
+        p.thresholds[0] = p.thresholds[2];
+        assert!(matches!(
+            p.validate(),
+            Err(ProfileError::SensitivityNotMonotonic { .. })
+        ));
+    }
+
     // ---------- stale 与轮询下限 ----------
+
+    /// 该家族的 `stale` 恰好 1.5× 采集周期的毫秒数：`validate` 的通过边界。
+    fn stale_floor(p: &ProviderProfile) -> u64 {
+        let interval = match p.cadence {
+            Cadence::NotifyWithPoll { poll } => poll.min_ms,
+            Cadence::ListenOnly {
+                expected_interval_ms,
+            }
+            | Cadence::Polled {
+                interval_ms: expected_interval_ms,
+            } => expected_interval_ms,
+        };
+        interval * 3 / 2
+    }
 
     #[test]
     fn pc2_ble_boundary_is_exact() {
-        // 90_000 >= 1.5 × 60_000 = 90_000，恰好通过。
-        assert!(base_ble().validate().is_ok());
-
+        // 恰好等于 1.5× 轮询下限时通过，差 1ms 即拒绝。
+        let boundary = stale_floor(&base_ble());
         let mut p = base_ble();
-        p.thresholds.stale_ms = 89_999;
+        standard_level(&mut p).stale_ms = boundary;
+        assert!(p.validate().is_ok());
+
+        standard_level(&mut p).stale_ms = boundary - 1;
         assert!(matches!(
             p.validate(),
             Err(ProfileError::StaleBelowPollFloor { .. })
@@ -512,11 +547,15 @@ mod tests {
 
     #[test]
     fn pc3_hid_boundary_is_exact() {
-        // 45_000 >= 1.5 × 30_000 = 45_000，恰好通过。
-        assert!(base_hid().validate().is_ok());
-
+        // 恰好等于 1.5× 期望间隔时通过，差 1ms 即拒绝。
+        let boundary = stale_floor(&base_hid());
         let mut p = base_hid();
-        p.thresholds.stale_ms = 44_999;
+        let level = standard_level(&mut p);
+        level.stale_ms = boundary;
+        level.unavailable_ms = boundary + 1;
+        p.validate().unwrap();
+
+        standard_level(&mut p).stale_ms = boundary - 1;
         assert!(matches!(
             p.validate(),
             Err(ProfileError::StaleBelowExpectedInterval { .. })
@@ -688,88 +727,32 @@ mod tests {
         assert!(p.validate().is_ok());
     }
 
-    // ---------- 数值对拍（防止调参只改一处）----------
+    // ---------- 数值不变量（具体毫秒以 `data/profiles.json` 为唯一来源）----------
 
-    #[test]
-    fn thresholds_match_spec_table_verbatim() {
-        assert_eq!(
-            HID_VBAS.thresholds,
-            DegradationThresholds {
-                stale_ms: 45_000,
-                unavailable_ms: 60_000,
-                offline_ms: 180_000
-            }
-        );
-        assert_eq!(
-            BLE_BAS.thresholds,
-            DegradationThresholds {
-                stale_ms: 90_000,
-                unavailable_ms: 120_000,
-                offline_ms: 360_000
-            }
-        );
+    /// 三档，按从紧到松排列。
+    fn levels() -> [Sensitivity; 3] {
+        [
+            Sensitivity::Sensitive,
+            Sensitivity::Standard,
+            Sensitivity::Loose,
+        ]
     }
 
     #[test]
-    fn sensitivity_scales_whole_chain() {
-        // 三值同比缩放，不能只改 staleAfter。
-        let hid = HID_VBAS;
-        assert_eq!(
-            hid.thresholds_for(Sensitivity::Sensitive),
-            DegradationThresholds {
-                stale_ms: 22_500,
-                unavailable_ms: 30_000,
-                offline_ms: 90_000
-            }
-        );
-        assert_eq!(
-            hid.thresholds_for(Sensitivity::Standard),
-            DegradationThresholds {
-                stale_ms: 45_000,
-                unavailable_ms: 60_000,
-                offline_ms: 180_000
-            }
-        );
-        assert_eq!(
-            hid.thresholds_for(Sensitivity::Loose),
-            DegradationThresholds {
-                stale_ms: 90_000,
-                unavailable_ms: 120_000,
-                offline_ms: 360_000
-            }
-        );
-
-        let ble = BLE_BAS;
-        assert_eq!(
-            ble.thresholds_for(Sensitivity::Sensitive),
-            DegradationThresholds {
-                stale_ms: 45_000,
-                unavailable_ms: 60_000,
-                offline_ms: 180_000
-            }
-        );
-        assert_eq!(
-            ble.thresholds_for(Sensitivity::Loose),
-            DegradationThresholds {
-                stale_ms: 180_000,
-                unavailable_ms: 240_000,
-                offline_ms: 720_000
-            }
-        );
-    }
-
-    #[test]
-    fn scaling_keeps_chain_order_for_every_level() {
-        // D3 的核心收益：无需 clamp、无特例分支。
+    fn every_level_is_ordered_and_monotonic() {
+        // 三档各自 stale<unavailable<offline，且随档位放宽。
         for p in [HID_VBAS, BLE_BAS] {
-            for s in [
-                Sensitivity::Sensitive,
-                Sensitivity::Standard,
-                Sensitivity::Loose,
-            ] {
-                let t = p.thresholds_for(s);
-                assert!(t.stale_ms < t.unavailable_ms, "{:?} {:?}", p.family_id, s);
-                assert!(t.unavailable_ms < t.offline_ms, "{:?} {:?}", p.family_id, s);
+            let mut previous = 0;
+            for level in levels() {
+                let t = p.thresholds_for(level);
+                assert!(t.stale_ms < t.unavailable_ms, "{:?} {level:?}", p.family_id);
+                assert!(
+                    t.unavailable_ms < t.offline_ms,
+                    "{:?} {level:?}",
+                    p.family_id
+                );
+                assert!(t.stale_ms >= previous, "{:?} {level:?}", p.family_id);
+                previous = t.stale_ms;
             }
         }
     }
@@ -827,11 +810,11 @@ mod tests {
                     default_ms: 60_000,
                 },
             },
-            thresholds: DegradationThresholds {
+            thresholds: [DegradationThresholds {
                 stale_ms: 90_000,
                 unavailable_ms: 120_000,
                 offline_ms: 360_000,
-            },
+            }; 3],
             charging: ChargingSupport::Unavailable,
             presence_poll_ms: None,
         };
@@ -851,11 +834,11 @@ mod tests {
             cadence: Cadence::Polled {
                 interval_ms: 30_000,
             },
-            thresholds: DegradationThresholds {
+            thresholds: [DegradationThresholds {
                 stale_ms: 45_000,
                 unavailable_ms: 60_000,
                 offline_ms: 180_000,
-            },
+            }; 3],
             charging: ChargingSupport::FromReading,
             presence_poll_ms: Some(5_000),
         };
@@ -875,11 +858,11 @@ mod tests {
             cadence: Cadence::Polled {
                 interval_ms: 30_000,
             },
-            thresholds: DegradationThresholds {
+            thresholds: [DegradationThresholds {
                 stale_ms: 10_000,
                 unavailable_ms: 60_000,
                 offline_ms: 180_000,
-            },
+            }; 3],
             charging: ChargingSupport::FromReading,
             presence_poll_ms: None,
         };
