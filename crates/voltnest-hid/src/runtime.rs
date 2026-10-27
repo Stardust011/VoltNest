@@ -17,7 +17,7 @@
 //! 4. **构建期依赖**：hidapi 的 hidraw 后端用 pkg-config 探测 `libudev`，故构建机须装 libudev 开发文件（Debian / Ubuntu `libudev-dev`，Fedora `systemd-devel`）；运行期只用到系统已装的 `libudev.so.1`。
 
 use crate::brands::{Brand, Registry};
-use crate::spec::{BrandSpec, ReplyTransport};
+use crate::spec::{BrandSpec, ReplyTransport, RequestTemplate};
 use crate::{
     PRESENCE_POLL_MS, LISTEN_READ_TIMEOUT_MS, READ_BUFFER_LEN, READ_TIMEOUT_MS, RETRY_GAP_MS, frame,
 };
@@ -418,7 +418,10 @@ fn consider_target(
     );
 }
 
-/// 读取线程：按品牌描述解码；仅当品牌声明了查询模板时才发报文。
+/// 换报告 ID 后的等待（毫秒）。
+const REPORT_ID_SWITCH_GAP_MS: u64 = 50;
+
+/// 读取线程入口：按协议形状选一条通道，退出时按原因收尾。
 fn read_loop(
     dev: HidDevice,
     stable_id: StableId,
@@ -426,238 +429,273 @@ fn read_loop(
     tx: Sender<ProviderEvent>,
     stop: Arc<AtomicBool>,
 ) {
-    match brand.transport {
-        // 纯监听不向设备发任何报文：即使 spec 误写了 `request` 也不发（`Listen` 的语义优先）。
-        ReplyTransport::Listen => read_input_loop(dev, stable_id, brand, tx, stop, None),
-        // output 查询：有没有 `request` 决定「查完再读」还是「只读」。
-        ReplyTransport::InterruptQuery => {
-            read_input_loop(dev, stable_id, brand, tx, stop, brand.request)
-        }
-        ReplyTransport::FeatureQuery { reply_len } => {
-            read_feature_query_loop(dev, stable_id, brand, reply_len, tx, stop)
-        }
-        ReplyTransport::FeaturePoll { reply_len } => {
-            read_feature_poll_loop(dev, stable_id, brand, reply_len, tx, stop)
-        }
+    let mut reader = Reader::new(dev, stable_id, brand, tx, stop);
+    if let Err(Exit::LinkLost) = reader.run() {
+        reader.link_lost();
     }
 }
 
-/// 处理主动 output 查询和被动 input 读取；`request=None` 即纯监听。
-fn read_input_loop(
+/// 读取线程的退出原因：两者都不算错误，区别只在要不要上报一次句柄失效。
+enum Exit {
+    /// 外部要求停止，或事件接收端已关闭：静默收尾。
+    Stop,
+    /// 句柄失效（拔线 / 接收器掉电）：先报一次 `LinkLost` 再收尾。
+    LinkLost,
+}
+
+/// 一条通道的执行结果：`Ok(())` = 跑完；`Err(_)` = 该线程应当结束。
+type Flow = Result<(), Exit>;
+
+/// 一台设备的读取会话：句柄 + 身份 + 事件出口 + 停止标志。
+///
+/// 四种 [`ReplyTransport`] 各对应一个 `run_*` 方法，分派只在 [`Reader::run`] 一处；
+/// 收发原语、事件上报、可打断等待各只有一份，四个循环不再各自重复样板。
+struct Reader {
     dev: HidDevice,
     stable_id: StableId,
     brand: &'static BrandSpec,
     tx: Sender<ProviderEvent>,
     stop: Arc<AtomicBool>,
-    request: Option<crate::spec::RequestTemplate>,
-) {
-    let mut buf = [0u8; READ_BUFFER_LEN];
-    let mut next_query = request.map(|_| Instant::now());
-    let mut reassembler = frame::Reassembler::new();
-
-    while !stop.load(Ordering::Relaxed) {
-        if let Some(req) = request
-            && next_query.is_some_and(|t| Instant::now() >= t)
-        {
-            // 新一次查询前先丢半包：半包拼出来的电量不可信。
-            if brand.reassembly.is_some() {
-                reassembler.reset();
-            }
-            let _ = dev.write(&req.build(brand.frame.report_id));
-            next_query = req
-                .interval_ms
-                .map(|ms| Instant::now() + Duration::from_millis(ms));
-        }
-
-        match dev.read_timeout(&mut buf, READ_TIMEOUT_MS) {
-            Ok(0) => {}
-            Ok(n) => {
-                let report = &buf[..n];
-                // 实时上报通道：只认电量帧。输入报告里混着位移、媒体键等无关帧，
-                // 把它们送去解析只会得到一堆 `cmd_mismatch`，所以这里直接丢。
-                if brand.listen.is_some()
-                    && let Some(reading) = frame::decode_listen(brand, report)
-                {
-                    if !send_reading(&tx, &stable_id, reading) {
-                        return;
-                    }
-                    continue;
-                }
-                // 多包应答通道：命令字不同的包（含上面那种监听帧）在这里被过滤掉。
-                if brand.reassembly.is_some() {
-                    if let Some(assembled) = reassembler.feed(brand, report, Instant::now())
-                        && let Some(reading) = frame::decode_assembled(brand, &assembled)
-                        && !send_reading(&tx, &stable_id, reading)
-                    {
-                        return;
-                    }
-                    continue;
-                }
-                // output 查询通道：命令字对不上的帧不是本次查询的应答（官方也按命令字过滤）。
-                if matches!(brand.transport, ReplyTransport::InterruptQuery)
-                    && !frame::matches_cmd(brand, report)
-                {
-                    continue;
-                }
-                if !publish_report(&stable_id, brand, report, &tx) {
-                    return;
-                }
-            }
-            Err(_) => {
-                send_link_lost(&tx, stable_id);
-                return;
-            }
-        }
-    }
+    /// 输入报告读缓冲：`read_input` 原地填充，调用方按实际长度切片。
+    buf: [u8; READ_BUFFER_LEN],
+    /// 多包应答拼接器：只有声明了 `reassembly` 的品牌会用到。
+    reassembler: frame::Reassembler,
 }
 
-fn read_feature_query_loop(
-    dev: HidDevice,
-    stable_id: StableId,
-    brand: &'static BrandSpec,
-    reply_len: usize,
-    tx: Sender<ProviderEvent>,
-    stop: Arc<AtomicBool>,
-) {
-    let Some(req) = brand.request else {
-        return;
-    };
-    let Some(primary) = brand.frame.report_id else {
-        return;
-    };
-    let mut reply = vec![0u8; reply_len];
-    // 同一固件家族在不同连接方式下报告 ID 不同（达尔优自研：有线 `0x00` / 2.4G 接收器 `0x07`，
-    // 网页驱动按 `WirelessFlag` 选择），而枚举结果里拿不到该标志 —— 故按「主 → 备」尝试，
-    // 任一 ID 读出有效帧即锁定，不来回抖动。
-    let mut report_id = primary;
-    let mut next_query = Instant::now();
-    let mut buf = [0u8; READ_BUFFER_LEN];
-    while !stop.load(Ordering::Relaxed) {
-        // 声明了实时上报通道且还没到下次查询时间：先听设备自己报，不打扰它。
-        // 官方驱动正是这么做的：连上时查询一次拿到权威值，之后靠输入报告实时刷新。
-        if brand.listen.is_some() && Instant::now() < next_query {
-            match dev.read_timeout(&mut buf, LISTEN_READ_TIMEOUT_MS) {
-                Ok(0) => {}
-                Ok(n) => {
-                    if let Some(reading) = frame::decode_listen(brand, &buf[..n])
-                        && !send_reading(&tx, &stable_id, reading)
-                    {
-                        return;
-                    }
-                }
-                Err(_) => {
-                    send_link_lost(&tx, stable_id);
-                    return;
-                }
-            }
-            continue;
+impl Reader {
+    fn new(
+        dev: HidDevice,
+        stable_id: StableId,
+        brand: &'static BrandSpec,
+        tx: Sender<ProviderEvent>,
+        stop: Arc<AtomicBool>,
+    ) -> Self {
+        Self {
+            dev,
+            stable_id,
+            brand,
+            tx,
+            stop,
+            buf: [0u8; READ_BUFFER_LEN],
+            reassembler: frame::Reassembler::new(),
         }
+    }
 
-        // 一轮采集 = 首发 + `retry` 次重试（官方驱动的 `retryTime` 语义：一次未应答不代表设备不可读）。
-        // 只有整轮都解不出有效帧才上报一次 `Unreadable` —— 重试过程中的失败只消耗次数，不上报。
-        for attempt in 0..req.attempts() {
-            if attempt > 0 && !backoff_sleep(&stop, RETRY_GAP_MS) {
-                return;
+    /// 一个变体一条通道，没有隐式的 `Option` 分支。
+    fn run(&mut self) -> Flow {
+        match self.brand.transport {
+            ReplyTransport::Listen => self.run_listen(),
+            ReplyTransport::InterruptQuery => self.run_interrupt_query(),
+            ReplyTransport::FeatureQuery { .. } => self.run_feature_query(),
+            ReplyTransport::FeaturePoll { .. } => self.run_feature_poll(),
+        }
+    }
+
+    /// `Listen`：不向设备发任何报文，何时上报由设备决定。
+    fn run_listen(&mut self) -> Flow {
+        while !self.halted() {
+            if let Some(n) = self.read_input(READ_TIMEOUT_MS)? {
+                self.on_input(n)?;
             }
-            let query = req.build(Some(report_id));
-            if dev.send_feature_report(&query).is_err() {
-                // 报告 ID 不被该集合接受时，发送会直接失败（不是「回了个空帧」）：
-                // 声明了备用 ID 就先换过去试，否则整轮都是无效重试。
-                if let Some(alt) = brand.fallback_report_id
-                    && alt != report_id
-                {
-                    report_id = alt;
-                    if !backoff_sleep(&stop, 50) {
-                        return;
-                    }
-                    continue;
-                }
-                if !backoff_sleep(&stop, 50) {
-                    return;
-                }
+        }
+        Ok(())
+    }
+
+    /// `InterruptQuery`：按 `interval_ms` 发 output 查询；`None` = 只在会话建立时问一次。
+    fn run_interrupt_query(&mut self) -> Flow {
+        let mut next = Some(Instant::now());
+        while !self.halted() {
+            if let Some(req) = self.brand.request
+                && next.is_some_and(|at| Instant::now() >= at)
+            {
+                // 新一次查询前先丢半包：半包拼出来的电量不可信。
+                self.reassembler.reset();
+                let _ = self.dev.write(&req.build(self.brand.frame.report_id));
+                next = req
+                    .interval_ms
+                    .map(|ms| Instant::now() + Duration::from_millis(ms));
+            }
+            if let Some(n) = self.read_input(READ_TIMEOUT_MS)? {
+                self.on_input(n)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// `FeatureQuery`：周期发 feature 查询并读应答；声明了实时上报通道时，两次查询之间先听设备自发上报。
+    fn run_feature_query(&mut self) -> Flow {
+        let (Some(req), Some(primary)) = (self.brand.request, self.brand.frame.report_id) else {
+            return Ok(());
+        };
+        let mut reply = vec![0u8; self.reply_len()];
+        // 同一固件家族在不同连接方式下报告 ID 不同（有线 `0x00` / 2.4G `0x07`），枚举拿不到该标志，
+        // 故按「主 → 备」尝试，任一 ID 读出有效帧即锁定。
+        let mut report_id = primary;
+        let mut next_query = Instant::now();
+        while !self.halted() {
+            // 连上时查询一次拿权威值，之后靠输入报告实时刷新，不打扰设备。
+            if self.brand.listen.is_some() && Instant::now() < next_query {
+                self.listen_once(LISTEN_READ_TIMEOUT_MS)?;
                 continue;
             }
-            reply.fill(0);
-            reply[0] = report_id;
-            match dev.get_feature_report(&mut reply) {
-                Ok(n) if n > 0 => {
-                    let event = reading_event(&stable_id, brand, &reply[..n]);
-                    if matches!(event, ProviderEvent::Unreadable { .. }) {
-                        // 解不出有效帧且还有备用 ID：先换 ID 重问，不把这次失败当设备错误上报。
-                        // 换 ID 会消耗一次尝试次数，避免「主备都不应答」时无限重问。
-                        if let Some(alt) = brand.fallback_report_id
-                            && alt != report_id
-                        {
-                            report_id = alt;
-                            continue;
-                        }
-                        // 还有重试次数：留给下一轮尝试。
-                        if attempt + 1 < req.attempts() {
-                            continue;
-                        }
-                    }
-                    if tx.send(event).is_err() {
-                        return;
-                    }
-                    break;
-                }
-                Ok(_) => {}
-                Err(_) => {
-                    send_link_lost(&tx, stable_id);
-                    return;
-                }
+            self.query_round(&req, &mut reply, &mut report_id)?;
+            if let Some(ms) = req.interval_ms {
+                next_query = Instant::now() + Duration::from_millis(ms);
+            }
+            // 纯查询通道在这里等间隔；有实时上报的通道由上面的读分支自然阻塞。
+            if self.brand.listen.is_none() {
+                self.pause(req.interval_ms.unwrap_or(self.brand.expected_interval_ms))?;
             }
         }
-        if let Some(ms) = req.interval_ms {
-            next_query = Instant::now() + Duration::from_millis(ms);
+        Ok(())
+    }
+
+    /// 一轮采集 = 首发 + `retry` 次重试：只有整轮都解不出有效帧才上报一次 `Unreadable`。
+    fn query_round(&mut self, req: &RequestTemplate, reply: &mut [u8], report_id: &mut u8) -> Flow {
+        for attempt in 0..req.attempts() {
+            if attempt > 0 {
+                self.pause(RETRY_GAP_MS)?;
+            }
+            // 报告 ID 不被该集合接受时发送会直接失败（不是「回了个空帧」）：有备用 ID 就先换过去试。
+            if self
+                .dev
+                .send_feature_report(&req.build(Some(*report_id)))
+                .is_err()
+            {
+                if let Some(alt) = self.alternate(*report_id) {
+                    *report_id = alt;
+                }
+                self.pause(REPORT_ID_SWITCH_GAP_MS)?;
+                continue;
+            }
+            let Some(n) = self.read_feature(reply, *report_id)? else {
+                continue;
+            };
+            let event = reading_event(&self.stable_id, self.brand, &reply[..n]);
+            if matches!(event, ProviderEvent::Unreadable { .. }) {
+                // 换 ID 消耗一次尝试次数，避免「主备都不应答」时无限重问。
+                if let Some(alt) = self.alternate(*report_id) {
+                    *report_id = alt;
+                    continue;
+                }
+                if attempt + 1 < req.attempts() {
+                    continue;
+                }
+            }
+            self.send(event)?;
+            return Ok(());
         }
-        // 纯查询通道（无实时上报）在这里等间隔；有实时上报的通道由上面的读分支自然阻塞。
-        if brand.listen.is_none() && !backoff_sleep(&stop, req.interval_ms.unwrap_or(0)) {
-            return;
+        Ok(())
+    }
+
+    /// `FeaturePoll`：不写设备，周期读取 feature 快照。
+    fn run_feature_poll(&mut self) -> Flow {
+        let Some(report_id) = self.brand.frame.report_id else {
+            return Ok(());
+        };
+        let mut reply = vec![0u8; self.reply_len()];
+        while !self.halted() {
+            if let Some(n) = self.read_feature(&mut reply, report_id)? {
+                self.send(reading_event(&self.stable_id, self.brand, &reply[..n]))?;
+            }
+            self.pause(self.brand.expected_interval_ms)?;
+        }
+        Ok(())
+    }
+
+    /// 一帧输入报告 → 最多一条事件。三条通道按声明优先级互斥：
+    /// 实时上报（只认电量帧）→ 多包重组（命令字过滤 + 拼包）→ 单帧应答（查询通道再看命令字）。
+    fn on_input(&mut self, n: usize) -> Flow {
+        let report = &self.buf[..n];
+        if self.brand.listen.is_some()
+            && let Some(reading) = frame::decode_listen(self.brand, report)
+        {
+            return self.send(reading_event_of(&self.stable_id, reading));
+        }
+        if self.brand.reassembly.is_some() {
+            if let Some(assembled) = self.reassembler.feed(self.brand, report, Instant::now())
+                && let Some(reading) = frame::decode_assembled(self.brand, &assembled)
+            {
+                return self.send(reading_event_of(&self.stable_id, reading));
+            }
+            return Ok(());
+        }
+        if matches!(self.brand.transport, ReplyTransport::InterruptQuery)
+            && !frame::matches_cmd(self.brand, report)
+        {
+            return Ok(());
+        }
+        self.send(reading_event(&self.stable_id, self.brand, report))
+    }
+
+    /// 听一帧设备自发上报；认不出是电量帧就丢。
+    fn listen_once(&mut self, timeout_ms: i32) -> Flow {
+        if let Some(n) = self.read_input(timeout_ms)?
+            && let Some(reading) = frame::decode_listen(self.brand, &self.buf[..n])
+        {
+            return self.send(reading_event_of(&self.stable_id, reading));
+        }
+        Ok(())
+    }
+
+    /// 读一帧输入报告到 `buf`；`Ok(None)` = 超时无数据。
+    fn read_input(&mut self, timeout_ms: i32) -> Result<Option<usize>, Exit> {
+        match self.dev.read_timeout(&mut self.buf, timeout_ms) {
+            Ok(0) => Ok(None),
+            Ok(n) => Ok(Some(n)),
+            Err(_) => Err(Exit::LinkLost),
         }
     }
-}
 
-fn read_feature_poll_loop(
-    dev: HidDevice,
-    stable_id: StableId,
-    brand: &'static BrandSpec,
-    reply_len: usize,
-    tx: Sender<ProviderEvent>,
-    stop: Arc<AtomicBool>,
-) {
-    let Some(report_id) = brand.frame.report_id else {
-        return;
-    };
-    let mut reply = vec![0u8; reply_len];
-    while !stop.load(Ordering::Relaxed) {
+    /// 读一条 feature 应答；`Ok(None)` = 空应答。报告 ID 写在首字节是 hidapi 的约定。
+    fn read_feature(&mut self, reply: &mut [u8], report_id: u8) -> Result<Option<usize>, Exit> {
         reply.fill(0);
-        reply[0] = report_id;
-        match dev.get_feature_report(&mut reply) {
-            Ok(n) if n > 0 => {
-                if !publish_report(&stable_id, brand, &reply[..n], &tx) {
-                    return;
-                }
-            }
-            Ok(_) => {}
-            Err(_) => {
-                send_link_lost(&tx, stable_id);
-                return;
-            }
+        if let Some(first) = reply.first_mut() {
+            *first = report_id;
         }
-        if !backoff_sleep(&stop, brand.expected_interval_ms) {
-            return;
+        match self.dev.get_feature_report(reply) {
+            Ok(n) if n > 0 => Ok(Some(n)),
+            Ok(_) => Ok(None),
+            Err(_) => Err(Exit::LinkLost),
         }
     }
-}
 
-fn publish_report(
-    stable_id: &StableId,
-    brand: &'static BrandSpec,
-    report: &[u8],
-    tx: &Sender<ProviderEvent>,
-) -> bool {
-    tx.send(reading_event(stable_id, brand, report)).is_ok()
+    /// 上报一条事件；接收端已断开 → 线程收尾。
+    fn send(&self, event: ProviderEvent) -> Flow {
+        self.tx.send(event).map_err(|_| Exit::Stop)
+    }
+
+    /// 与当前报告 ID 不同的备用 ID（`None` = 无可换）。
+    fn alternate(&self, current: u8) -> Option<u8> {
+        self.brand.fallback_report_id.filter(|alt| *alt != current)
+    }
+
+    /// feature 应答的读取长度，取自 [`ReplyTransport`] 的声明。
+    fn reply_len(&self) -> usize {
+        self.brand.transport.reply_len().unwrap_or_default()
+    }
+
+    /// 停止位是否已置。
+    fn halted(&self) -> bool {
+        self.stop.load(Ordering::Relaxed)
+    }
+
+    /// 可被 `stop` 打断的等待。
+    fn pause(&self, ms: u64) -> Flow {
+        if backoff_sleep(&self.stop, ms) {
+            Ok(())
+        } else {
+            Err(Exit::Stop)
+        }
+    }
+
+    /// 上报一次句柄失效（拔线 / 接收器掉电）。
+    fn link_lost(&self) {
+        let _ = self.tx.send(ProviderEvent::LinkLost {
+            stable_id: self.stable_id.clone(),
+            code: ErrorCode::DeviceGone,
+        });
+    }
 }
 
 /// 一帧 → 一个事件：解析成功是读数，失败是带成因与原始字节的不可读。
@@ -679,23 +717,6 @@ fn reading_event_of(stable_id: &StableId, reading: frame::BatteryReading) -> Pro
         reading.percent,
         reading.charging,
     ))
-}
-
-/// 上报一次读数；`false` = 接收端已断开，读线程应退出。
-fn send_reading(
-    tx: &Sender<ProviderEvent>,
-    stable_id: &StableId,
-    reading: frame::BatteryReading,
-) -> bool {
-    tx.send(reading_event_of(stable_id, reading)).is_ok()
-}
-
-/// 句柄失效（拔线 / 接收器掉电）：只报这一次，读线程随后退出。
-fn send_link_lost(tx: &Sender<ProviderEvent>, stable_id: StableId) {
-    let _ = tx.send(ProviderEvent::LinkLost {
-        stable_id,
-        code: ErrorCode::DeviceGone,
-    });
 }
 
 fn open_error_code(err: &hidapi::HidError) -> ErrorCode {
