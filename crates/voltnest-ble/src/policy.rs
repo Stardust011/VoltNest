@@ -167,6 +167,16 @@ impl PolicyBook {
         state.last_error = Some(ErrorCode::ServiceMissing);
     }
 
+    /// 链路丢失（对端断电/超距/系统主动断开）：不算我方失败，只清失败计数与退避。
+    ///
+    /// 若按普通失败计，一台频繁休眠的鼠标几次之后就会被退避 2–10 分钟，再插回来看不到电量。
+    pub fn on_link_lost(&mut self, addr: [u8; 6]) {
+        let state = self.devices.entry(addr).or_default();
+        state.failures = 0;
+        state.backoff_until_ms = None;
+        state.last_error = Some(ErrorCode::DeviceGone);
+    }
+
     /// 设备从系统消失：丢弃策略状态（下次出现按新设备处理）。
     pub fn forget(&mut self, addr: [u8; 6]) {
         self.devices.remove(&addr);
@@ -357,6 +367,30 @@ mod tests {
         assert!(b.allows_concurrent(0));
         assert!(b.allows_concurrent(1));
         assert!(!b.allows_concurrent(2), "全局同时建链 ≤ 2");
+    }
+
+    #[test]
+    fn link_lost_does_not_accumulate_backoff() {
+        // 反复休眠/唤醒的鼠标不能被退避：断链是链路事实，不是读取失败。
+        let mut b = book();
+        b.track(A);
+        for _ in 0..6 {
+            b.on_link_lost(A);
+        }
+        assert_eq!(b.admission(A, T), Admission::Admit);
+        assert_eq!(b.state(A).unwrap().failures, 0);
+        assert_eq!(b.state(A).unwrap().last_error, Some(ErrorCode::DeviceGone));
+    }
+
+    #[test]
+    fn link_lost_clears_existing_backoff() {
+        let mut b = book();
+        for _ in 0..3 {
+            b.on_failure(A, T, ErrorCode::IoTimeout);
+        }
+        assert!(matches!(b.admission(A, T), Admission::BackingOff { .. }));
+        b.on_link_lost(A);
+        assert_eq!(b.admission(A, T), Admission::Admit);
     }
 
     #[test]
