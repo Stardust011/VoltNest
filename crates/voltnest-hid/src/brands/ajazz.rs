@@ -248,7 +248,15 @@ mod tests {
     fn device_table_covers_verified_generation() {
         let table = crate::mappings::load_table(super::SPEC.device_table_file).unwrap();
         assert_eq!(table.len(), 16, "8 型号 × 2 模式");
-        assert_eq!(table.config_version, "1.0.0");
+        // 抓取时刻逐月变化，只校验形状 YYYY-MM-DDTHH
+        let version = &table.config_version;
+        assert!(
+            version.len() == 13
+                && version.as_bytes()[4] == b'-'
+                && version.as_bytes()[7] == b'-'
+                && version.as_bytes()[10] == b'T',
+            "config_version 应为 YYYY-MM-DDTHH：{version}"
+        );
         assert_eq!(table.source, "config.xml · AJAZZ Driver（W1） · 1.0.7.6");
         assert_eq!(table.name(0x7768, 0x6426), Some("AJ159 NL"));
         assert_eq!(table.name(0x7768, 0x6425), Some("AJ159 NL P"));

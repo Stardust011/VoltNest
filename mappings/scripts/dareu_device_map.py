@@ -40,6 +40,7 @@ dareu_device_map.py
 from __future__ import annotations
 
 import argparse
+import datetime
 import gzip
 import hashlib
 import io
@@ -56,8 +57,6 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Iterable
 
 DEFAULT_BASE_URL = "https://dr.dareu.com/"
-# 输出数据规范版本（与站点构建号无关，站点版本走 source.web_version）
-CONFIG_VERSION = "1.0.0"
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/124.0 Safari/537.36"
@@ -557,10 +556,15 @@ def build_output(*, metas: dict[int, dict], comments: dict[int, str],
         stats[f"type:{device_type}"] += 1
 
     return {
-        "config_version": config_version or "1.0.0",
+        "config_version": config_version or fetch_stamp(),
         "source": source,
         "devices": dict(sorted(devices.items())),
     }, stats
+
+
+def fetch_stamp() -> str:
+    """抓取时刻（UTC，精确到小时），作为 config_version。"""
+    return datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H")
 
 
 # --------------------------------------------------------------------------
@@ -633,8 +637,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--key-format", choices=["hex", "dec"], default="hex",
                    help="设备标识键格式：hex 如 260D:0030（默认），dec 如 9739:48")
     p.add_argument("--vid", type=lambda s: int(s, 0), help="覆盖 vendorId（默认从 DEVICE_FILTERS 读取）")
-    p.add_argument("--config-version", default=CONFIG_VERSION,
-                   help=f"输出数据规范版本（默认 {CONFIG_VERSION}；站点构建号写在 source.web_version）")
+    p.add_argument("--config-version", default=None,
+                   help="覆盖 config_version（默认取抓取时刻，UTC，精确到小时）")
     p.add_argument("--mode-priority", choices=["wireless", "wired"], default="wireless",
                    help="多模设备 mode 取值优先级：wireless=2.4G>BLE>USB（默认），wired=USB 优先")
     p.add_argument("--include-receiver", action="store_true",
@@ -664,7 +668,7 @@ def main(argv: list[str] | None = None) -> int:
                       indent=None if args.compact else 2,
                       separators=(",", ":") if args.compact else None)
     if args.output:
-        with open(args.output, "w", encoding="utf-8") as fh:
+        with open(args.output, "w", encoding="utf-8", newline="\n") as fh:
             fh.write(text)
             fh.write("\n")
         if not args.quiet:
