@@ -9,7 +9,8 @@
 //! 2. 可执行文件同级（安装形态）：`<exe>/mappings`、`<exe>/data/mappings`、`<exe>/resources/mappings`
 //!    （Windows NSIS / 免安装版；Tauri 的 `bundle.resources` 落在 resource 目录，Windows 上就是 exe 所在目录）。
 //! 3. 可执行文件上一级（`bin/` 布局）：`<exe>/../Resources/mappings`（macOS `.app`）、`<exe>/../mappings`、
-//!    `<exe>/../data/mappings`、`<exe>/../share/voltnest/mappings`。
+//!    `<exe>/../data/mappings`、`<exe>/../share/voltnest/mappings`，以及 Linux 安装形态
+//!    `<exe>/../lib/<任意子目录>/mappings`（deb / AppImage 的 Tauri 资源目录是 `lib/<productName>`）。
 //! 4. 源码树（开发期 `cargo run` / `cargo test`）：`<CARGO_MANIFEST_DIR>/data/mappings`。
 //!
 //! 目录必须存在且至少含一份 `*.json`：候选目录「存在且有表」即采用；全部不成立时报
@@ -123,12 +124,13 @@ impl std::error::Error for MappingError {}
 
 /// 按优先级列出型号表目录的候选路径（只列出，不校验是否存在）。
 ///
-/// 顺序即优先级；重复路径只保留首次出现。
+/// 顺序即优先级；重复路径只保留首次出现。`<exe>/../lib/*` 一项需要读一层目录列举，
+/// 其余均为纯拼路径。
 pub fn candidate_dirs() -> Vec<PathBuf> {
     candidate_dirs_for(current_exe_dir().as_deref(), env_dir().as_deref())
 }
 
-/// 候选路径的纯函数版本：`exe_dir` 可为 `None`（拿不到可执行文件路径时）。
+/// 候选路径的生成函数：`exe_dir` 可为 `None`（拿不到可执行文件路径时）。
 fn candidate_dirs_for(exe_dir: Option<&Path>, explicit: Option<&Path>) -> Vec<PathBuf> {
     let mut dirs: Vec<PathBuf> = Vec::new();
     let mut push = |path: PathBuf| {
@@ -154,6 +156,10 @@ fn candidate_dirs_for(exe_dir: Option<&Path>, explicit: Option<&Path>) -> Vec<Pa
         push(up.join(DIR_NAME));
         push(up.join("data").join(DIR_NAME));
         push(up.join("share").join("voltnest").join(DIR_NAME));
+        // Linux 打包形态：`/usr/bin/<exe>` 与 `/usr/lib/<productName>/`。
+        for dir in lib_layout_dirs(exe_dir) {
+            push(dir);
+        }
     }
 
     // 开发期：`cargo run` / `cargo test` 的 exe 在 target 下，只有这条指向真实源码树。
@@ -164,6 +170,21 @@ fn candidate_dirs_for(exe_dir: Option<&Path>, explicit: Option<&Path>) -> Vec<Pa
             .join(DIR_NAME),
     );
 
+    dirs
+}
+
+/// `<exe>/../lib/<子目录>/mappings`：目录名由打包器的 productName 决定，故扫一层子目录而不硬编码。
+fn lib_layout_dirs(exe_dir: &Path) -> Vec<PathBuf> {
+    let lib = normalize(&exe_dir.join("..").join("lib"));
+    let Ok(entries) = std::fs::read_dir(&lib) else {
+        return Vec::new();
+    };
+    let mut dirs: Vec<PathBuf> = entries
+        .flatten()
+        .map(|entry| entry.path().join(DIR_NAME))
+        .filter(|dir| dir.is_dir())
+        .collect();
+    dirs.sort();
     dirs
 }
 
@@ -566,6 +587,30 @@ mod tests {
         write_ajazz(&dir);
         assert_eq!(resolve_in(Some(&exe), None).unwrap(), dir);
         std::fs::remove_dir_all(&exe).ok();
+    }
+
+    /// Linux 安装形态：`<prefix>/bin/<exe>` + `<prefix>/lib/<productName>/mappings`。
+    #[test]
+    fn resolves_layout_under_lib_dir() {
+        let prefix = temp_dir("layout-lib");
+        let exe = prefix.join("bin");
+        let dir = prefix.join("lib").join("VoltNest").join(DIR_NAME);
+        std::fs::create_dir_all(&exe).unwrap();
+        std::fs::create_dir_all(&dir).unwrap();
+        write_ajazz(&dir);
+        assert_eq!(resolve_in(Some(&exe), None).unwrap(), dir);
+        std::fs::remove_dir_all(&prefix).ok();
+    }
+
+    /// `lib/` 下没有可用型号表时不得给出候选：`<exe>/../lib` 存在但为空目录要照常跳过。
+    #[test]
+    fn empty_lib_dir_yields_no_candidates() {
+        let prefix = temp_dir("layout-lib-empty");
+        let exe = prefix.join("bin");
+        std::fs::create_dir_all(&exe).unwrap();
+        std::fs::create_dir_all(prefix.join("lib").join("VoltNest")).unwrap();
+        assert!(lib_layout_dirs(&exe).is_empty());
+        std::fs::remove_dir_all(&prefix).ok();
     }
 
     /// macOS `.app` 形态：`Contents/MacOS/<exe>` → `Contents/Resources/mappings`。

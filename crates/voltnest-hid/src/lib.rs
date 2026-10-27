@@ -10,7 +10,8 @@
 //! 扫描并解析全部 `*.json`，再按 [`spec::BrandSpec::device_table_file`] 交给对应品牌。因此
 //! **安装包必须随二进制带上型号表目录**（Tauri 打包见 `bundle.resources`），定位顺序：
 //! `VOLTNEST_HID_MAPPINGS_DIR` 环境变量 → 可执行文件同级 / 上一级（`mappings`、`data/mappings`、
-//! `resources/mappings`、macOS `Resources/mappings`、`share/voltnest/mappings`）→ 源码树
+//! `resources/mappings`、macOS `Resources/mappings`、`share/voltnest/mappings`、Linux
+//! `lib/<productName>/mappings`）→ 源码树
 //! `CARGO_MANIFEST_DIR/data/mappings`（开发期）。目录找不到时 [`brands::Registry::embedded`] 直接
 //! panic 并在信息里列出全部已尝试路径；需要优雅降级时用 [`brands::Registry::try_embedded`]。
 //!
