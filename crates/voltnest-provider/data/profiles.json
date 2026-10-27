@@ -1,0 +1,25 @@
+{
+  "_note": "阈值链基线 × 三档倍率，编译期由 build.rs 生成为常量；改完需重新编译。",
+  "schemaVersion": 1,
+  "sensitivity": {
+    "sensitive": { "numerator": 1, "denominator": 2 },
+    "standard": { "numerator": 1, "denominator": 1 },
+    "loose": { "numerator": 2, "denominator": 1 }
+  },
+  "families": {
+    "hid-vbas": {
+      "thresholds": {
+        "staleMs": 45000,
+        "unavailableMs": 60000,
+        "offlineMs": 180000
+      }
+    },
+    "ble-bas": {
+      "thresholds": {
+        "staleMs": 90000,
+        "unavailableMs": 120000,
+        "offlineMs": 360000
+      }
+    }
+  }
+}
