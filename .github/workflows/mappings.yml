@@ -41,18 +41,20 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libudev-dev
 
       # 单品牌失败只跳过该品牌：旧表留着也比没有表强，失败率由最后一步汇总暴露。
+      # 只有 devices 内容变化才落盘；仅 config_version / source 变化不算，不会开 PR。
       - name: Fetch mappings
         id: fetch
         shell: bash
         run: |
           set -u
           report="$RUNNER_TEMP/report.md"
-          echo "### 型号码表抓取" > "$report"
+          echo "### 型号码表抓取（仅 devices 有差异才提交）" > "$report"
           brands="${{ inputs.brand }}"
           if [ -z "$brands" ] || [ "$brands" = "all" ]; then
             brands="dareu mchose rapoo"
           fi
           failed=0
+          changed=0
           for brand in $brands; do
             dest="crates/voltnest-hid/data/mappings/${brand}.json"
             tmp="$RUNNER_TEMP/${brand}.json"
@@ -62,19 +64,25 @@ jobs:
               failed=1
               continue
             fi
-            if ! python mappings/scripts/mapping_report.py "$tmp" --old "$dest" >> "$report"; then
+            # 0 = devices 有变化；3 = 与旧表一致（保留旧表与其抓取时刻）；其它 = 表非法
+            rc=0
+            python mappings/scripts/mapping_report.py "$tmp" --old "$dest" --require-change >> "$report" || rc=$?
+            if [ "$rc" -eq 0 ]; then
+              cp "$tmp" "$dest"
+              changed=1
+            elif [ "$rc" -ne 3 ]; then
               echo "::error title=${brand} 输出非法::沿用仓库内旧表"
               failed=1
-              continue
             fi
-            cp "$tmp" "$dest"
           done
           echo "failed=$failed" >> "$GITHUB_OUTPUT"
+          echo "changed=$changed" >> "$GITHUB_OUTPUT"
           cat "$report" >> "$GITHUB_STEP_SUMMARY"
 
       # 型号表格式由 crate 的测试守，不靠抓取脚本自证。
       - name: Verify tables parse
         id: verify
+        if: steps.fetch.outputs.changed == '1'
         continue-on-error: true
         run: cargo test -p voltnest-hid
 
@@ -90,6 +98,7 @@ jobs:
           body: |
             定时抓取 DAREU / MCHOSE / RAPOO 网页驱动的型号表，逐条对比见本次 run 的 Summary。
 
+            **只在 `devices` 内容有差异时提交**（仅 `config_version` / `source` 变化不会开 PR）。
             改动只落在 `crates/voltnest-hid/data/mappings/`。合并前请确认：
             - [ ] 新增型号的 VID:PID 没有与其它品牌重复登记
             - [ ] 消失的型号是厂商下架，而不是抓取口径变化
