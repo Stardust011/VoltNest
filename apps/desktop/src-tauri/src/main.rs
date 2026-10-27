@@ -24,7 +24,7 @@ use voltnest_provider::clock;
 use voltnest_storage::{DataPaths, SettingsStore, StateStore};
 
 use crate::host::{HostState, lock};
-use crate::supervisor::{TransportSpec, SupervisorCmd};
+use crate::supervisor::{SupervisorCmd, TransportSpec};
 
 fn main() {
     // 1. 单实例：第二个进程给首实例发信号后立刻退出，绝不创建窗口。

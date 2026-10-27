@@ -86,7 +86,10 @@ pub fn get_diagnostics(shared: State<'_, Arc<HostState>>) -> DiagnosticsDto {
 
 /// 手动重启某个采集线程组（诊断页按钮）。
 #[tauri::command]
-pub fn restart_transport(transport: String, shared: State<'_, Arc<HostState>>) -> Result<(), String> {
+pub fn restart_transport(
+    transport: String,
+    shared: State<'_, Arc<HostState>>,
+) -> Result<(), String> {
     let Some(kind) = Transport::from_prefix(&transport) else {
         return Err(format!("未知的 transport：{transport}"));
     };
@@ -181,7 +184,10 @@ fn apply_autostart(enabled: bool) -> Result<bool, String> {
 }
 
 /// 读-改-写设置：内存副本 → 同步状态机 → 落盘，任一步失败都不留半成品。
-fn write_settings(shared: &HostState, mutate: impl FnOnce(&mut Settings)) -> Result<Settings, String> {
+fn write_settings(
+    shared: &HostState,
+    mutate: impl FnOnce(&mut Settings),
+) -> Result<Settings, String> {
     let mut next = lock(&shared.settings).clone();
     mutate(&mut next);
     // 先落盘再换内存：写盘失败时界面保持旧值，不出现「看起来改了、重启又变回去」。

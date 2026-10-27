@@ -564,9 +564,7 @@ impl BrandSpec {
         // 多包重组只能挂在 output 查询通道上：feature 通道一问一答，没有「多包」这回事；
         // 纯监听通道没有查询，也就没有「这次应答属于哪一问」的边界。
         if let Some(reasm) = self.reassembly {
-            if !matches!(self.transport, ReplyTransport::InterruptQuery)
-                || self.request.is_none()
-            {
+            if !matches!(self.transport, ReplyTransport::InterruptQuery) || self.request.is_none() {
                 return Err(SpecError::ReassemblyWithoutQuery { brand: self.id });
             }
             // 头部三个下标必须落在 payload 之前，否则同一个字节被同时当成序号与载荷。
@@ -880,13 +878,22 @@ impl core::fmt::Display for SpecError {
                 write!(f, "品牌 {brand} 的 feature 查询缺少查询报文")
             }
             Self::ReassemblyWithoutQuery { brand } => {
-                write!(f, "品牌 {brand} 声明了多包重组，但通道不是带查询报文的 output 查询")
+                write!(
+                    f,
+                    "品牌 {brand} 声明了多包重组，但通道不是带查询报文的 output 查询"
+                )
             }
             Self::ReassemblyLayoutInvalid { brand } => {
-                write!(f, "品牌 {brand} 的多包重组下标自相矛盾（头部越界或电量与状态抢同一字节）")
+                write!(
+                    f,
+                    "品牌 {brand} 的多包重组下标自相矛盾（头部越界或电量与状态抢同一字节）"
+                )
             }
             Self::AltUsagePageInvalid { brand } => {
-                write!(f, "品牌 {brand} 的备用 UsagePage 与主页面相同，或主页面是通配")
+                write!(
+                    f,
+                    "品牌 {brand} 的备用 UsagePage 与主页面相同，或主页面是通配"
+                )
             }
             Self::AckOutsideReport {
                 brand,

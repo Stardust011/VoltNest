@@ -32,17 +32,30 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             services: Some(vec![uuid16(0x180F)]),
         })
         .await?;
-    println!("[{}ms] 已连接且有 0x180F 的设备 {} 台", start.elapsed().as_millis(), peripherals.len());
+    println!(
+        "[{}ms] 已连接且有 0x180F 的设备 {} 台",
+        start.elapsed().as_millis(),
+        peripherals.len()
+    );
     let Some(p) = peripherals.into_iter().next() else {
         // 没有「已连接」设备：退化为扫描，确认外设是否在广播（鼠标休眠/关机时不会广播）。
         println!("[{}ms] 尝试扫描 6s ...", start.elapsed().as_millis());
         adapter.start_scan(Default::default()).await?;
         tokio::time::sleep(Duration::from_secs(6)).await;
         let found = adapter.peripherals().await?;
-        println!("[{}ms] 扫到 {} 台", start.elapsed().as_millis(), found.len());
+        println!(
+            "[{}ms] 扫到 {} 台",
+            start.elapsed().as_millis(),
+            found.len()
+        );
         let _ = adapter.stop_scan().await;
         for f in found.iter().take(10) {
-            let name = f.properties().await.ok().flatten().and_then(|p| p.local_name);
+            let name = f
+                .properties()
+                .await
+                .ok()
+                .flatten()
+                .and_then(|p| p.local_name);
             println!("    {:?} name={:?}", f.address(), name);
         }
         return Ok(());
@@ -95,6 +108,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
     }
-    println!("[{}ms] is_connected={:?}", start.elapsed().as_millis(), p.is_connected().await);
+    println!(
+        "[{}ms] is_connected={:?}",
+        start.elapsed().as_millis(),
+        p.is_connected().await
+    );
     Ok(())
 }

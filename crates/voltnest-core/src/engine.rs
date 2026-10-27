@@ -9,16 +9,17 @@
 use crate::diagnostics::{DiagLevel, Diagnostics};
 use crate::humanize::humanize_ago;
 use crate::notify::{
-    LowBatteryNotification, NotificationBook, NotificationConfig, NotificationEntry, NotificationNode,
+    LowBatteryNotification, NotificationBook, NotificationConfig, NotificationEntry,
+    NotificationNode,
 };
 use crate::record::{DeviceRecord, UNREADABLE_KINDS_MAX};
 use crate::snapshot::{CardDto, DeviceDto, Snapshot, TraySnapshotDto};
 use crate::state::DeviceState;
 use std::collections::BTreeMap;
 use voltnest_provider::{
-    ClassificationMethod, DeviceFact, DeviceType, ErrorCode, Percent, ProfileError, ProviderEvent,
-    ProviderProfile, RemovalReason, Sensitivity, StableId, DegradationThresholds, Transport, ValidReading,
-    validate_registry,
+    ClassificationMethod, DegradationThresholds, DeviceFact, DeviceType, ErrorCode, Percent,
+    ProfileError, ProviderEvent, ProviderProfile, RemovalReason, Sensitivity, StableId, Transport,
+    ValidReading, validate_registry,
 };
 
 /// 引擎配置。阈值不在其中：它只能来自 Provider 与档位。
@@ -981,7 +982,10 @@ impl Engine {
 const CLOCK_FORWARD_WARN_MS: u64 = 10 * 60_000;
 
 /// 两条都不活跃时的主成员：最后有效读数更新的优先，同为无读数或同一时刻则取 2.4G。
-fn pick_inactive_primary<'a>(ra: &'a DeviceRecord, rb: &'a DeviceRecord) -> (&'a DeviceRecord, &'a DeviceRecord) {
+fn pick_inactive_primary<'a>(
+    ra: &'a DeviceRecord,
+    rb: &'a DeviceRecord,
+) -> (&'a DeviceRecord, &'a DeviceRecord) {
     let rank = |r: &DeviceRecord| (r.last_valid_at_ms, r.transport == Transport::Hid);
     if rank(ra) >= rank(rb) {
         (ra, rb)

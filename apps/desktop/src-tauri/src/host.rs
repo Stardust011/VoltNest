@@ -296,7 +296,9 @@ pub fn notification_config(settings: &Settings) -> NotificationConfig {
 /// 应用一个 Provider 事件，返回是否需要发布快照。
 fn apply_event(shared: &HostState, transport: Transport, event: &ProviderEvent, now: u64) -> bool {
     let mut engine = lock(&shared.engine);
-    let visible = engine.apply_event(event, Some(transport), now).should_publish();
+    let visible = engine
+        .apply_event(event, Some(transport), now)
+        .should_publish();
     // 队列深度按 64 的整数倍节流记录：积压时不要每来一条事件就写一条诊断。
     let depth = shared.queue_depth();
     if depth > QUEUE_ALERT_DEPTH && depth.is_multiple_of(QUEUE_ALERT_DEPTH) {
@@ -312,7 +314,11 @@ fn apply_event(shared: &HostState, transport: Transport, event: &ProviderEvent, 
 }
 
 /// 启动宿主事件循环线程。
-pub fn spawn_host_loop(app: AppHandle, shared: Arc<HostState>, rx: Receiver<HostEvent>) -> JoinHandle<()> {
+pub fn spawn_host_loop(
+    app: AppHandle,
+    shared: Arc<HostState>,
+    rx: Receiver<HostEvent>,
+) -> JoinHandle<()> {
     std::thread::Builder::new()
         .name("voltnest-host".into())
         .spawn(move || {

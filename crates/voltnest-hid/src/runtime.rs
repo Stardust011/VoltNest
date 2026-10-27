@@ -19,7 +19,7 @@
 use crate::brands::{Brand, Registry};
 use crate::spec::{BrandSpec, ReplyTransport, RequestTemplate};
 use crate::{
-    PRESENCE_POLL_MS, LISTEN_READ_TIMEOUT_MS, READ_BUFFER_LEN, READ_TIMEOUT_MS, RETRY_GAP_MS, frame,
+    LISTEN_READ_TIMEOUT_MS, PRESENCE_POLL_MS, READ_BUFFER_LEN, READ_TIMEOUT_MS, RETRY_GAP_MS, frame,
 };
 use hidapi::{HidApi, HidDevice};
 use std::collections::{HashMap, HashSet};
@@ -894,7 +894,10 @@ mod tests {
             entry(0x19F5, 0xFC30, 0xFF01, 0x0001, "/dev/hidraw6"),
         ];
         let (found, conflicts) = select_targets(&entries, &HashMap::new());
-        assert!(conflicts.is_empty(), "同一台设备的两页不是冲突：{conflicts:?}");
+        assert!(
+            conflicts.is_empty(),
+            "同一台设备的两页不是冲突：{conflicts:?}"
+        );
         let target = found.get("hid:19f5:fc30").expect("必须选中一台设备");
         assert_eq!(path_of(target), "/dev/hidraw6", "主页面优先");
     }

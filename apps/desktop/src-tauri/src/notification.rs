@@ -73,7 +73,11 @@ pub fn dispatch_notifications(
                 tray_bubble_result(outcome)
             }
         };
-        lock(&shared.engine).mark_notification_result(&notification.stable_id, notification.threshold, result);
+        lock(&shared.engine).mark_notification_result(
+            &notification.stable_id,
+            notification.threshold,
+            result,
+        );
     }
 }
 
