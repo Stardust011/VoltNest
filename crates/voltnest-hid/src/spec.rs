@@ -614,8 +614,8 @@ impl BrandSpec {
 
     /// 品牌节奏是否落在家族能力声明的预算内。
     ///
-    /// 家族只有一个 `stale` 阈值链；若某品牌的上报间隔慢到
-    /// `1.5 × 间隔 > stale_ms`，它的正常上报会被判过期 —— 这类品牌必须先
+    /// 家族只有一组三档阈值链；若某品牌的上报间隔慢到
+    /// `1.5 × 间隔 > 标准档 stale_ms`，它的正常上报会被判过期 —— 这类品牌必须先
     /// 改家族声明的阈值链，不能靠加载顺序或特例绕开。
     pub fn validate_against(&self, profile: &ProviderProfile) -> Result<(), SpecError> {
         self.validate()?;
@@ -625,7 +625,9 @@ impl BrandSpec {
         if profile.charging == ChargingSupport::Unavailable && self.battery.charging.is_some() {
             return Err(SpecError::ProfileChargingMismatch { brand: self.id });
         }
-        let budget = profile.thresholds.stale_ms;
+        let budget = profile
+            .thresholds_for(voltnest_provider::Sensitivity::Standard)
+            .stale_ms;
         if budget * 2 < self.expected_interval_ms * 3 {
             return Err(SpecError::CadenceExceedsProfile {
                 brand: self.id,
