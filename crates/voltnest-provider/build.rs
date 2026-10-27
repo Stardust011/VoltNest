@@ -1,4 +1,4 @@
-//! 读 `data/profiles.json`，生成三档阈值链常量。
+//! 读 `data/profiles.json`，生成采集节奏与三档阈值链常量。
 
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
@@ -12,6 +12,9 @@ const SUPPORTED_SCHEMA_VERSION: u32 = 2;
 /// 宿主必须能拿到的家族，缺一即构建失败。
 const REQUIRED_FAMILIES: [&str; 2] = ["hid-vbas", "ble-bas"];
 
+/// 出现检测间隔只允许出现在 HID：`validate` 会在运行期拒绝，这里提前拦。
+const BLE_PREFIX: &str = "ble-";
+
 #[derive(Deserialize)]
 struct Profiles {
     #[serde(rename = "schemaVersion")]
@@ -22,7 +25,32 @@ struct Profiles {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Family {
+    cadence: CadenceSpec,
+    #[serde(rename = "presencePollSeconds")]
+    presence_poll_seconds: Option<f64>,
     thresholds: Levels,
+}
+
+/// 采集节奏。单位秒，允许小数。
+#[derive(Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+enum CadenceSpec {
+    Polled {
+        #[serde(rename = "intervalSeconds")]
+        interval_seconds: f64,
+    },
+    ListenOnly {
+        #[serde(rename = "expectedIntervalSeconds")]
+        expected_interval_seconds: f64,
+    },
+    NotifyWithPoll {
+        #[serde(rename = "minSeconds")]
+        min_seconds: f64,
+        #[serde(rename = "maxSeconds")]
+        max_seconds: f64,
+        #[serde(rename = "defaultSeconds")]
+        default_seconds: f64,
+    },
 }
 
 /// 三档阈值链，键名即 `Sensitivity` 的落盘字符串。
@@ -45,7 +73,7 @@ struct Level {
     offline_seconds: f64,
 }
 
-/// 转成毫秒后的阈值链。
+/// 转成毫秒后的三档阈值链。
 struct MsLevel {
     stale_ms: u64,
     unavailable_ms: u64,
@@ -104,6 +132,33 @@ fn generate(profiles: &Profiles) -> Result<String, String> {
             ));
         }
 
+        if family.presence_poll_seconds.is_some() && id.starts_with(BLE_PREFIX) {
+            return Err(format!(
+                "家族 {id} 不允许 presencePollSeconds（仅 HID 支持出现检测）"
+            ));
+        }
+
+        let cadence = cadence_code(id, &family.cadence)?;
+        writeln!(
+            code,
+            "\n/// 家族 `{id}` 的采集节奏。\n\
+             pub(crate) const {}: super::Cadence = {cadence};",
+            const_name(id, "CADENCE"),
+        )
+        .expect("写入字符串失败");
+
+        let presence = match family.presence_poll_seconds {
+            Some(seconds) => format!("Some({})", grouped(to_ms(seconds, "presencePollSeconds")?)),
+            None => "None".to_string(),
+        };
+        writeln!(
+            code,
+            "\n/// 家族 `{id}` 的出现检测间隔。\n\
+             pub(crate) const {}: Option<u64> = {presence};",
+            const_name(id, "PRESENCE_POLL_MS"),
+        )
+        .expect("写入字符串失败");
+
         let mut table = String::new();
         for (_, level) in &levels {
             writeln!(
@@ -131,6 +186,48 @@ fn generate(profiles: &Profiles) -> Result<String, String> {
     Ok(code)
 }
 
+fn cadence_code(id: &str, cadence: &CadenceSpec) -> Result<String, String> {
+    Ok(match cadence {
+        CadenceSpec::Polled { interval_seconds } => format!(
+            "super::Cadence::Polled {{ interval_ms: {} }}",
+            grouped(to_ms(*interval_seconds, &format!("{id}.intervalSeconds"))?)
+        ),
+        CadenceSpec::ListenOnly {
+            expected_interval_seconds,
+        } => format!(
+            "super::Cadence::ListenOnly {{ expected_interval_ms: {} }}",
+            grouped(to_ms(
+                *expected_interval_seconds,
+                &format!("{id}.expectedIntervalSeconds")
+            )?)
+        ),
+        CadenceSpec::NotifyWithPoll {
+            min_seconds,
+            max_seconds,
+            default_seconds,
+        } => {
+            let min = to_ms(*min_seconds, &format!("{id}.minSeconds"))?;
+            let max = to_ms(*max_seconds, &format!("{id}.maxSeconds"))?;
+            let default = to_ms(*default_seconds, &format!("{id}.defaultSeconds"))?;
+            if !(min <= default && default <= max) {
+                return Err(format!("家族 {id} 的轮询区间要求 min <= default <= max"));
+            }
+            format!(
+                "super::Cadence::NotifyWithPoll {{\n\
+                 \x20   poll: super::PollPolicy {{\n\
+                 \x20       min_ms: {},\n\
+                 \x20       max_ms: {},\n\
+                 \x20       default_ms: {},\n\
+                 \x20   }},\n\
+                 }}",
+                grouped(min),
+                grouped(max),
+                grouped(default),
+            )
+        }
+    })
+}
+
 fn to_level(level: &Level) -> Result<MsLevel, String> {
     Ok(MsLevel {
         stale_ms: to_ms(level.stale_seconds, "staleSeconds")?,
@@ -155,7 +252,7 @@ fn to_ms(seconds: f64, what: &str) -> Result<u64, String> {
     Ok(rounded as u64)
 }
 
-/// `hid-vbas` + `THRESHOLDS` → `HID_VBAS_THRESHOLDS`。
+/// `hid-vbas` + `CADENCE` → `HID_VBAS_CADENCE`。
 fn const_name(family: &str, suffix: &str) -> String {
     format!("{}_{suffix}", family.replace('-', "_").to_ascii_uppercase())
 }
