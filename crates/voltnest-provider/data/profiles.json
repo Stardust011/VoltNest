@@ -1,0 +1,29 @@
+{
+  "_note": "时间单位统一为秒，可带小数；编译期由 build.rs 转毫秒并校验。改完需重新编译。",
+  "schemaVersion": 2,
+  "families": {
+    "hid-vbas": {
+      "cadence": { "kind": "polled", "intervalSeconds": 30 },
+      "presencePollSeconds": 5,
+      "thresholds": {
+        "sensitive": { "staleSeconds": 30, "unavailableSeconds": 45, "offlineSeconds": 90 },
+        "standard": { "staleSeconds": 45, "unavailableSeconds": 60, "offlineSeconds": 180 },
+        "loose": { "staleSeconds": 90, "unavailableSeconds": 120, "offlineSeconds": 360 }
+      }
+    },
+    "ble-bas": {
+      "cadence": {
+        "kind": "notifyWithPoll",
+        "minSeconds": 60,
+        "maxSeconds": 300,
+        "defaultSeconds": 60
+      },
+      "presencePollSeconds": null,
+      "thresholds": {
+        "sensitive": { "staleSeconds": 45, "unavailableSeconds": 60, "offlineSeconds": 180 },
+        "standard": { "staleSeconds": 90, "unavailableSeconds": 120, "offlineSeconds": 360 },
+        "loose": { "staleSeconds": 180, "unavailableSeconds": 240, "offlineSeconds": 720 }
+      }
+    }
+  }
+}

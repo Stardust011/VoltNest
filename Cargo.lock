@@ -4417,6 +4417,10 @@ dependencies = [
 [[package]]
 name = "voltnest-provider"
 version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
 
 [[package]]
 name = "voltnest-storage"
