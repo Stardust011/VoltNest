@@ -4,14 +4,22 @@
 //!
 //! | 情形 | 错误码 |
 //! |---|---|
-//! | 报告短于 `min_report_len`、报告 ID 不符、长度字段越界、payload 过短、子标签不符、命令字不符 | `malformed_frame` |
+//! | 报告短于 `min_report_len`、报告 ID 不符、确认位不符、命令字不符、长度字段越界、payload 过短、子标签不符、状态错误态 | `malformed_frame` |
 //! | payload 全零 | `empty_payload` |
 //! | 电量字节 > 100 | `percent_out_of_range` |
 //!
 //! # 诊断：错误码只是一个词
 //! `malformed_frame` 有六种成因，仅看错误码分不清「报告 ID 不符」与「payload 装不下」。故解析器同时给 [`FrameReject`]：哪一校验失败、期望与实际各是多少、原始字节是什么。它只进诊断页与日志（[`FrameReject::detail`]），不参与状态判定——状态机仍只看 [`ErrorCode`]。
+//!
+//! # 三条解析入口，互不替代
+//! | 入口 | 用于 | 认不出的帧 |
+//! |---|---|---|
+//! | [`decode_battery`] | 单帧应答（feature 查询 / output 查询） | 报错并进 `lastError` |
+//! | [`decode_listen`] | 监听通道上的自发上报帧（混着位移、媒体键等大量无关帧） | 静默丢弃 |
+//! | [`decode_assembled`] | 多包应答经 [`Reassembler`] 拼合之后 | 返回 `None` |
 
 use crate::spec::BrandSpec;
+use std::time::{Duration, Instant};
 use voltnest_provider::{DIAG_BYTES, ErrorCode, Percent, hex_bytes};
 
 /// 一次电量读数。
@@ -47,6 +55,18 @@ pub enum RejectReason {
         want: u8,
         /// 实际值。
         got: Option<u8>,
+    },
+    /// 应答确认位不符（设备还没处理完该命令，或回的是别的命令）。
+    AckMismatch {
+        /// 期望值（已与掩码对齐）。
+        want: u8,
+        /// 实际字节（未掩码，便于人工核对）。
+        got: Option<u8>,
+    },
+    /// 设备自报错误态（状态值达到品牌声明的错误起点）。
+    StatusError {
+        /// 实际状态字节。
+        raw: u8,
     },
     /// 长度字段所在下标越过缓冲末尾。
     LengthFieldMissing {
@@ -97,6 +117,8 @@ impl RejectReason {
             Self::ReportTooShort { .. } => "report_too_short",
             Self::ReportIdMismatch { .. } => "report_id_mismatch",
             Self::CmdMismatch { .. } => "cmd_mismatch",
+            Self::AckMismatch { .. } => "ack_mismatch",
+            Self::StatusError { .. } => "status_error",
             Self::LengthFieldMissing { .. } => "length_field_missing",
             Self::DeclaredPayloadTooShort { .. } => "declared_payload_too_short",
             Self::DeclaredPayloadPastEnd { .. } => "declared_payload_past_end",
@@ -116,9 +138,11 @@ impl std::fmt::Display for RejectReason {
             Self::ReportTooShort { min } => write!(f, "(min={min})"),
             Self::ReportIdMismatch { want, got }
             | Self::CmdMismatch { want, got }
+            | Self::AckMismatch { want, got }
             | Self::SubtagsMismatch { want, got } => {
                 write!(f, "(want={want:#04X} got={})", hex_opt(*got))
             }
+            Self::StatusError { raw } => write!(f, "(status={raw:#04X})"),
             Self::LengthFieldMissing { index } => write!(f, "(index={index})"),
             Self::DeclaredPayloadTooShort { declared, min } => {
                 write!(f, "(declared={declared} min={min})")
@@ -135,6 +159,19 @@ impl std::fmt::Display for RejectReason {
 
 fn hex_opt(value: Option<u8>) -> String {
     value.map_or_else(|| "none".to_string(), |b| format!("{b:#04X}"))
+}
+
+/// 取 `index` 处的字节并按 [`BrandSpec::reply_inverted`] 归一化。
+///
+/// 报告 ID 不参与取反（官方只反转 ID 之后的内容）—— 这条规则在这里写一次，
+/// 全帧归一化与单字节比对共用，避免两处各写一份条件。
+fn normalized_byte(spec: &BrandSpec, index: usize, byte: u8) -> u8 {
+    let keep = spec.frame.report_id.is_some() && index == 0;
+    if spec.reply_inverted && !keep {
+        byte ^ 0xFF
+    } else {
+        byte
+    }
 }
 
 /// 一次具名的拒绝：错误码 + 成因 + 原始字节。
@@ -205,28 +242,36 @@ pub fn decode_battery_detailed(
         normalized_report = report
             .iter()
             .enumerate()
-            .map(|(index, byte)| {
-                if layout.report_id.is_some() && index == 0 {
-                    *byte
-                } else {
-                    *byte ^ 0xFF
-                }
-            })
+            .map(|(index, byte)| normalized_byte(spec, index, *byte))
             .collect::<Vec<_>>();
         normalized_report.as_slice()
     } else {
         report
     };
 
-    // 2) 命令字。
-    if report.get(layout.cmd_index) != Some(&spec.battery.cmd) {
+    // 2) 应答确认位：官方驱动靠它判定「设备已处理该命令」（`tgdevice.js:1836`）。
+    //    缺这条校验时，一个「设备还没准备好」的应答会被当成 0% 电量上报。
+    if let Some(ack) = spec.ack {
+        let raw = report.get(ack.index).copied();
+        if raw.map(|b| b & ack.mask) != Some(ack.value) {
+            return Err(reject(RejectReason::AckMismatch {
+                want: ack.value,
+                got: raw,
+            }));
+        }
+    }
+
+    // 3) 命令字（协议回显时才有）。
+    if let Some(cmd) = spec.battery.cmd
+        && report.get(layout.cmd_index) != Some(&cmd)
+    {
         return Err(reject(RejectReason::CmdMismatch {
-            want: spec.battery.cmd,
+            want: cmd,
             got: report.get(layout.cmd_index).copied(),
         }));
     }
 
-    // 3) payload 长度：字段声明 / 固定长度两种模式。
+    // 4) payload 长度：字段声明 / 固定长度两种模式。
     let payload_len = match layout.len_index {
         Some(index) => {
             let Some(&raw) = report.get(index) else {
@@ -263,12 +308,12 @@ pub fn decode_battery_detailed(
         }
     };
 
-    // 4) 全零 payload 是「设备在场但没数据」，与坏帧分开上报。
+    // 5) 全零 payload 是「设备在场但没数据」，与坏帧分开上报。
     if payload.iter().all(|b| *b == 0) {
         return Err(reject(RejectReason::EmptyPayload));
     }
 
-    // 5) 子标签（若协议有）。
+    // 6) 子标签（若协议有）。
     if let Some((index, want)) = spec.battery.subtag
         && payload.get(index) != Some(&want)
     {
@@ -278,7 +323,16 @@ pub fn decode_battery_detailed(
         }));
     }
 
-    // 6) 电量。Percent::new 的 None 必须在这里映射成错误码，不得 `?` 后 continue。
+    // 7) 错误态：设备自报异常时电量字段没有意义，整帧不可用 ——
+    //    不得降级成「未充电 + 某个电量值」（官方语义：状态 ≥0x03 为错误态）。
+    if let Some(field) = spec.battery.charging
+        && let Some(&raw) = payload.get(field.index)
+        && field.is_error(raw)
+    {
+        return Err(reject(RejectReason::StatusError { raw }));
+    }
+
+    // 8) 电量。Percent::new 的 None 必须在这里映射成错误码，不得 `?` 后 continue。
     let raw = payload
         .get(spec.battery.percent_index)
         .copied()
@@ -293,12 +347,13 @@ pub fn decode_battery_detailed(
         Percent::new(raw).ok_or_else(|| reject(RejectReason::PercentOutOfRange { raw }))?
     };
 
-    // 7) 充电标志：协议不提供 → None；字节缺失 → None（不猜测）。
-    let charging = spec.battery.charging.and_then(|field| {
-        payload
-            .get(field.index)
-            .map(|b| field.true_values.contains(b))
-    });
+    // 9) 充电标志：协议不提供 → None；字节缺失 → None（不猜测）。
+    //    一位一义的状态字节要先按 `mask` 取位再比较：迈从键盘把「满电」放在高半字节、
+    //    把「充电中」放在低半字节，整字节比较会在 `0x11`（满电且充电）时漏判。
+    let charging = spec
+        .battery
+        .charging
+        .and_then(|field| payload.get(field.index).map(|b| field.is_charging(*b)));
 
     Ok(BatteryReading { percent, charging })
 }
@@ -312,18 +367,64 @@ const fn reason_code(reason: RejectReason) -> ErrorCode {
     }
 }
 
+/// 解析一帧**设备自发上报**（宿主未提问）的电量。
+///
+/// 返回 `None` 表示「这一帧不是电量上报」（鼠标位移、媒体键、或别的命令），调用方应静默丢弃 ——
+/// 输入通道上无关帧占绝大多数，把它们报成 `Unreadable` 只会把诊断页刷满、把 `lastError` 写脏。
+///
+/// 偏移容错：官方解析器的输入是 WebHID 的 `report.data`（**不含**报告 ID），而 hidapi 的
+/// `read_timeout` 在报告带编号时把报告 ID 放在首字节。两种都试，命中哪个用哪个 ——
+/// 首字节必须等于 `cmd`，误判成电量的概率只来自「报告 ID 恰好等于 cmd 且子标签也对上」。
+pub fn decode_listen(spec: &BrandSpec, report: &[u8]) -> Option<BatteryReading> {
+    let listen = spec.listen?;
+    for offset in [0usize, 1] {
+        let Some(window) = report.get(offset..) else {
+            continue;
+        };
+        if window.len() < listen.min_len() {
+            continue;
+        }
+        if window[0] != listen.cmd || window[listen.subtag_index] != listen.subtag_value {
+            continue;
+        }
+        let raw = window[listen.percent_index];
+        let status = window[listen.status_index];
+        // 官方：高半字节 `fullStatus` 非零即满电，直接把电量按 100 上报。
+        let percent = if status >> 4 != 0 { 100u8 } else { raw };
+        let percent = Percent::new(percent)?;
+        let charging = (status & 0x0F) == listen.charging_low_nibble;
+        return Some(BatteryReading {
+            percent,
+            charging: Some(charging),
+        });
+    }
+    None
+}
+
+/// 该帧是不是本协议的电量帧（按命令字判定，不解析字段）。
+///
+/// 监听通道 / output 查询通道用它做前置过滤：只有命令字对上的帧才进解析器，
+/// 其它帧直接丢，不进 `lastError`。
+pub fn matches_cmd(spec: &BrandSpec, report: &[u8]) -> bool {
+    let Some(cmd) = spec.battery.cmd else {
+        return true;
+    };
+    let index = spec.frame.cmd_index;
+    report
+        .get(index)
+        .copied()
+        .map(|byte| normalized_byte(spec, index, byte))
+        == Some(cmd)
+}
+
 /// 诊断用：报告尾部填充是否全零。
 ///
 /// 实测帧的填充恒为 0x00，但**不**作为拒绝条件 —— 把填充当校验会让一个
 /// 无害的固件小改动直接变成「设备不可读」。
 pub fn padding_all_zero(spec: &BrandSpec, report: &[u8]) -> bool {
     let layout = &spec.frame;
-    let payload_len = match layout.len_index {
-        Some(index) => match report.get(index) {
-            Some(&raw) => raw as usize,
-            None => return false,
-        },
-        None => layout.fixed_payload_len,
+    let Some(payload_len) = layout.payload_len(report) else {
+        return false;
     };
     let tail = layout.payload_offset.saturating_add(payload_len);
     report
@@ -332,10 +433,112 @@ pub fn padding_all_zero(spec: &BrandSpec, report: &[u8]) -> bool {
         .unwrap_or(false)
 }
 
+/// 多包应答的拼接器：把设备拆成 N 条输入报告的一条应答拼回一条。
+///
+/// 只有 [`BrandSpec::reassembly`] 非空的协议会用到它（迈从键盘的 2.4G 通道）。
+/// 生命周期按「一次查询」算：查询发出后喂包，凑齐 `total` 个序号即产出组装结果；
+/// 超过 `timeout_ms` 没凑齐就丢弃半包 —— 半包拼出来的电量比没有电量更糟。
+#[derive(Debug, Default)]
+pub struct Reassembler {
+    parts: Vec<u8>,
+    total: usize,
+    next_seq: usize,
+    deadline: Option<Instant>,
+}
+
+impl Reassembler {
+    /// 空拼接器（等待第一条包）。
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// 丢弃当前未完成的组装（新一次查询发出前调用）。
+    pub fn reset(&mut self) {
+        self.parts.clear();
+        self.total = 0;
+        self.next_seq = 0;
+        self.deadline = None;
+    }
+
+    /// 一次应答是否已凑齐（诊断用）。
+    pub fn is_complete(&self) -> bool {
+        self.total > 0 && self.next_seq == self.total
+    }
+
+    /// 喂一条输入报告。返回 `Some(组装结果)` 表示这次应答已凑齐。
+    ///
+    /// 只认命令字对上的包；序号不符的包直接丢（官方同样只接受 `current === expected`，
+    /// 迟到/重发的包会造成重复字节，比丢一包更难查）。
+    pub fn feed(
+        &mut self,
+        spec: &BrandSpec,
+        report: &[u8],
+        now: Instant,
+    ) -> Option<Vec<u8>> {
+        let reasm = spec.reassembly?;
+        // 半包超时：先丢，再按「这条包属于新一次应答」继续。
+        if let Some(deadline) = self.deadline
+            && now > deadline
+        {
+            self.reset();
+        }
+        // 与监听帧同一套容错：数据窗口可能带报告 ID（hidapi）也可能不带（官方解析器）。
+        let window = (0..=1usize).find_map(|base| {
+            let w = report.get(base..)?;
+            (w.len() > reasm.min_packet_len() && w.first() == Some(&reasm.cmd)).then_some(w)
+        })?;
+        let total = *window.get(reasm.total_index)? as usize;
+        let seq = *window.get(reasm.seq_index)? as usize;
+        if total == 0 || seq >= total {
+            return None;
+        }
+        // seq 回到 0 = 设备重新开始一轮应答，丢弃旧半包。
+        if seq == 0 {
+            self.parts.clear();
+            self.total = total;
+            self.next_seq = 0;
+            self.deadline = Some(now + Duration::from_millis(reasm.timeout_ms));
+        }
+        if self.total != total || seq != self.next_seq {
+            return None;
+        }
+        let end = window.len().saturating_sub(reasm.trailer_len);
+        let chunk = window.get(reasm.payload_offset..end)?;
+        self.parts.extend_from_slice(chunk);
+        self.next_seq += 1;
+        if !self.is_complete() {
+            return None;
+        }
+        let assembled = std::mem::take(&mut self.parts);
+        self.reset();
+        Some(assembled)
+    }
+}
+
+/// 解析组装完成的应答（[`BrandSpec::reassembly`] 声明的通道）。
+///
+/// **与监听帧不同，这里不做「满电按 100」的改写**：官方键盘页拿到查询结果后把 `fullStatus`
+/// 显式置 0、直接显示 `batteryLevel`（`s.value=0, s.value&&(e.value=100)` 永远不成立），
+/// 满电标志只在实时上报那条路径生效。字段位置取自 [`BrandSpec::battery`]，没有第二套下标。
+pub fn decode_assembled(spec: &BrandSpec, assembled: &[u8]) -> Option<BatteryReading> {
+    spec.reassembly?;
+    if assembled.len() < spec.min_payload_len() {
+        return None;
+    }
+    let raw = *assembled.get(spec.battery.percent_index)?;
+    let percent = Percent::new(raw)?;
+    // 状态字节只有协议声明了充电标志时才读：没声明就当作「未知」而不是「未充电」。
+    let charging = spec
+        .battery
+        .charging
+        .and_then(|field| assembled.get(field.index).map(|b| field.is_charging(*b)));
+    Some(BatteryReading { percent, charging })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::spec::{BatteryFields, BrandSpec, ChargingField, FrameLayout};
+    use crate::spec::{BatteryFields, BrandSpec, ChargingField, FrameLayout, ReplyTransport};
 
     /// 与任何真实品牌都不同的合成描述：验证解析器只吃字段、不含品牌分支。
     ///
@@ -345,8 +548,11 @@ mod tests {
         id: "synthetic",
         label: "合成品牌",
         usage_page: 0xFFC0,
+        usage_page_alt: None,
+        usage: None,
         usage_page_write: None,
-        transport: crate::spec::ReplyTransport::Push,
+        reassembly: None,
+        transport: crate::spec::ReplyTransport::Listen,
         reply_inverted: false,
         clamp_percent: false,
         frame: FrameLayout {
@@ -357,17 +563,24 @@ mod tests {
             fixed_payload_len: 2,
         },
         battery: BatteryFields {
-            cmd: 0x22,
+            cmd: Some(0x22),
             subtag: None,
             percent_index: 0,
             charging: Some(ChargingField {
+                mask: 0xFF,
                 index: 1,
                 true_values: &[0x02],
+                error_from: None,
             }),
         },
+        listen: None,
         request: None,
+        ack: None,
+        fallback_report_id: None,
         expected_interval_ms: 20_000,
         device_table_json: crate::brands::ajazz::SPEC.device_table_json,
+        variants: &[],
+        route: None,
     };
 
     #[test]
@@ -376,6 +589,147 @@ mod tests {
         assert_eq!(r.percent.get(), 55);
         assert_eq!(r.charging, Some(true));
     }
+
+    // ---- 多包重组（对应迈从键盘 2.4G 通道）----
+
+    /// 合成多包描述：窗口 `[0]=0x4A(命令) [1]=总包数 [2]=序号 [3]=保留 [4..]=载荷 [-1]=校验和`，
+    /// 组装结果 `[0]=电量 [1]=状态`（高半字节满电、低半字节充电）。
+    const REASSEMBLED: BrandSpec = BrandSpec {
+        id: "synthetic-reasm",
+        label: "合成多包品牌",
+        transport: ReplyTransport::InterruptQuery,
+        reassembly: Some(crate::spec::Reassembly {
+            cmd: 0x4A,
+            total_index: 1,
+            seq_index: 2,
+            payload_offset: 4,
+            trailer_len: 1,
+            timeout_ms: 5_000,
+        }),
+        frame: FrameLayout {
+            report_id: Some(0x33),
+            cmd_index: 0,
+            len_index: None,
+            payload_offset: 1,
+            fixed_payload_len: 2,
+        },
+        battery: BatteryFields {
+            cmd: None,
+            subtag: None,
+            percent_index: 0,
+            charging: Some(ChargingField {
+                mask: 0x0F,
+                index: 1,
+                true_values: &[0x01],
+                error_from: None,
+            }),
+        },
+        request: Some(crate::spec::RequestTemplate {
+            usage_page: 0xFFC0,
+            cmd: 0x4A,
+            prefix: &[],
+            report_len: 6,
+            cmd_index: 1,
+            payload_offset: 2,
+            payload: &[0x01],
+            interval_ms: Some(1_000),
+            inverted: false,
+            retry: 0,
+        }),
+        ..SYNTHETIC
+    };
+
+    /// 造一条应答包；`with_id` 控制是否带报告 ID（hidapi 与官方解析器两种形态）。
+    fn packet(total: u8, seq: u8, payload: &[u8], with_id: bool) -> Vec<u8> {
+        let mut p = Vec::new();
+        if with_id {
+            p.push(0x33);
+        }
+        p.extend_from_slice(&[0x4A, total, seq, 0x00]);
+        p.extend_from_slice(payload);
+        p.push(0x5A); // 校验和，不进载荷
+        p
+    }
+
+    #[test]
+    fn assembles_multi_packet_answer() {
+        let mut r = Reassembler::new();
+        let t0 = Instant::now();
+        assert!(
+            r.feed(&REASSEMBLED, &packet(2, 0, &[0x3C, 0x01], true), t0).is_none(),
+            "第一包不够，必须等第二包"
+        );
+        let done = r
+            .feed(&REASSEMBLED, &packet(2, 1, &[0x00, 0x00], true), t0)
+            .expect("凑齐两包后必须产出组装结果");
+        assert_eq!(done, vec![0x3C, 0x01, 0x00, 0x00]);
+        let reading = decode_assembled(&REASSEMBLED, &done).unwrap();
+        assert_eq!(reading.percent.get(), 60);
+        assert_eq!(reading.charging, Some(true), "低半字节 1 = 充电");
+    }
+
+    #[test]
+    fn assembles_without_report_id_too() {
+        let mut r = Reassembler::new();
+        let t0 = Instant::now();
+        r.feed(&REASSEMBLED, &packet(1, 0, &[0x50, 0x00], false), t0);
+        // 单包应答：第一包就该完成。
+        let mut r = Reassembler::new();
+        let done = r
+            .feed(&REASSEMBLED, &packet(1, 0, &[0x50, 0x00], false), t0)
+            .expect("单包应答必须立即完成");
+        assert_eq!(decode_assembled(&REASSEMBLED, &done).unwrap().percent.get(), 80);
+    }
+
+    #[test]
+    fn ignores_packets_with_foreign_command() {
+        let mut r = Reassembler::new();
+        let mut p = packet(1, 0, &[0x50, 0x00], true);
+        p[1] = 0x0A; // 监听帧（电量上报）也走这条输入通道
+        assert!(r.feed(&REASSEMBLED, &p, Instant::now()).is_none());
+    }
+
+    #[test]
+    fn out_of_order_packet_is_dropped() {
+        let mut r = Reassembler::new();
+        let t0 = Instant::now();
+        assert!(r.feed(&REASSEMBLED, &packet(2, 0, &[0x3C, 0x00], true), t0).is_none());
+        // 序号 2 越界（total=2 合法序号只有 0/1）：丢弃，不破坏已收到的第一包。
+        assert!(r.feed(&REASSEMBLED, &packet(2, 2, &[0x00, 0x00], true), t0).is_none());
+        let done = r.feed(&REASSEMBLED, &packet(2, 1, &[0x00, 0x00], true), t0);
+        assert!(done.is_some(), "丢掉乱序包后仍应能凑齐");
+    }
+
+    #[test]
+    fn sequence_restart_discards_previous_packet() {
+        let mut r = Reassembler::new();
+        let t0 = Instant::now();
+        r.feed(&REASSEMBLED, &packet(2, 0, &[0xFF, 0x00], true), t0);
+        // 设备重新开始一轮：旧的半包必须丢，否则会拼出 [0xFF, 0x00, ...]。
+        let done = r
+            .feed(&REASSEMBLED, &packet(2, 0, &[0x3C, 0x00], true), t0)
+            .is_none();
+        assert!(done);
+        let done = r.feed(&REASSEMBLED, &packet(2, 1, &[0x00, 0x00], true), t0).unwrap();
+        assert_eq!(done, vec![0x3C, 0x00, 0x00, 0x00]);
+    }
+
+    #[test]
+    fn half_packet_is_dropped_after_timeout() {
+        let mut r = Reassembler::new();
+        let t0 = Instant::now();
+        r.feed(&REASSEMBLED, &packet(2, 0, &[0xFF, 0x00], true), t0);
+        // 超过 timeout_ms（5s）后到达的第二包：半包已过期，必须丢弃而不是拼上去。
+        let late = t0 + Duration::from_secs(6);
+        assert!(r.feed(&REASSEMBLED, &packet(2, 1, &[0x00, 0x00], true), late).is_none());
+    }
+
+    #[test]
+    fn truncated_packet_is_ignored() {
+        let mut r = Reassembler::new();
+        assert!(r.feed(&REASSEMBLED, &[0x33, 0x4A, 0x01], Instant::now()).is_none());
+    }
+
 
     #[test]
     fn fixed_length_payload_shorter_than_declared_is_malformed() {

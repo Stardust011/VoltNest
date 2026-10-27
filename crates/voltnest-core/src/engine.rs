@@ -9,15 +9,15 @@
 use crate::diagnostics::{DiagLevel, Diagnostics};
 use crate::humanize::humanize_ago;
 use crate::notify::{
-    LowBatteryAlert, NotificationBook, NotificationConfig, NotificationEntry, NotificationNode,
+    LowBatteryNotification, NotificationBook, NotificationConfig, NotificationEntry, NotificationNode,
 };
-use crate::record::{Record, UNREADABLE_KINDS_MAX};
-use crate::snapshot::{CardDto, DeviceDto, Snapshot, TrayDto};
+use crate::record::{DeviceRecord, UNREADABLE_KINDS_MAX};
+use crate::snapshot::{CardDto, DeviceDto, Snapshot, TraySnapshotDto};
 use crate::state::DeviceState;
 use std::collections::BTreeMap;
 use voltnest_provider::{
     ClassificationMethod, DeviceFact, DeviceType, ErrorCode, Percent, ProfileError, ProviderEvent,
-    ProviderProfile, RemovalReason, Sensitivity, StableId, Thresholds, Transport, ValidReading,
+    ProviderProfile, RemovalReason, Sensitivity, StableId, DegradationThresholds, Transport, ValidReading,
     validate_registry,
 };
 
@@ -68,8 +68,10 @@ pub enum Transition {
 }
 
 impl Transition {
-    /// 是否应触发快照发布。
-    pub fn is_visible(self) -> bool {
+    /// 该变化是否值得发布一次快照（与 UI 可见性无关：`Created`/`Refreshed` 也要发）。
+    ///
+    /// 曾名 `is_visible`，读起来像「界面上是否可见」。
+    pub fn should_publish(self) -> bool {
         !matches!(self, Self::None | Self::Backfilled)
     }
 }
@@ -107,8 +109,8 @@ pub struct Engine {
     profiles: Vec<&'static ProviderProfile>,
     sensitivity: Sensitivity,
     notifications: NotificationBook,
-    records: Vec<Record>,
-    pending_alerts: Vec<LowBatteryAlert>,
+    records: Vec<DeviceRecord>,
+    pending_notifications: Vec<LowBatteryNotification>,
     tray_order: Vec<String>,
     hidden: Vec<String>,
     tray_capacity: usize,
@@ -130,7 +132,7 @@ impl Engine {
             sensitivity: config.sensitivity,
             notifications: NotificationBook::new(config.notifications),
             records: Vec::new(),
-            pending_alerts: Vec::new(),
+            pending_notifications: Vec::new(),
             tray_order: Vec::new(),
             hidden: Vec::new(),
             tray_capacity: config.tray_capacity,
@@ -180,10 +182,10 @@ impl Engine {
     }
 
     /// 某家族的阈值链（含档位缩放）。
-    pub fn thresholds_for(&self, family_id: &str) -> Thresholds {
+    pub fn thresholds_for(&self, family_id: &str) -> DegradationThresholds {
         self.profile_for(family_id)
             .map(|p| p.thresholds_for(self.sensitivity))
-            .unwrap_or(Thresholds {
+            .unwrap_or(DegradationThresholds {
                 stale_ms: 90_000,
                 unavailable_ms: 120_000,
                 offline_ms: 360_000,
@@ -191,12 +193,12 @@ impl Engine {
     }
 
     /// 记录只读视图。
-    pub fn records(&self) -> &[Record] {
+    pub fn records(&self) -> &[DeviceRecord] {
         &self.records
     }
 
     /// 按 `stableId` 查记录。
-    pub fn record(&self, stable_id: &str) -> Option<&Record> {
+    pub fn record(&self, stable_id: &str) -> Option<&DeviceRecord> {
         self.records
             .iter()
             .find(|r| r.stable_id.as_str() == stable_id)
@@ -226,8 +228,8 @@ impl Engine {
     }
 
     /// 取走待发送的低电量通知。
-    pub fn take_alerts(&mut self) -> Vec<LowBatteryAlert> {
-        std::mem::take(&mut self.pending_alerts)
+    pub fn take_notifications(&mut self) -> Vec<LowBatteryNotification> {
+        std::mem::take(&mut self.pending_notifications)
     }
 
     /// 导出通知状态用于持久化。
@@ -237,7 +239,7 @@ impl Engine {
 
     /// 回填一次通知的真实投递结果。
     ///
-    /// `take_alerts()` 给出「应当发送」，宿主真正投递（或被模式关闭、被系统拒绝）后
+    /// `take_notifications()` 给出「应当发送」，宿主真正投递（或被模式关闭、被系统拒绝）后
     /// 用本方法覆盖 `last_result`，诊断页才不会把「打算发」显示成「已发送」。
     pub fn mark_notification_result(&mut self, stable_id: &str, threshold: u8, result: &str) {
         self.notifications.mark_result(stable_id, threshold, result);
@@ -247,12 +249,12 @@ impl Engine {
 
     /// 应用一个 Provider 事件。
     ///
-    /// `source` 只在 [`ProviderEvent::TransportDown`] 生效：该变体不带 transport，而「只影响当前 transport」
+    /// `transport` 只在 [`ProviderEvent::TransportDown`] 生效：该变体不带 transport，而「只影响当前 transport」
     /// 是故障隔离的硬要求；其它变体忽略此参数。
     pub fn apply_event(
         &mut self,
         event: &ProviderEvent,
-        source: Option<Transport>,
+        transport: Option<Transport>,
         now_ms: u64,
     ) -> Transition {
         match event {
@@ -270,7 +272,7 @@ impl Engine {
                 self.apply_removed(stable_id, *reason, now_ms)
             }
             ProviderEvent::TransportDown { code, detail } => {
-                self.apply_transport_down(source, *code, detail, now_ms)
+                self.apply_transport_down(transport, *code, detail, now_ms)
             }
             ProviderEvent::BindingConflict { stable_id, detail } => {
                 self.apply_binding_conflict(stable_id, detail, now_ms)
@@ -328,10 +330,10 @@ impl Engine {
                 Transition::StateChanged { from, to }
             }
         } else {
-            let mut rec = Record::new(
+            let mut rec = DeviceRecord::new(
                 fact.stable_id.clone(),
                 fact.transport,
-                fact.provider,
+                fact.family_id,
                 fact.display_name.clone(),
                 fact.model_name_raw.clone(),
                 now_ms,
@@ -344,7 +346,7 @@ impl Engine {
                 DiagLevel::Info,
                 "device_arrived",
                 Some(fact.stable_id.as_str().to_string()),
-                format!("{} via {}", fact.display_name, fact.provider),
+                format!("{} via {}", fact.display_name, fact.family_id),
             );
             self.push_classification(now_ms, fact, None);
             Transition::Created
@@ -389,7 +391,7 @@ impl Engine {
 
     fn apply_reading(&mut self, reading: &ValidReading, now_ms: u64) -> Transition {
         let idx = self.ensure_record(&reading.stable_id, now_ms);
-        let family = self.records[idx].provider;
+        let family = self.records[idx].family_id;
         let display_name = self.records[idx].display_name.clone();
         let stable_id = self.records[idx].stable_id.as_str().to_string();
 
@@ -419,7 +421,6 @@ impl Engine {
             rec.battery = Some(reading.battery);
             rec.charging = charging;
             rec.last_valid_at_ms = Some(now_ms);
-            rec.last_push_at_ms = Some(now_ms);
             rec.last_known_battery = Some(reading.battery);
             rec.last_known_at_ms = Some(now_ms);
             rec.last_error = None;
@@ -430,14 +431,14 @@ impl Engine {
             rec.state = DeviceState::Online;
         }
 
-        if let Some(alert) = self.notifications.observe(
+        if let Some(notification) = self.notifications.observe(
             &stable_id,
             &display_name,
             reading.battery.get(),
             charging,
             now_ms,
         ) {
-            self.pending_alerts.push(alert);
+            self.pending_notifications.push(notification);
         }
 
         if from == DeviceState::Online {
@@ -563,12 +564,12 @@ impl Engine {
 
     fn apply_transport_down(
         &mut self,
-        source: Option<Transport>,
+        transport: Option<Transport>,
         code: ErrorCode,
         detail: &str,
         now_ms: u64,
     ) -> Transition {
-        let transports: Vec<Transport> = match source {
+        let transports: Vec<Transport> = match transport {
             Some(t) => vec![t],
             // 调用方未告知来源时按全部 transport 处理，并留下诊断。
             None => vec![Transport::Hid, Transport::Ble],
@@ -578,7 +579,7 @@ impl Engine {
             DiagLevel::Error,
             "transport_down",
             None,
-            format!("{:?}: {detail}", source),
+            format!("{:?}: {detail}", transport),
         );
         let mut first: Option<(DeviceState, DeviceState)> = None;
         for rec in self.records.iter_mut() {
@@ -647,7 +648,7 @@ impl Engine {
 
         let mut changed = false;
         for idx in 0..self.records.len() {
-            let family = self.records[idx].provider;
+            let family = self.records[idx].family_id;
             let thresholds = self.thresholds_for(family);
             let rec = &mut self.records[idx];
             let Some(last_valid) = rec.last_valid_at_ms else {
@@ -694,7 +695,7 @@ impl Engine {
                 continue;
             }
             let family = self.family_for_transport(entry.transport);
-            let mut rec = Record::new(
+            let mut rec = DeviceRecord::new(
                 stable_id.clone(),
                 entry.transport,
                 family,
@@ -736,7 +737,7 @@ impl Engine {
             server_now_ms: now_ms,
             devices,
             cards,
-            tray: TrayDto { visible_device_ids },
+            tray: TraySnapshotDto { visible_device_ids },
         }
     }
 
@@ -745,7 +746,7 @@ impl Engine {
         DeviceDto {
             stable_id: r.stable_id.as_str().to_string(),
             transport: r.transport.as_str().to_string(),
-            provider: r.provider.to_string(),
+            provider: r.family_id.to_string(),
             display_name: r.display_name.clone(),
             model_key: r.model_key.clone(),
             device_type: r.classification.device_type.as_str().to_string(),
@@ -756,7 +757,6 @@ impl Engine {
             is_charging: r.charging,
             state: r.state,
             last_valid_at_ms: r.last_valid_at_ms,
-            last_push_at_ms: r.last_push_at_ms,
             last_error: r.last_error.map(|c| c.as_str().to_string()),
         }
     }
@@ -898,7 +898,7 @@ impl Engine {
         }
         let transport = stable_id.transport().unwrap_or(Transport::Hid);
         let family = self.family_for_transport(transport);
-        let rec = Record::new(
+        let rec = DeviceRecord::new(
             stable_id.clone(),
             transport,
             family,
@@ -981,8 +981,8 @@ impl Engine {
 const CLOCK_FORWARD_WARN_MS: u64 = 10 * 60_000;
 
 /// 两条都不活跃时的主成员：最后有效读数更新的优先，同为无读数或同一时刻则取 2.4G。
-fn pick_inactive_primary<'a>(ra: &'a Record, rb: &'a Record) -> (&'a Record, &'a Record) {
-    let rank = |r: &Record| (r.last_valid_at_ms, r.transport == Transport::Hid);
+fn pick_inactive_primary<'a>(ra: &'a DeviceRecord, rb: &'a DeviceRecord) -> (&'a DeviceRecord, &'a DeviceRecord) {
+    let rank = |r: &DeviceRecord| (r.last_valid_at_ms, r.transport == Transport::Hid);
     if rank(ra) >= rank(rb) {
         (ra, rb)
     } else {

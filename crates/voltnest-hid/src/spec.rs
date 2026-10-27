@@ -1,18 +1,21 @@
 //! `hid-vbas` 的通用协议描述（**品牌无关**）。
 //!
-//! 一个品牌接入 = 一份 [`BrandSpec`]：怎么匹配、帧长什么样、电量与充电标志落在第几个字节、是否要主动查询。解析器（[`crate::frame`]）与运行时（[`crate::provider`]）只读这些字段，无 `match brand_id` 分支，新增品牌不改任何既有代码。
+//! 一个品牌接入 = 一份 [`BrandSpec`]：怎么匹配、帧长什么样、电量与充电标志落在第几个字节、是否要主动查询、应答怎么确认。解析器（[`crate::frame`]）与运行时（[`crate::runtime`]）只读这些字段，无 `match brand_id` 分支，新增品牌不改任何既有代码。
 //!
 //! 两层：**家族**（`hid-vbas`，协议形状：HID 私有通道+定长报告+命令字，能力在 [`voltnest_provider::HID_VBAS`]）与**品牌**（[`BrandSpec`]，填充 VID/PID 表、UsagePage、字段下标、充电取值、查询报文）。差异只在数据。
 //!
+//! 一个品牌要覆盖多套互不兼容的固件时，用 [`BrandSpec::route`] 把「按型号表字段选协议」的决定权交回品牌自己的模块（达尔优按 `fwType`、雷柏按 `driver`）。没有该字段的品牌保持 `route: None`，语义不变。
+//!
 //! [`BrandSpec::validate`] 在首次枚举前跑一次，把「字段下标越界」等手写错误挡在读线程外：写错即启动失败，不会带病解析出错误电量。
 
+use crate::table::Entry;
 use voltnest_provider::{Cadence, ChargingSupport, ProviderProfile};
 
-/// 设备电量帧的传输方式。
+/// 电量帧的收发方式（**从宿主视角命名**：本端要不要发报文、发了之后读哪里）。
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum ReplyTransport {
-    /// 设备主动推送输入报告。
-    Push,
+    /// 纯监听：本端只读输入通道，不向设备发任何报文；何时上报由设备决定。
+    Listen,
     /// 发送 output report 后等待输入报告。
     InterruptQuery,
     /// 发送 feature report 后读取 feature report 应答。
@@ -21,6 +24,10 @@ pub enum ReplyTransport {
         reply_len: usize,
     },
     /// 周期读取 feature report，不发送查询报文。
+    ///
+    /// **当前无品牌使用**（四个品牌都走 `Listen` / `InterruptQuery` / `FeatureQuery`）：
+    /// 保留是因为它是一种真实的协议形状（设备只在被读时才更新快照），删掉会让未来接入
+    /// 这类固件时被迫写成「发一条没人理的查询」。运行时与校验对它的处理已随全量测试覆盖。
     FeaturePoll {
         /// 读取 feature report 时请求的总长度。
         reply_len: usize,
@@ -37,7 +44,7 @@ impl ReplyTransport {
     pub const fn reply_len(self) -> Option<usize> {
         match self {
             Self::FeatureQuery { reply_len } | Self::FeaturePoll { reply_len } => Some(reply_len),
-            Self::Push | Self::InterruptQuery => None,
+            Self::Listen | Self::InterruptQuery => None,
         }
     }
 }
@@ -59,20 +66,75 @@ pub struct FrameLayout {
     pub fixed_payload_len: usize,
 }
 
+impl FrameLayout {
+    /// 该帧声明的 payload 长度：有长度字段就读它，否则取固定长度。
+    ///
+    /// 返回 `None` 只有一种情形 —— 声明了长度字段但该字节不在缓冲里（报告被读短）。
+    /// 调用方据此区分「长度字段缺失」与「payload 越界」，两者的诊断含义不同。
+    pub fn payload_len(&self, report: &[u8]) -> Option<usize> {
+        match self.len_index {
+            Some(index) => report.get(index).map(|raw| *raw as usize),
+            None => Some(self.fixed_payload_len),
+        }
+    }
+}
+
 /// 充电标志的定义。
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct ChargingField {
     /// 标志在 payload 内的下标。
     pub index: usize,
-    /// 表示「充电中」的取值集合。其余取值一律视为「未充电」，不猜测语义。
+    /// 参与比较的位。`0xFF` = 整字节比较（既有品牌的行为）。
+    ///
+    /// 只有「状态字节一个字节装两个字段」的协议才需要它：迈从键盘的状态字节高半字节是
+    /// 满电标志、低半字节才是充电状态（官方 `bit4("fullStatus") · bit4("chargeStatus")`），
+    /// 整字节比较会在「满电且正在充电」（`0x11`）时漏判成未充电。
+    pub mask: u8,
+    /// 表示「充电中」的取值集合（已与 `mask` 对齐）。其余取值一律视为「未充电」，不猜测语义。
     pub true_values: &'static [u8],
+    /// 错误态起点：该字节 `>=` 此值表示设备自报异常（达尔优网页驱动的约定：
+    /// `0x00` 非充电 / `0x01` 普通充电 / `0x02` 快充 / `0x03` 及以上为错误态），
+    /// 此时整帧不得当作有效读数 —— 错误态下的电量字段是没有意义的。
+    pub error_from: Option<u8>,
+}
+
+impl ChargingField {
+    /// 该字节是否表示「充电中」：**先按 `mask` 取位，再比取值集合**。
+    ///
+    /// 取位不能省：一个字节装两个字段的协议（迈从键盘 `0x11` = 满电 + 充电）整字节比较会漏判。
+    pub fn is_charging(&self, byte: u8) -> bool {
+        self.true_values.contains(&(byte & self.mask))
+    }
+
+    /// 该字节是否达到品牌声明的错误态起点（未声明错误态恒 `false`）。
+    pub fn is_error(&self, byte: u8) -> bool {
+        matches!(self.error_from, Some(from) if byte >= from)
+    }
+}
+
+/// 应答确认位：`(byte & mask) == value` 才算设备已确认该命令。
+///
+/// 达尔优自研（Tg/海思）固件把应答首字节低半字节置为 `0x02` 表示命令处理完成，
+/// 网页驱动据此判定成败（`tgdevice.js:1836`）。缺这条校验时，一个「设备还没准备好」的
+/// 全零应答会被当成 0% 电量上报。
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct AckField {
+    /// 确认位所在下标（绝对下标）。
+    pub index: usize,
+    /// 参与比较的位。
+    pub mask: u8,
+    /// 期望值（已与 `mask` 对齐）。
+    pub value: u8,
 }
 
 /// 电量字段定义。
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct BatteryFields {
     /// 命令字匹配值（`FrameLayout::cmd_index` 处的期望字节）。
-    pub cmd: u8,
+    ///
+    /// `None` = 该协议**不在应答里回显命令字**，故不校验（官方驱动对这类固件只校验确认位）；
+    /// 此时 `cmd_index` 不参与匹配，但仍需落在 payload 之前。
+    pub cmd: Option<u8>,
     /// payload 内的子标签：`(下标, 期望值)`。`None` = 该协议没有子标签。
     pub subtag: Option<(usize, u8)>,
     /// 电量百分比在 payload 内的下标（`0..=100`，越界即 `PercentOutOfRange`）。
@@ -81,15 +143,100 @@ pub struct BatteryFields {
     pub charging: Option<ChargingField>,
 }
 
+/// 设备**自发上报**（宿主未提问）的电量帧布局（与应答帧布局无关，两条通道各有一套）。
+///
+/// 只描述「怎么认出宿主监听通道上的一帧电量上报、字段在哪」；通道（输入报告）由运行时决定。
+/// 认不出来的一律静默丢弃 —— 输入报告里混着鼠标位移、媒体键等大量无关帧，把它们报成
+/// 「不可读」会让诊断页刷屏。
+///
+/// 迈从键鼠的实测布局（官方 `q3e()` 解析器 + 消费者 `command===10 && type===5`）：
+///
+/// | 连接方式 | `cmd` | 子标签下标 | 电量下标 | 状态下标 |
+/// |---|---|---|---|---|
+/// | 有线 | `0x0A` | 1 | 2 | 3 |
+/// | 2.4G | `0x0A` | 4 | 5 | 6 |
+///
+/// 2.4G 帧前面多 3 字节：官方解析器对无线帧先 `array("space0", length:3)` 再读 `type`。
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct ListenSpec {
+    /// 帧首字节（命令字）必须等于该值。
+    pub cmd: u8,
+    /// 子标签（`type`）所在下标。
+    pub subtag_index: usize,
+    /// 子标签必须等于该值（电量上报包的 `type`）。
+    pub subtag_value: u8,
+    /// 电量字节下标。
+    pub percent_index: usize,
+    /// 状态字节下标：高半字节 = 满电标志，低半字节 = 充电状态。
+    pub status_index: usize,
+    /// 状态低半字节等于该值表示「充电中」。
+    pub charging_low_nibble: u8,
+}
+
+impl ListenSpec {
+    /// 帧至少要有多少字节才装得下全部字段。
+    pub const fn min_len(&self) -> usize {
+        let max = if self.subtag_index > self.percent_index {
+            self.subtag_index
+        } else {
+            self.percent_index
+        };
+        let max = if max > self.status_index {
+            max
+        } else {
+            self.status_index
+        };
+        max + 1
+    }
+}
+
+/// 多包应答的重组约定：一条应答被设备拆成若干条输入报告发出。
+///
+/// 迈从键盘（官方 `dJe` 家族）的 2.4G 通道就是这样：一次查询的应答是 N 条输入报告，
+/// 每包自带「总包数 / 序号」，载荷 16 字节，末字节是校验和。单帧解码器认不出这种应答，
+/// 必须先把包拼起来再解析 —— 这就是本结构存在的理由。
+///
+/// 只描述**包**；组装结果里电量与状态在哪，仍由 [`BrandSpec::battery`] 说（同一份字段定义，
+/// 避免两处下标各说一套）。
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct Reassembly {
+    /// 应答包的首字节命令字（与查询命令字不同，是设备回包的命令码）。
+    pub cmd: u8,
+    /// 包内总包数所在下标（相对数据窗口，窗口 `[0]` 即 `cmd`）。
+    pub total_index: usize,
+    /// 包内序号所在下标（从 `0` 开始，逐包加一）。
+    pub seq_index: usize,
+    /// 包内载荷起始下标。
+    pub payload_offset: usize,
+    /// 每包载荷尾部要丢掉的字节数（校验和）。`0` = 无尾部字段。
+    pub trailer_len: usize,
+    /// 一次应答最多等多久（毫秒）；超过则丢弃半包，等下一轮查询。
+    ///
+    /// 官方 `waitForCompleteResponse` 是 `200 + retryTime*1000`（未声明 `retryTime` 时 10s）。
+    pub timeout_ms: u64,
+}
+
+impl Reassembly {
+    /// 一条应答包至少要有多长才装得下头部（命令字 + 总包数 + 序号）。
+    pub const fn min_packet_len(&self) -> usize {
+        let head = if self.seq_index > self.total_index {
+            self.seq_index
+        } else {
+            self.total_index
+        };
+        head + 1
+    }
+}
+
 /// 主动查询模板：向写通道发送一条固定报文，把电量「问」出来。
 ///
-/// 这是与「被动监听推送帧」并列的另一条采集路径。是否启用由 [`BrandSpec`]
-/// 决定；已验证设备走纯推送（`request: None`），不向设备发任何报文。
+/// 这是与「纯监听（`listen` 通道上的自发上报）」并列的另一条采集路径。是否启用由
+/// [`BrandSpec`] 决定；纯监听设备 `request: None`，不向设备发任何报文。
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct RequestTemplate {
     /// 写通道的 UsagePage。
     pub usage_page: u16,
-    /// 报文中携带的命令字（查询命令，可与推送帧的命令字不同）。
+    /// 报文中携带的命令字（查询命令，可与上报帧的命令字不同）。
     pub cmd: u8,
     /// 命令字之前的固定报文内容。
     pub prefix: &'static [u8],
@@ -105,6 +252,14 @@ pub struct RequestTemplate {
     pub interval_ms: Option<u64>,
     /// 是否对报告 ID 之后的报文内容逐字节取反。
     pub inverted: bool,
+    /// 单轮查询失败后的重试次数（官方驱动的 `retryTime`）。`0` = 一次即定。
+    ///
+    /// 迈从网页驱动对 `getBattery` 传 `retryTime: 2`：一次读失败不等于设备不可读，
+    /// 官方会连问三次（首发 + 两次重试）才判定「读不到」。缺这个语义时，一次
+    /// 瞬时未应答就会把设备推到过期态（`stale_ms` 之内没有新读数）。
+    ///
+    /// 只对 feature 查询生效：纯监听 / output 查询没有「重问」这回事，读线程忽略它。
+    pub retry: u8,
 }
 
 impl RequestTemplate {
@@ -151,38 +306,115 @@ impl RequestTemplate {
     pub const fn data_end(&self) -> usize {
         self.payload_offset + self.payload.len()
     }
+
+    /// 一轮采集的总尝试次数（首发 + 重试）。永远 ≥ 1。
+    pub const fn attempts(&self) -> usize {
+        self.retry as usize + 1
+    }
 }
 
-/// 一个品牌的完整接入描述。
+/// 按型号表条目选协议的钩子。
+///
+/// **只有需要「同品牌多套协议」的品牌才声明它**（达尔优按 `fwType`、雷柏按 `driver` ——
+/// 两者的字段都是各自厂商型号表里的原始字段，互不通用，故钩子只拿到 [`Entry`] 本身，
+/// 怎么解释这些字段由品牌模块自己决定）。其它品牌的型号表里没有这类字段，`route: None`
+/// 即表示「本协议适用于该品牌全部设备」，行为与引入钩子之前逐字节一致。
+///
+/// 钩子返回 `None` 表示「该设备没有已证实的协议」——此时不得退回默认协议去猜。
+pub type RouteFn = fn(&Entry) -> Option<&'static BrandSpec>;
+
+/// 一套协议（一个固件家族）的完整接入描述。
 #[derive(Clone, Copy, Debug)]
 pub struct BrandSpec {
     /// 稳定标识（日志 / 诊断用，**不参与**设备匹配）。例如 `ajazz`。
     pub id: &'static str,
     /// 人类可读的品牌 / 代际名。例如 `AJAZZ（W1 / 星闪代）`。
     pub label: &'static str,
-    /// 读取通道的 UsagePage。
+    /// 读取通道的 UsagePage。`0` = **通配**：该 VID:PID 的任意集合都接受。
+    ///
+    /// 只有「官方按报告 ID 能力选集合、而 hidapi 拿不到报告描述符里的报告 ID 列表」时才用
+    /// （迈从音频设备：官方遍历 `collections[].inputReports/outputReports` 找实现了报告
+    /// `0x55` 的集合，枚举结果里没有这项信息）。
     pub usage_page: u16,
+    /// 备用读取 UsagePage：只有当该 VID:PID **没有任何集合**落在 `usage_page` 上时才启用。
+    ///
+    /// 迈从键鼠的官方 WebHID 过滤器对同一型号同时声明 `0xFF01` 与 `0xFF0B`（`Z1e` / `R1e`），
+    /// 说明这批固件里两个页面都有人用。只声明 `usage_page` 时，页面不符的设备会表现为
+    /// 「枚举到了但一个候选集合都没有」—— 静默消失，比读不到更难查。
+    ///
+    /// 主页面优先：只有主页面零命中才降级，因此「两页都在」的设备不会变成两只设备，
+    /// 也不会触发同 VID:PID 冲突告警。
+    pub usage_page_alt: Option<u16>,
+    /// 读取通道的 Usage。`None` = 该 UsagePage 下任意集合都接受（既有品牌的历史行为）。
+    ///
+    /// 同一 UsagePage 下可能并存多个集合：雷柏 `0xFF00` 上同时有「配置页」（usage `0x02`）、
+    /// 「固件升级页」（usage `0x01` / `0x0E`），只管 UsagePage 会按枚举顺序随机打开其中一个，
+    /// 拿到「打开成功但读不到电量」的句柄。声明 Usage 后只在它上面打开。
+    pub usage: Option<u16>,
     /// 只写命令通道的 UsagePage。`None` = 该品牌不主动发报文。
+    ///
+    /// **仅参与构造期校验**：运行时只用**读句柄**收发（[`crate::runtime`] 不读本字段）。
+    /// 「读 `0xFF02`、写 `0xFFB1`」这种双集合形态目前**未实现**，故 [`BrandSpec::validate`]
+    /// 要求「声明了查询模板时写页必须等于读页」（读页为 `0` 通配时除外）—— 把「查询发到
+    /// 错误集合、表现为永远没应答」这种最难查的故障挡在启动前，而不是让它带病运行。
     pub usage_page_write: Option<u16>,
     /// 读取电量帧所使用的 HID 传输方式。
     pub transport: ReplyTransport,
     /// 是否对报告 ID 之后的应答内容逐字节取反。
     pub reply_inverted: bool,
     /// 电量超过 100 时是否按厂商实现截断到 100。
+    ///
+    /// **当前无品牌置 `true`**：四个品牌的电量字节越界都按 `percent_out_of_range` 处理
+    /// （官方驱动宁可报读失败，也不显示一个编出来的 100%）。保留它只为将来某家确实截断时
+    /// 不必改解析器。
     pub clamp_percent: bool,
     /// 帧头布局。
     pub frame: FrameLayout,
     /// 电量字段。
     pub battery: BatteryFields,
-    /// 主动查询模板。`None` = 纯推送（不向设备发任何报文）。
+    /// 监听通道上「设备自发上报的电量帧」的识别模板。
+    /// `None` = 该协议没有这条旁路（读数只从查询应答取）。
+    pub listen: Option<ListenSpec>,
+    /// 主动查询模板。`None` = 纯监听（不向设备发任何报文）。
     pub request: Option<RequestTemplate>,
-    /// 实测的推送期望间隔（毫秒），仅用于诊断与家族级节奏校验。
+    /// 多包应答的重组约定。`None` = 一次查询由单条报告应答（绝大多数品牌）。
+    ///
+    /// 声明后，这条通道的输入报告改为「先拼包再解析」：`frame` / `battery` 描述的是
+    /// **组装结果**的布局，不是单包布局。
+    pub reassembly: Option<Reassembly>,
+    /// 应答确认位。`None` = 该协议无确认约定，不做该校验。
+    pub ack: Option<AckField>,
+    /// 备用报告 ID。
+    ///
+    /// 同一固件家族在不同连接方式下报告 ID 不同（达尔优自研固件：有线 `0x00`、
+    /// 2.4G 接收器 `0x07`，由网页驱动按 `WirelessFlag` 选择），而 HID 枚举结果里
+    /// 拿不到该标志。声明后运行时按「主 → 备」尝试，主 ID 成功即锁定，不来回抖动。
+    pub fallback_report_id: Option<u8>,
+    /// 实测的读数期望间隔（毫秒）：纯监听品牌是设备自发上报的周期，查询品牌是宿主的查询周期。
     pub expected_interval_ms: u64,
     /// 型号表快照（`VID:PID → 型号`），编译期嵌入。
     pub device_table_json: &'static str,
+    /// 本品牌下**其它**已接入的协议描述（不含自身）。`&[]` = 单协议品牌。
+    ///
+    /// 只给注册表用：启动时逐份 [`BrandSpec::validate`]，把「新增一台变体却忘了写测试」
+    /// 的越界下标挡在第一次枚举之前。匹配路径不读它 —— 设备用哪套协议仍由 [`BrandSpec::route`] 决定。
+    pub variants: &'static [&'static BrandSpec],
+    /// 按型号表条目选协议的钩子。`None` = 本协议适用于该品牌全部设备（默认，除达尔优 / 雷柏外的取值）。
+    pub route: Option<RouteFn>,
 }
 
 impl BrandSpec {
+    /// 该设备实际生效的协议描述。
+    ///
+    /// `route: None` 的品牌直接返回自己；声明了钩子的品牌把决定权交回**品牌自己的模块**，
+    /// 通用层不做任何厂商字段的判断。
+    pub fn for_device(&'static self, entry: &Entry) -> Option<&'static BrandSpec> {
+        match self.route {
+            Some(route) => route(entry),
+            None => Some(self),
+        }
+    }
+
     /// 解析一帧所必需的最短 payload：必选字段（子标签、电量）都要落在里面。
     ///
     /// 充电标志**不计入**：它是可选字段，缺失表示「未知」，不得把缺一个字节
@@ -204,9 +436,17 @@ impl BrandSpec {
     }
 
     /// 该品牌期望的采集节奏（家族级 `ProviderProfile` 必须覆盖它）。
+    ///
+    /// 有查询模板 = 节奏由宿主决定（[`Cadence::Polled`]）；否则 = 纯监听，节奏由设备决定
+    /// （[`Cadence::ListenOnly`]）。两者共用同一个 `expected_interval_ms` 预算。
     pub const fn cadence(&self) -> Cadence {
-        Cadence::PushOnly {
-            expected_interval_ms: self.expected_interval_ms,
+        match self.request {
+            Some(_) => Cadence::Polled {
+                interval_ms: self.expected_interval_ms,
+            },
+            None => Cadence::ListenOnly {
+                expected_interval_ms: self.expected_interval_ms,
+            },
         }
     }
 
@@ -270,10 +510,23 @@ impl BrandSpec {
             return Err(SpecError::ChargingOverlapsPercent { brand: self.id });
         }
 
+        // 监听帧的三个字段各占一个字节，重叠等于把同一字节当两种语义。
+        if let Some(listen) = self.listen
+            && (listen.percent_index == listen.status_index
+                || listen.subtag_index == listen.percent_index
+                || listen.subtag_index == listen.status_index)
+        {
+            return Err(SpecError::ListenLayoutInvalid { brand: self.id });
+        }
+
         // 查询模板必须自洽，且声明了写通道。
         if let Some(req) = self.request {
             if self.usage_page_write.is_none() {
                 return Err(SpecError::RequestWithoutWritePage { brand: self.id });
+            }
+            // 模板里的写通道必须与品牌声明的一致：两处各写一遍，漏改一处会静默发到错的集合。
+            if Some(req.usage_page) != self.usage_page_write {
+                return Err(SpecError::RequestLayoutInvalid { brand: self.id });
             }
             if req.data_end() > req.report_len
                 || req.cmd_index >= req.payload_offset
@@ -285,10 +538,15 @@ impl BrandSpec {
             if self.frame.report_id.is_some() && req.report_len == 0 {
                 return Err(SpecError::RequestLayoutInvalid { brand: self.id });
             }
+            // 运行时只有一个读句柄：写页与读页不同时，查询会写到读集合上，表现为永远没应答。
+            // 读页为 `0`（通配）时无从比较，跳过。
+            if self.usage_page != 0 && req.usage_page != self.usage_page {
+                return Err(SpecError::RequestPageDiffersFromRead { brand: self.id });
+            }
         }
 
         match self.transport {
-            ReplyTransport::Push | ReplyTransport::InterruptQuery => {}
+            ReplyTransport::Listen | ReplyTransport::InterruptQuery => {}
             ReplyTransport::FeatureQuery { reply_len }
             | ReplyTransport::FeaturePoll { reply_len } => {
                 if self.frame.report_id.is_none() || reply_len < self.min_report_len() {
@@ -303,6 +561,51 @@ impl BrandSpec {
             return Err(SpecError::FeatureQueryWithoutRequest { brand: self.id });
         }
 
+        // 多包重组只能挂在 output 查询通道上：feature 通道一问一答，没有「多包」这回事；
+        // 纯监听通道没有查询，也就没有「这次应答属于哪一问」的边界。
+        if let Some(reasm) = self.reassembly {
+            if !matches!(self.transport, ReplyTransport::InterruptQuery)
+                || self.request.is_none()
+            {
+                return Err(SpecError::ReassemblyWithoutQuery { brand: self.id });
+            }
+            // 头部三个下标必须落在 payload 之前，否则同一个字节被同时当成序号与载荷。
+            if reasm.payload_offset <= reasm.seq_index
+                || reasm.payload_offset <= reasm.total_index
+                || reasm.seq_index == reasm.total_index
+                || reasm.timeout_ms == 0
+            {
+                return Err(SpecError::ReassemblyLayoutInvalid { brand: self.id });
+            }
+        }
+
+        // 备用 UsagePage 不能与主页面相同（否则「降级」等于原地重试）。
+        if let Some(alt) = self.usage_page_alt
+            && (alt == self.usage_page || self.usage_page == 0)
+        {
+            return Err(SpecError::AltUsagePageInvalid { brand: self.id });
+        }
+
+        // 确认位必须落在一帧之内，否则等于「永远校验失败」。
+        if let Some(ack) = self.ack
+            && ack.index >= self.min_report_len()
+        {
+            return Err(SpecError::AckOutsideReport {
+                brand: self.id,
+                index: ack.index,
+                min_report_len: self.min_report_len(),
+            });
+        }
+
+        // 备用报告 ID 只在 feature 查询下有实现（主动发报文才谈得上「换 ID 重问」）。
+        if let Some(alt) = self.fallback_report_id
+            && (!matches!(self.transport, ReplyTransport::FeatureQuery { .. })
+                || self.frame.report_id.is_none()
+                || self.frame.report_id == Some(alt))
+        {
+            return Err(SpecError::FallbackReportIdInvalid { brand: self.id });
+        }
+
         // 节奏必须为正，否则「期望间隔」失去意义。
         if self.expected_interval_ms == 0 {
             return Err(SpecError::ZeroInterval { brand: self.id });
@@ -313,7 +616,7 @@ impl BrandSpec {
 
     /// 品牌节奏是否落在家族能力声明的预算内。
     ///
-    /// 家族只有一个 `stale` 阈值链；若某品牌的推送间隔慢到
+    /// 家族只有一个 `stale` 阈值链；若某品牌的上报间隔慢到
     /// `1.5 × 间隔 > stale_ms`，它的正常上报会被判过期 —— 这类品牌必须先
     /// 改家族声明的阈值链，不能靠加载顺序或特例绕开。
     pub fn validate_against(&self, profile: &ProviderProfile) -> Result<(), SpecError> {
@@ -390,6 +693,11 @@ pub enum SpecError {
         /// 品牌标识。
         brand: &'static str,
     },
+    /// 监听帧字段互相重叠。
+    ListenLayoutInvalid {
+        /// 品牌标识。
+        brand: &'static str,
+    },
     /// 声明了查询模板，却没有写通道 UsagePage。
     RequestWithoutWritePage {
         /// 品牌标识。
@@ -397,6 +705,11 @@ pub enum SpecError {
     },
     /// 查询模板越界。
     RequestLayoutInvalid {
+        /// 品牌标识。
+        brand: &'static str,
+    },
+    /// 查询模板的写通道与读通道不同页（运行时只有一个读句柄，无法兑现）。
+    RequestPageDiffersFromRead {
         /// 品牌标识。
         brand: &'static str,
     },
@@ -426,6 +739,35 @@ pub enum SpecError {
     },
     /// Feature 查询必须声明查询报文。
     FeatureQueryWithoutRequest {
+        /// 品牌标识。
+        brand: &'static str,
+    },
+    /// 声明了多包重组，但通道不是 output 查询，或没有查询报文。
+    ReassemblyWithoutQuery {
+        /// 品牌标识。
+        brand: &'static str,
+    },
+    /// 多包重组的包内下标自相矛盾。
+    ReassemblyLayoutInvalid {
+        /// 品牌标识。
+        brand: &'static str,
+    },
+    /// 备用 UsagePage 与主页面相同，或主页面是通配。
+    AltUsagePageInvalid {
+        /// 品牌标识。
+        brand: &'static str,
+    },
+    /// 确认位下标落在一帧之外。
+    AckOutsideReport {
+        /// 品牌标识。
+        brand: &'static str,
+        /// 确认位下标。
+        index: usize,
+        /// 一帧的最小长度。
+        min_report_len: usize,
+    },
+    /// 备用报告 ID 的声明不成立（非 feature 查询 / 无主 ID / 与主 ID 相同）。
+    FallbackReportIdInvalid {
         /// 品牌标识。
         brand: &'static str,
     },
@@ -503,6 +845,9 @@ impl core::fmt::Display for SpecError {
             Self::ChargingOverlapsPercent { brand } => {
                 write!(f, "品牌 {brand} 的充电标志与电量字段重叠")
             }
+            Self::ListenLayoutInvalid { brand } => {
+                write!(f, "品牌 {brand} 的监听帧字段与其他字段重叠")
+            }
             Self::RequestWithoutWritePage { brand } => write!(
                 f,
                 "品牌 {brand} 声明了查询模板，必须同时给出 usage_page_write"
@@ -510,6 +855,10 @@ impl core::fmt::Display for SpecError {
             Self::RequestLayoutInvalid { brand } => {
                 write!(f, "品牌 {brand} 的查询模板越界")
             }
+            Self::RequestPageDiffersFromRead { brand } => write!(
+                f,
+                "品牌 {brand} 的查询写通道与读通道不同页，运行时只有一个读句柄，无法兑现"
+            ),
             Self::ZeroInterval { brand } => {
                 write!(f, "品牌 {brand} 的 expected_interval_ms 不得为 0")
             }
@@ -530,6 +879,27 @@ impl core::fmt::Display for SpecError {
             Self::FeatureQueryWithoutRequest { brand } => {
                 write!(f, "品牌 {brand} 的 feature 查询缺少查询报文")
             }
+            Self::ReassemblyWithoutQuery { brand } => {
+                write!(f, "品牌 {brand} 声明了多包重组，但通道不是带查询报文的 output 查询")
+            }
+            Self::ReassemblyLayoutInvalid { brand } => {
+                write!(f, "品牌 {brand} 的多包重组下标自相矛盾（头部越界或电量与状态抢同一字节）")
+            }
+            Self::AltUsagePageInvalid { brand } => {
+                write!(f, "品牌 {brand} 的备用 UsagePage 与主页面相同，或主页面是通配")
+            }
+            Self::AckOutsideReport {
+                brand,
+                index,
+                min_report_len,
+            } => write!(
+                f,
+                "品牌 {brand} 的确认位下标 {index} 超出一帧最小长度 {min_report_len}"
+            ),
+            Self::FallbackReportIdInvalid { brand } => write!(
+                f,
+                "品牌 {brand} 的备用报告 ID 只允许与主 ID 不同的 feature 查询"
+            ),
             Self::ProfileTransportMismatch { brand } => {
                 write!(f, "品牌 {brand} 只能挂在 HID 家族上")
             }
@@ -620,8 +990,10 @@ mod tests {
 
         let mut spec = base();
         spec.battery.charging = Some(ChargingField {
+            mask: 0xFF,
             index: spec.battery.percent_index,
             true_values: &[1],
+            error_from: None,
         });
         assert_eq!(
             spec.validate(),
@@ -643,6 +1015,7 @@ mod tests {
             payload: &[0x03],
             interval_ms: Some(10_000),
             inverted: false,
+            retry: 0,
         });
         assert_eq!(
             spec.validate(),
@@ -663,6 +1036,7 @@ mod tests {
             payload: &[0x03, 0x00, 0x00],
             interval_ms: None,
             inverted: false,
+            retry: 0,
         });
         assert_eq!(
             spec.validate(),
@@ -719,6 +1093,7 @@ mod tests {
             payload: &[0x03, 0x01],
             interval_ms: Some(10_000),
             inverted: false,
+            retry: 0,
         };
         assert_eq!(
             req.build(Some(0x06)),
@@ -733,6 +1108,25 @@ mod tests {
     }
 
     #[test]
+    fn attempts_counts_first_try_plus_retries() {
+        let mut req = RequestTemplate {
+            usage_page: 0xFFB1,
+            cmd: 0xFB,
+            prefix: &[],
+            report_len: 8,
+            cmd_index: 1,
+            payload_offset: 5,
+            payload: &[0x03],
+            interval_ms: Some(10_000),
+            inverted: false,
+            retry: 0,
+        };
+        assert_eq!(req.attempts(), 1, "retry=0 时一轮只有一次尝试");
+        req.retry = 2;
+        assert_eq!(req.attempts(), 3, "迈从官方 retryTime=2：首发 + 两次重试");
+    }
+
+    #[test]
     fn request_template_never_panics_on_tight_buffers() {
         let req = RequestTemplate {
             usage_page: 0xFFB1,
@@ -744,6 +1138,7 @@ mod tests {
             payload: &[0x03, 0x01, 0x02],
             interval_ms: None,
             inverted: false,
+            retry: 0,
         };
         // 声明长度不足时只填能填的部分，不越界 panic（模板本身会被 validate 拒绝）。
         assert_eq!(req.build(Some(0x06)).len(), 6);

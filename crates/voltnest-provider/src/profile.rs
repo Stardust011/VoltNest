@@ -15,8 +15,10 @@ pub enum ChargingSupport {
 /// 状态机退化阈值链（毫秒）。
 ///
 /// 不变量 `stale < unavailable < offline` 由 [`ProviderProfile::validate`] 在构造期保证。
+///
+/// 与低电量百分比档位（`NotificationConfig::low_battery_levels`）无关：曾名 `Thresholds`，两义同词，故加 `Degradation` 前缀。
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub struct Thresholds {
+pub struct DegradationThresholds {
     /// 超过该时长未收到有效读数 → `Stale`。
     pub stale_ms: u64,
     /// 超过该时长未收到有效读数 → `Unavailable`。
@@ -25,7 +27,7 @@ pub struct Thresholds {
     pub offline_ms: u64,
 }
 
-impl Thresholds {
+impl DegradationThresholds {
     /// 档位乘数作用于整条链，用整数 `(num, den)`：`(2,1)`/`(1,1)`/`(1,2)`。
     /// 全部阈值都是 500ms 的整数倍，`/2` 无损；若将来引入奇数毫秒值，须先把分母改为 1000 并向下取整，
     /// 不得引入浮点（会让边界测试出现 ±1ms 抖动）。
@@ -92,15 +94,20 @@ pub struct PollPolicy {
     pub default_ms: u64,
 }
 
-/// 采集节奏。
+/// 采集节奏（**从宿主视角命名**：节奏由谁发起、本端做什么）。
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Cadence {
-    /// 纯推送：宿主从不主动发包（2.4G 实测：不发包也有数据）。
-    PushOnly {
+    /// 纯监听：宿主从不向设备发报文，读数节奏完全由设备决定（2.4G 实测：不发包也有数据）。
+    ListenOnly {
         /// 实测期望间隔，仅用于诊断偏离告警。
         expected_interval_ms: u64,
     },
-    /// 通知 + 兜底轮询（BLE 实测：两条路都要有）。
+    /// 周期查询：宿主按 `interval_ms` 主动发查询报文，节奏由宿主决定。
+    Polled {
+        /// 查询周期。
+        interval_ms: u64,
+    },
+    /// 订阅通知 + 兜底轮询（BLE 实测：两条路都要有）。
     NotifyWithPoll {
         /// 轮询区间。
         poll: PollPolicy,
@@ -117,7 +124,7 @@ pub struct ProviderProfile {
     /// 采集节奏。
     pub cadence: Cadence,
     /// 标准档阈值链。
-    pub thresholds: Thresholds,
+    pub thresholds: DegradationThresholds,
     /// 充电状态可获得性。
     pub charging: ChargingSupport,
     /// 出现检测间隔；`None` = 复用轮询周期。仅允许 HID。
@@ -126,7 +133,7 @@ pub struct ProviderProfile {
 
 impl ProviderProfile {
     /// 取该档位下的阈值链。
-    pub fn thresholds_for(&self, sensitivity: Sensitivity) -> Thresholds {
+    pub fn thresholds_for(&self, sensitivity: Sensitivity) -> DegradationThresholds {
         self.thresholds.scaled(sensitivity)
     }
 
@@ -199,8 +206,11 @@ impl ProviderProfile {
                     });
                 }
             }
-            Cadence::PushOnly {
+            Cadence::ListenOnly {
                 expected_interval_ms,
+            }
+            | Cadence::Polled {
+                interval_ms: expected_interval_ms,
             } => {
                 if t.stale_ms * 2 < expected_interval_ms * 3 {
                     return Err(ProfileError::StaleBelowExpectedInterval {
@@ -253,7 +263,7 @@ pub enum ProfileError {
         /// 轮询下限。
         poll_min_ms: u64,
     },
-    /// `staleAfter` 相对推送期望间隔过小。
+    /// `staleAfter` 相对期望上报间隔过小。
     StaleBelowExpectedInterval {
         /// `staleAfter`。
         stale_ms: u64,
@@ -373,13 +383,16 @@ impl std::error::Error for ProfileError {}
 /// `hid-vbas` 的能力声明。三档阈值与轮询节奏在此固定，有测试断言防止漂移。
 /// 家族级能力声明只有一份：品牌再多也不新增家族；品牌各自的上报节奏由
 /// `voltnest-hid` 的品牌描述声明，并在启动期与本声明做兼容校验。
+///
+/// 家族内既有**纯监听**品牌（AJAZZ、雷柏纯监听族：宿主从不发包，节奏由设备决定），
+/// 也有**周期查询**品牌（达尔优、迈从、雷柏 AP：宿主每 30s 问一次）。家族级只声明
+/// 同一个 30s 预算（stale 阈值链按它校验），谁发起由各品牌的
+/// `BrandSpec::cadence()` 说明。
 pub static HID_VBAS: ProviderProfile = ProviderProfile {
     family_id: crate::FAMILY_HID_VBAS,
     transport: Transport::Hid,
-    cadence: Cadence::PushOnly {
-        expected_interval_ms: 30_000,
-    },
-    thresholds: Thresholds {
+    cadence: Cadence::Polled { interval_ms: 30_000 },
+    thresholds: DegradationThresholds {
         stale_ms: 45_000,
         unavailable_ms: 60_000,
         offline_ms: 180_000,
@@ -400,7 +413,7 @@ pub static BLE_BAS: ProviderProfile = ProviderProfile {
             default_ms: 60_000,
         },
     },
-    thresholds: Thresholds {
+    thresholds: DegradationThresholds {
         stale_ms: 90_000,
         unavailable_ms: 120_000,
         offline_ms: 360_000,
@@ -679,7 +692,7 @@ mod tests {
     fn thresholds_match_spec_table_verbatim() {
         assert_eq!(
             HID_VBAS.thresholds,
-            Thresholds {
+            DegradationThresholds {
                 stale_ms: 45_000,
                 unavailable_ms: 60_000,
                 offline_ms: 180_000
@@ -687,7 +700,7 @@ mod tests {
         );
         assert_eq!(
             BLE_BAS.thresholds,
-            Thresholds {
+            DegradationThresholds {
                 stale_ms: 90_000,
                 unavailable_ms: 120_000,
                 offline_ms: 360_000
@@ -701,7 +714,7 @@ mod tests {
         let hid = HID_VBAS;
         assert_eq!(
             hid.thresholds_for(Sensitivity::Sensitive),
-            Thresholds {
+            DegradationThresholds {
                 stale_ms: 22_500,
                 unavailable_ms: 30_000,
                 offline_ms: 90_000
@@ -709,7 +722,7 @@ mod tests {
         );
         assert_eq!(
             hid.thresholds_for(Sensitivity::Standard),
-            Thresholds {
+            DegradationThresholds {
                 stale_ms: 45_000,
                 unavailable_ms: 60_000,
                 offline_ms: 180_000
@@ -717,7 +730,7 @@ mod tests {
         );
         assert_eq!(
             hid.thresholds_for(Sensitivity::Loose),
-            Thresholds {
+            DegradationThresholds {
                 stale_ms: 90_000,
                 unavailable_ms: 120_000,
                 offline_ms: 360_000
@@ -727,7 +740,7 @@ mod tests {
         let ble = BLE_BAS;
         assert_eq!(
             ble.thresholds_for(Sensitivity::Sensitive),
-            Thresholds {
+            DegradationThresholds {
                 stale_ms: 45_000,
                 unavailable_ms: 60_000,
                 offline_ms: 180_000
@@ -735,7 +748,7 @@ mod tests {
         );
         assert_eq!(
             ble.thresholds_for(Sensitivity::Loose),
-            Thresholds {
+            DegradationThresholds {
                 stale_ms: 180_000,
                 unavailable_ms: 240_000,
                 offline_ms: 720_000
@@ -763,9 +776,7 @@ mod tests {
     fn cadence_matches_spec() {
         assert_eq!(
             HID_VBAS.cadence,
-            Cadence::PushOnly {
-                expected_interval_ms: 30_000
-            }
+            Cadence::Polled { interval_ms: 30_000 }
         );
         assert_eq!(
             BLE_BAS.cadence,
@@ -812,7 +823,7 @@ mod tests {
                     default_ms: 60_000,
                 },
             },
-            thresholds: Thresholds {
+            thresholds: DegradationThresholds {
                 stale_ms: 90_000,
                 unavailable_ms: 120_000,
                 offline_ms: 360_000,
@@ -833,10 +844,8 @@ mod tests {
         static DUP: ProviderProfile = ProviderProfile {
             family_id: "hid-vbas-other",
             transport: Transport::Hid,
-            cadence: Cadence::PushOnly {
-                expected_interval_ms: 30_000,
-            },
-            thresholds: Thresholds {
+            cadence: Cadence::Polled { interval_ms: 30_000 },
+            thresholds: DegradationThresholds {
                 stale_ms: 45_000,
                 unavailable_ms: 60_000,
                 offline_ms: 180_000,
@@ -857,10 +866,8 @@ mod tests {
         static BROKEN: ProviderProfile = ProviderProfile {
             family_id: "hid-vbas-broken",
             transport: Transport::Hid,
-            cadence: Cadence::PushOnly {
-                expected_interval_ms: 30_000,
-            },
-            thresholds: Thresholds {
+            cadence: Cadence::Polled { interval_ms: 30_000 },
+            thresholds: DegradationThresholds {
                 stale_ms: 10_000,
                 unavailable_ms: 60_000,
                 offline_ms: 180_000,

@@ -71,7 +71,7 @@ impl Diagnostics {
     /// 记录一条。
     pub fn push(
         &mut self,
-        at_ms: u64,
+        now_ms: u64,
         level: DiagLevel,
         code: &'static str,
         device_id: Option<String>,
@@ -81,7 +81,7 @@ impl Diagnostics {
             self.events.pop_front();
         }
         self.events.push_back(DiagEvent {
-            at_ms,
+            at_ms: now_ms,
             level,
             code,
             device_id,

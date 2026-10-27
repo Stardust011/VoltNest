@@ -14,7 +14,8 @@ pub const DEFAULT_REARM_MARGIN: u8 = 5;
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct NotificationConfig {
     /// 阈值列表（百分比），内部按降序处理，保证同一帧只报最高的那一档。
-    pub thresholds: Vec<u8>,
+    /// 低电量百分比档位（降序）。曾名 `thresholds`，与退化阈值链 `DegradationThresholds` 撞词。
+    pub low_battery_levels: Vec<u8>,
     /// 同一 `(deviceId, threshold)` 的冷却。
     pub cooldown_ms: u64,
     /// 迟滞余量。
@@ -24,7 +25,7 @@ pub struct NotificationConfig {
 impl Default for NotificationConfig {
     fn default() -> Self {
         Self {
-            thresholds: vec![20, 10],
+            low_battery_levels: vec![20, 10],
             cooldown_ms: DEFAULT_COOLDOWN_MS,
             rearm_margin: DEFAULT_REARM_MARGIN,
         }
@@ -34,11 +35,11 @@ impl Default for NotificationConfig {
 impl NotificationConfig {
     /// 规范化：去重、降序、丢弃越界阈值（`> 100`）。
     pub fn normalized(mut self) -> Self {
-        self.thresholds.retain(|t| *t <= 100);
-        self.thresholds.sort_unstable_by(|a, b| b.cmp(a));
-        self.thresholds.dedup();
-        if self.thresholds.is_empty() {
-            self.thresholds = vec![20, 10];
+        self.low_battery_levels.retain(|t| *t <= 100);
+        self.low_battery_levels.sort_unstable_by(|a, b| b.cmp(a));
+        self.low_battery_levels.dedup();
+        if self.low_battery_levels.is_empty() {
+            self.low_battery_levels = vec![20, 10];
         }
         self
     }
@@ -46,7 +47,7 @@ impl NotificationConfig {
 
 /// 一次待发送的低电量通知。
 #[derive(Clone, PartialEq, Eq, Debug)]
-pub struct LowBatteryAlert {
+pub struct LowBatteryNotification {
     /// 设备标识。
     pub stable_id: String,
     /// 设备名（宿主命名，前端不推导）。
@@ -90,26 +91,29 @@ pub struct NotificationNode {
 }
 
 #[derive(Clone, Debug)]
-struct EntryState {
+struct ThresholdState {
     armed: bool,
     last_notified_at_ms: Option<u64>,
     last_result: Option<String>,
 }
 
+/// 单台设备的通知状态。
+///
+/// 与 [`crate::state::DeviceState`]（设备五态）无关，故名字里带 `Notification`。
 #[derive(Clone, Debug, Default)]
-struct DeviceState {
+struct DeviceNotificationState {
     /// 上一次**参与跌破判定**的电量。
     ///
     /// 充电期间不更新：否则「插着电充到 5% 才拔线」会因为没有「跌破」过程而永远不提醒。
     last_battery: Option<u8>,
-    entries: BTreeMap<u8, EntryState>,
+    entries: BTreeMap<u8, ThresholdState>,
 }
 
-/// 通知簿：纯逻辑，不含任何 I/O。宿主拿到 [`LowBatteryAlert`] 后自行发送 Toast。
+/// 通知簿：纯逻辑，不含任何 I/O。宿主拿到 [`LowBatteryNotification`] 后自行发送 Toast。
 #[derive(Clone, Debug)]
 pub struct NotificationBook {
     config: NotificationConfig,
-    devices: HashMap<String, DeviceState>,
+    devices: HashMap<String, DeviceNotificationState>,
 }
 
 impl NotificationBook {
@@ -135,22 +139,22 @@ impl NotificationBook {
     /// 阈值列表未变（只改通知方式）则不动条目与基线，避免把已通知的档位重新武装而重复提醒。
     pub fn set_config(&mut self, config: NotificationConfig) {
         let next = config.normalized();
-        let thresholds_changed = next.thresholds != self.config.thresholds;
+        let thresholds_changed = next.low_battery_levels != self.config.low_battery_levels;
         self.config = next;
         if !thresholds_changed {
             return;
         }
-        let thresholds = self.config.thresholds.clone();
+        let levels = self.config.low_battery_levels.clone();
         for device in self.devices.values_mut() {
             // 保留下来的档位沿用原有 armed / 冷却历史。
             device
                 .entries
-                .retain(|threshold, _| thresholds.contains(threshold));
-            for threshold in &thresholds {
+                .retain(|threshold, _| levels.contains(threshold));
+            for threshold in &levels {
                 device
                     .entries
                     .entry(*threshold)
-                    .or_insert_with(|| EntryState {
+                    .or_insert_with(|| ThresholdState {
                         armed: true,
                         last_notified_at_ms: None,
                         last_result: None,
@@ -174,7 +178,7 @@ impl NotificationBook {
         for e in entries.iter().filter(|e| e.stable_id == stable_id) {
             state.entries.insert(
                 e.threshold,
-                EntryState {
+                ThresholdState {
                     armed: e.armed,
                     last_notified_at_ms: e.last_notified_at_ms,
                     last_result: e.last_result.clone(),
@@ -193,16 +197,16 @@ impl NotificationBook {
         battery: u8,
         charging: Option<bool>,
         now_ms: u64,
-    ) -> Option<LowBatteryAlert> {
+    ) -> Option<LowBatteryNotification> {
         let state = self.devices.entry(stable_id.to_string()).or_default();
         let prev = state.last_battery;
-        let mut alert: Option<LowBatteryAlert> = None;
+        let mut notification: Option<LowBatteryNotification> = None;
 
-        for threshold in self.config.thresholds.clone() {
+        for threshold in self.config.low_battery_levels.clone() {
             let entry = state
                 .entries
                 .entry(threshold)
-                .or_insert_with(|| EntryState {
+                .or_insert_with(|| ThresholdState {
                     armed: true,
                     last_notified_at_ms: None,
                     last_result: None,
@@ -218,7 +222,7 @@ impl NotificationBook {
                 Some(p) => p >= threshold && battery < threshold,
                 None => battery < threshold,
             };
-            if !fell_below || !entry.armed || alert.is_some() {
+            if !fell_below || !entry.armed || notification.is_some() {
                 continue;
             }
 
@@ -239,7 +243,7 @@ impl NotificationBook {
             entry.armed = false;
             entry.last_notified_at_ms = Some(now_ms);
             entry.last_result = Some("sent".to_string());
-            alert = Some(LowBatteryAlert {
+            notification = Some(LowBatteryNotification {
                 stable_id: stable_id.to_string(),
                 display_name: display_name.to_string(),
                 threshold,
@@ -253,7 +257,7 @@ impl NotificationBook {
             state.last_battery = Some(battery);
         }
 
-        alert
+        notification
     }
 
     /// 覆盖某 `(device, threshold)` 的最后结果。
@@ -350,7 +354,7 @@ mod tests {
     fn hysteresis_requires_threshold_plus_five() {
         // 冷却关掉，单独验证迟滞。
         let mut b = NotificationBook::new(NotificationConfig {
-            thresholds: vec![20, 10],
+            low_battery_levels: vec![20, 10],
             cooldown_ms: 0,
             rearm_margin: 5,
         });
@@ -457,8 +461,8 @@ mod tests {
     #[test]
     fn seed_prevents_duplicate_on_restart() {
         let mut b = book();
-        let alert = b.observe("d", "Dev", 25, Some(false), T0).is_none();
-        assert!(alert);
+        let notified = b.observe("d", "Dev", 25, Some(false), T0).is_none();
+        assert!(notified);
         assert!(b.observe("d", "Dev", 19, Some(false), T0 + 1).is_some());
         let entries = b.entries();
         let last = b.last_battery("d");
@@ -487,21 +491,21 @@ mod tests {
     #[test]
     fn config_normalization_dedups_and_sorts() {
         let c = NotificationConfig {
-            thresholds: vec![10, 20, 10, 200],
+            low_battery_levels: vec![10, 20, 10, 200],
             cooldown_ms: 1000,
             rearm_margin: 5,
         }
         .normalized();
-        assert_eq!(c.thresholds, vec![20, 10]);
+        assert_eq!(c.low_battery_levels, vec![20, 10]);
 
         let c = NotificationConfig {
-            thresholds: vec![],
+            low_battery_levels: vec![],
             cooldown_ms: 1,
             rearm_margin: 5,
         }
         .normalized();
         assert_eq!(
-            c.thresholds,
+            c.low_battery_levels,
             vec![20, 10],
             "空阈值退回默认，不得静默关闭通知"
         );
@@ -565,9 +569,9 @@ mod tests {
         assert_eq!(pick(&b, 20).as_deref(), Some("suppressed_mode_off"));
     }
 
-    fn with_thresholds(thresholds: Vec<u8>) -> NotificationConfig {
+    fn with_thresholds(levels: Vec<u8>) -> NotificationConfig {
         NotificationConfig {
-            thresholds,
+            low_battery_levels: levels,
             ..NotificationConfig::default()
         }
     }
@@ -593,10 +597,10 @@ mod tests {
         );
 
         // 下一次读数按新档位判定：15% 已在新阈值之下，只报最高的那一档。
-        let alert = b
+        let notification = b
             .observe("d", "Dev", 15, Some(false), T0 + 1)
             .expect("抬高一档后应按当前电量提醒");
-        assert_eq!(alert.threshold, 30);
+        assert_eq!(notification.threshold, 30);
         assert!(
             b.observe("d", "Dev", 15, Some(false), T0 + 2).is_none(),
             "同一读数不得重复提醒"
@@ -611,7 +615,7 @@ mod tests {
         // 只改通知模式（阈值列表不变）时，已通知的档位不得被重新武装，
         // 否则同一次低电量会重复提醒。
         b.set_config(NotificationConfig {
-            thresholds: vec![20, 10],
+            low_battery_levels: vec![20, 10],
             cooldown_ms: 0,
             ..NotificationConfig::default()
         });
@@ -629,10 +633,10 @@ mod tests {
         // 用户把第一档抬到 30：15% 已经低于新阈值。基线若不清空，
         // 「上次 15 >= 30」永远不成立，新档位一次也不会触发。
         b.set_config(with_thresholds(vec![30, 10]));
-        let alert = b
+        let notification = b
             .observe("d", "Dev", 15, Some(false), T0 + 1)
             .expect("抬高一档后应按当前电量提醒");
-        assert_eq!(alert.threshold, 30);
+        assert_eq!(notification.threshold, 30);
         // 低的那一档没被跨过，不得连带触发。
         assert!(
             b.observe("d", "Dev", 15, Some(false), T0 + 2).is_none(),

@@ -41,7 +41,8 @@ USER_AGENT = (
 )
 
 # 只接受这些 USB vendorId 的设备，其余（OEM 定制 VID）一律丢弃
-RAPOO_VENDOR_IDS = [0x24AE]
+# 0x2E3C 是雷柏网咖/OEM 线（manifest 里的 ESK800-75RT 网咖版）使用的 VID，同为雷柏产品
+RAPOO_VENDOR_IDS = [0x24AE, 0x2E3C]
 
 # manifest 中 type 的已知取值（用于兜底识别，排除 filters 里的 type:"default"）
 KNOWN_DEVICE_TYPES = {
@@ -173,6 +174,8 @@ def extract_manifests(js: str) -> list[dict]:
         transport_m = re.search(r'\btransport\s*:\s*"([^"]+)"', window)
         dongle_m = re.search(r'\bdongleModel\s*:\s*"([^"]+)"', pre)
         main_m = re.search(r'\bmainControl\s*:\s*"([^"]+)"', pre)
+        # driver 在 hardware 之后：网页驱动按它选协议类，各家族报告 ID 与电量字段都不同
+        driver_m = re.search(r'\bdriver\s*:\s*"([^"]+)"', window)
 
         # channel 位于 model 之前
         head = js[max(0, m.start() - 300):m.start()]
@@ -182,6 +185,7 @@ def extract_manifests(js: str) -> list[dict]:
         rows.append({
             "name": name,
             "deviceType": device_type,
+            "driver": driver_m.group(1) if driver_m else None,
             "version": ver_m.group(1) if ver_m else None,
             "vendorId": vid,
             "productIds": pids,
@@ -228,6 +232,8 @@ def build_output(rows: Iterable[dict], *, key_format: str, source: dict) -> dict
                 "deviceType": row["deviceType"],
                 "mode": mode,
             }
+            if row.get("driver"):
+                entry["driver"] = row["driver"]
             if row.get("channels"):
                 entry["channels"] = row["channels"]
 

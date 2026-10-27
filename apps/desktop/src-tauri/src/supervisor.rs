@@ -8,8 +8,8 @@ use std::time::Duration;
 
 use voltnest_provider::{ErrorCode, Provider, ProviderEvent, Transport};
 
-use crate::dto::{TransportState, TransportStatus};
-use crate::host::{HostEvent, Shared, lock};
+use crate::dto::{TransportHealth, TransportStatus};
+use crate::host::{HostEvent, HostState, lock};
 
 /// 退避序列，最后一次之后一直用它。
 pub const BACKOFF_MS: [u64; 3] = [5_000, 15_000, 60_000];
@@ -27,7 +27,9 @@ pub enum SupervisorCmd {
 }
 
 /// 一个 transport 的采集参数。
-pub struct Spec {
+///
+/// 曾名 `Spec`，会与 `voltnest_hid::spec`（HID 协议描述 `BrandSpec`）混淆，故按职责改名为 `TransportSpec`。
+pub struct TransportSpec {
     /// 传输层。
     pub transport: Transport,
     /// 协议家族 ID（诊断展示）。
@@ -36,13 +38,13 @@ pub struct Spec {
     pub make: fn() -> Box<dyn Provider>,
 }
 
-impl Spec {
+impl TransportSpec {
     /// `hid-vbas`。
     pub fn hid() -> Self {
         Self {
             transport: Transport::Hid,
             family: voltnest_provider::FAMILY_HID_VBAS,
-            make: || Box::new(voltnest_hid::provider::HidProvider::new()),
+            make: || Box::new(voltnest_hid::runtime::HidProvider::new()),
         }
     }
 
@@ -51,7 +53,7 @@ impl Spec {
         Self {
             transport: Transport::Ble,
             family: voltnest_provider::FAMILY_BLE_BAS,
-            make: || Box::new(voltnest_ble::provider::BleProvider::new()),
+            make: || Box::new(voltnest_ble::runtime::BleProvider::new()),
         }
     }
 }
@@ -82,21 +84,23 @@ struct Failure {
 }
 
 /// 启动一个 transport 的监管线程，返回用于发送指令的通道。
-pub fn start(shared: Arc<Shared>, spec: Spec) -> Sender<SupervisorCmd> {
-    start_with(shared, spec, &BACKOFF_MS).0
+///
+/// 曾名 `start`，与 `host::spawn_host_loop` 一样都是「起线程」，但名字不含对象。
+pub fn spawn_supervisor(shared: Arc<HostState>, spec: TransportSpec) -> Sender<SupervisorCmd> {
+    spawn_supervisor_with_backoff(shared, spec, &BACKOFF_MS).0
 }
 
 /// 同上，但可指定退避表并拿到线程句柄（测试用毫秒级表，产品用 [`BACKOFF_MS`]）。
-pub fn start_with(
-    shared: Arc<Shared>,
-    spec: Spec,
+pub fn spawn_supervisor_with_backoff(
+    shared: Arc<HostState>,
+    spec: TransportSpec,
     backoff: &'static [u64],
 ) -> (Sender<SupervisorCmd>, std::thread::JoinHandle<()>) {
     let (cmd_tx, cmd_rx) = std::sync::mpsc::channel();
     let name = format!("voltnest-{}-supervisor", spec.transport.as_str());
     {
         let mut statuses = lock(&shared.transports);
-        upsert(&mut statuses, &spec, TransportState::Running, 0, 0, None);
+        upsert(&mut statuses, &spec, TransportHealth::Running, 0, 0, None);
     }
     let handle = std::thread::Builder::new()
         .name(name)
@@ -106,8 +110,8 @@ pub fn start_with(
 }
 
 fn supervise(
-    shared: Arc<Shared>,
-    spec: Spec,
+    shared: Arc<HostState>,
+    spec: TransportSpec,
     cmd_rx: Receiver<SupervisorCmd>,
     backoff: &'static [u64],
 ) {
@@ -121,7 +125,7 @@ fn supervise(
         set_status(
             &shared,
             &spec,
-            TransportState::Running,
+            TransportHealth::Running,
             failures,
             restarts,
             None,
@@ -172,7 +176,7 @@ fn supervise(
         set_status(
             &shared,
             &spec,
-            TransportState::Down,
+            TransportHealth::Down,
             failures,
             restarts,
             Some(detail.clone()),
@@ -183,7 +187,7 @@ fn supervise(
                 set_status(
                     &shared,
                     &spec,
-                    TransportState::Unavailable,
+                    TransportHealth::Unavailable,
                     failures,
                     restarts,
                     Some(detail.clone()),
@@ -248,7 +252,7 @@ enum Wait {
     Exit,
 }
 
-fn wait_cmd(cmd_rx: &Receiver<SupervisorCmd>, delay_ms: u64, shared: &Shared) -> Wait {
+fn wait_cmd(cmd_rx: &Receiver<SupervisorCmd>, delay_ms: u64, shared: &HostState) -> Wait {
     let mut left = delay_ms;
     while left > 0 {
         if shared.shutting_down.load(Ordering::Relaxed) {
@@ -265,7 +269,7 @@ fn wait_cmd(cmd_rx: &Receiver<SupervisorCmd>, delay_ms: u64, shared: &Shared) ->
 }
 
 /// 起一次采集线程并把它跑完。
-fn run_once(shared: &Arc<Shared>, spec: &Spec, cmd_rx: &Receiver<SupervisorCmd>) -> RunOutcome {
+fn run_once(shared: &Arc<HostState>, spec: &TransportSpec, cmd_rx: &Receiver<SupervisorCmd>) -> RunOutcome {
     let (event_tx, event_rx) = std::sync::mpsc::channel();
     let (done_tx, done_rx) = std::sync::mpsc::channel();
     let stop = Arc::new(AtomicBool::new(false));
@@ -336,7 +340,7 @@ fn run_once(shared: &Arc<Shared>, spec: &Spec, cmd_rx: &Receiver<SupervisorCmd>)
 
 /// 转发事件，并记下其中的 `TransportDown`（本轮已上报的失败原因）。
 fn forward_tracked(
-    shared: &Arc<Shared>,
+    shared: &Arc<HostState>,
     transport: Transport,
     reported: &mut Option<(ErrorCode, String)>,
     event: ProviderEvent,
@@ -348,19 +352,19 @@ fn forward_tracked(
 }
 
 /// 把事件塞进宿主队列。队列无界，但入队计数用于积压告警。
-fn forward(shared: &Arc<Shared>, transport: Transport, event: ProviderEvent) {
-    shared.note_queued();
+fn forward(shared: &Arc<HostState>, transport: Transport, event: ProviderEvent) {
+    shared.mark_enqueued();
     if shared
         .tx
         .send(HostEvent::Provider { transport, event })
         .is_err()
     {
-        shared.note_dequeued();
+        shared.mark_dequeued();
     }
 }
 
 /// 上报 `TransportDown`：该 transport 的全部设备转 `Offline`，但不动别的 transport。
-fn push_down(shared: &Arc<Shared>, spec: &Spec, code: ErrorCode, detail: &str) {
+fn push_down(shared: &Arc<HostState>, spec: &TransportSpec, code: ErrorCode, detail: &str) {
     forward(
         shared,
         spec.transport,
@@ -383,8 +387,8 @@ fn describe_panic(payload: Box<dyn std::any::Any + Send>) -> String {
 
 fn upsert(
     statuses: &mut Vec<TransportStatus>,
-    spec: &Spec,
-    status: TransportState,
+    spec: &TransportSpec,
+    status: TransportHealth,
     failures: u32,
     restarts: u32,
     last_error: Option<String>,
@@ -404,9 +408,9 @@ fn upsert(
 }
 
 fn set_status(
-    shared: &Shared,
-    spec: &Spec,
-    status: TransportState,
+    shared: &HostState,
+    spec: &TransportSpec,
+    status: TransportHealth,
     failures: u32,
     restarts: u32,
     last_error: Option<String>,
@@ -429,7 +433,7 @@ mod tests {
 
     static SEQ: AtomicU32 = AtomicU32::new(0);
 
-    fn temp_shared() -> (Arc<Shared>, Receiver<HostEvent>) {
+    fn temp_shared() -> (Arc<HostState>, Receiver<HostEvent>) {
         let root = std::env::temp_dir().join(format!(
             "voltnest-supervisor-{}-{}",
             std::process::id(),
@@ -438,7 +442,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
         let paths = DataPaths::with_root(&root);
         let (tx, rx) = std::sync::mpsc::channel();
-        let shared = Shared::new(
+        let shared = HostState::new(
             paths.clone(),
             Settings::default(),
             SettingsStore::new(paths.clone()),
@@ -448,8 +452,8 @@ mod tests {
         (shared, rx)
     }
 
-    fn hid_spec(make: fn() -> Box<dyn Provider>) -> Spec {
-        Spec {
+    fn hid_spec(make: fn() -> Box<dyn Provider>) -> TransportSpec {
+        TransportSpec {
             transport: Transport::Hid,
             family: voltnest_provider::FAMILY_HID_VBAS,
             make,
@@ -478,7 +482,7 @@ mod tests {
     #[test]
     fn status_change_notifies_diagnostics_channel() {
         let (shared, rx) = temp_shared();
-        let (cmd, handle) = start_with(
+        let (cmd, handle) = spawn_supervisor_with_backoff(
             Arc::clone(&shared),
             hid_spec(|| Box::new(PanicProvider::new())),
             &[1, 1, 1, 1],
@@ -502,7 +506,7 @@ mod tests {
     #[test]
     fn panic_becomes_transport_down_then_unavailable() {
         let (shared, rx) = temp_shared();
-        let (cmd, handle) = start_with(
+        let (cmd, handle) = spawn_supervisor_with_backoff(
             Arc::clone(&shared),
             hid_spec(|| Box::new(PanicProvider::new())),
             &[1, 1, 1, 1],
@@ -527,7 +531,7 @@ mod tests {
         while !unavailable && std::time::Instant::now() < deadline {
             unavailable = lock(&shared.transports)
                 .iter()
-                .any(|s| s.status == TransportState::Unavailable);
+                .any(|s| s.status == TransportHealth::Unavailable);
             std::thread::sleep(Duration::from_millis(20));
         }
         assert!(unavailable, "连续失败达到上限后必须转人工重启");
@@ -558,8 +562,8 @@ mod tests {
         }
     }
 
-    fn ble_spec(make: fn() -> Box<dyn Provider>) -> Spec {
-        Spec {
+    fn ble_spec(make: fn() -> Box<dyn Provider>) -> TransportSpec {
+        TransportSpec {
             transport: Transport::Ble,
             family: voltnest_provider::FAMILY_BLE_BAS,
             make,
@@ -569,7 +573,7 @@ mod tests {
     #[test]
     fn provider_failure_reason_survives_the_supervisor() {
         let (shared, rx) = temp_shared();
-        let (cmd, handle) = start_with(
+        let (cmd, handle) = spawn_supervisor_with_backoff(
             Arc::clone(&shared),
             ble_spec(|| Box::new(DownThenExit)),
             &[1, 1, 1, 1],

@@ -9,30 +9,30 @@ use tauri::AppHandle;
 #[cfg(not(windows))]
 use tauri_plugin_notification::NotificationExt;
 
-use voltnest_core::{DiagLevel, LowBatteryAlert, Snapshot};
+use voltnest_core::{DiagLevel, LowBatteryNotification, Snapshot};
 use voltnest_provider::clock;
 use voltnest_storage::NotificationMode;
 
-use crate::host::{Shared, lock};
+use crate::host::{HostState, lock};
 use crate::tray;
 
 /// 投递一批低电量通知。
-pub fn dispatch(
+pub fn dispatch_notifications(
     app: &AppHandle,
-    shared: &Arc<Shared>,
+    shared: &Arc<HostState>,
     _snap: &Snapshot,
-    alerts: Vec<LowBatteryAlert>,
+    notifications: Vec<LowBatteryNotification>,
     _now: u64,
 ) {
-    if alerts.is_empty() {
+    if notifications.is_empty() {
         return;
     }
     let mode = lock(&shared.settings).notifications.mode;
 
-    for alert in alerts {
+    for notification in notifications {
         let result = match mode {
             NotificationMode::Off => "suppressed_mode_off",
-            NotificationMode::System => match send_toast(app, &alert) {
+            NotificationMode::System => match send_toast(app, &notification) {
                 Ok(()) => "sent",
                 Err(err) => {
                     log::warn!("Toast 发送失败: {err}");
@@ -40,7 +40,7 @@ pub fn dispatch(
                         shared,
                         DiagLevel::Warn,
                         "notification_failed",
-                        Some(alert.stable_id.clone()),
+                        Some(notification.stable_id.clone()),
                         format!("系统通知发送失败：{err}"),
                     );
                     "failed"
@@ -49,16 +49,16 @@ pub fn dispatch(
             NotificationMode::TrayBubble => {
                 let text = format!(
                     "{} 电量 {}%（阈值 {}%）",
-                    alert.display_name, alert.battery, alert.threshold
+                    notification.display_name, notification.battery, notification.threshold
                 );
-                let outcome = tray::bubble(app, &alert.stable_id, &text);
+                let outcome = tray::bubble(app, &notification.stable_id, &text);
                 match outcome {
                     // 真写进 tooltip 了，无需额外动作。
                     tray::BubbleOutcome::Sent => {}
                     // 我们真没发（没有落脚图标）：日志交代清楚，诊断页记 `failed`。
                     tray::BubbleOutcome::NoIcon => log::warn!(
                         "托盘里没有可用图标，低电量提示未送出（{}）",
-                        alert.stable_id
+                        notification.stable_id
                     ),
                     // 平台不支持：既不能记成 `failed`（那会和「没图标」混为一谈），
                     // 也不能打上面那句归因错误的日志。
@@ -66,14 +66,14 @@ pub fn dispatch(
                         shared,
                         DiagLevel::Warn,
                         "notification_unsupported_platform",
-                        Some(alert.stable_id.clone()),
+                        Some(notification.stable_id.clone()),
                         "托盘气泡模式在当前平台不可用（Linux 托盘后端没有 tooltip 实现）：请改用系统通知",
                     ),
                 }
                 tray_bubble_result(outcome)
             }
         };
-        lock(&shared.engine).mark_notification_result(&alert.stable_id, alert.threshold, result);
+        lock(&shared.engine).mark_notification_result(&notification.stable_id, notification.threshold, result);
     }
 }
 
@@ -92,25 +92,25 @@ fn tray_bubble_result(outcome: tray::BubbleOutcome) -> &'static str {
 
 /// 发送一条 Windows Toast。标题是设备+现象、正文是读数与阈值；Windows 会把 AUMID 解析的「VoltNest」渲染在标题上方，标题本身不重复应用名。
 #[cfg(windows)]
-fn send_toast(_app: &AppHandle, alert: &LowBatteryAlert) -> Result<(), String> {
+fn send_toast(_app: &AppHandle, notification: &LowBatteryNotification) -> Result<(), String> {
     toast(
-        &format!("{} 电量偏低", alert.display_name),
+        &format!("{} 电量偏低", notification.display_name),
         &format!(
             "剩余 {}%，已跌破 {}% 提醒线。",
-            alert.battery, alert.threshold
+            notification.battery, notification.threshold
         ),
     )
 }
 
 /// 非 Windows：仍走 Tauri 官方插件。
 #[cfg(not(windows))]
-fn send_toast(app: &AppHandle, alert: &LowBatteryAlert) -> Result<(), String> {
+fn send_toast(app: &AppHandle, notification: &LowBatteryNotification) -> Result<(), String> {
     app.notification()
         .builder()
-        .title(format!("{} 电量偏低", alert.display_name))
+        .title(format!("{} 电量偏低", notification.display_name))
         .body(format!(
             "剩余 {}%，已跌破 {}% 提醒线。",
-            alert.battery, alert.threshold
+            notification.battery, notification.threshold
         ))
         .show()
         .map_err(|e| e.to_string())
@@ -136,13 +136,13 @@ fn toast(title: &str, body: &str) -> Result<(), String> {
 
 /// 测试通知：不写任何通知状态，只验证系统通道是否通。
 #[cfg(windows)]
-pub fn test(_app: &AppHandle) -> Result<(), String> {
+pub fn send_test_notification(_app: &AppHandle) -> Result<(), String> {
     toast("VoltNest 测试通知", "看到这条说明系统通知通道正常。")
 }
 
 /// 测试通知：不写任何通知状态，只验证系统通道是否通。
 #[cfg(not(windows))]
-pub fn test(app: &AppHandle) -> Result<(), String> {
+pub fn send_test_notification(app: &AppHandle) -> Result<(), String> {
     app.notification()
         .builder()
         .title("VoltNest 测试通知")
@@ -152,7 +152,7 @@ pub fn test(app: &AppHandle) -> Result<(), String> {
 }
 
 fn push_diag(
-    shared: &Arc<Shared>,
+    shared: &Arc<HostState>,
     level: DiagLevel,
     code: &'static str,
     device_id: Option<String>,
