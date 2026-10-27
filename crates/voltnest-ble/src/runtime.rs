@@ -4,6 +4,8 @@
 //!
 //! 行为约束：
 //! - **只跟随不拉起**：仅枚举「Windows 已连接」的设备建会话；对已配对未连接设备调 `connect()` 实测 7.97s 才失败。
+//! - **断链事件优先、巡检兜底**：链路断开由 `CentralEvent::DeviceDisconnected` 实时上报，
+//!   60s 巡检只负责「漏事件时最终一致」与「发现新设备」，见下文《实时断链检测》。
 //! - **枚举必须走 `retrieve_peripherals`**：`Adapter::peripherals()` 只返回本次会话**扫描到的广播设备**
 //!   （btleplug WinRT 后端的 manager 缓存，由 `start_scan` 填充），已连接设备通常不再广播 → 恒为空。
 //!   实测同一台鼠标：`peripherals()` = 0 台，`retrieve_peripherals(services=[0x180F])` = 1 台。
@@ -12,6 +14,31 @@
 //! - **负缓存**：无 `0x180F` 的设备 30 分钟内不再摸。
 //! - **名称只取 GAP `0x2A00`**：不用 Windows 缓存的 `local_name`，也不用 bluez 的 `Device1.Alias`
 //!   （两者都是用户可改的系统级名字）。
+//!
+//! # 实时断链检测
+//!
+//! 检测原理：链路一断，系统链路层（supervision timeout 到期或收到 HCI Disconnect Complete）就会
+//! 把「已连接」状态翻成 false，btleplug 把这个变化翻成 `CentralEvent::DeviceDisconnected`，
+//! 经 `adapter.events()` 送到这里 → 去抖 → `ProviderEvent::LinkLost`。60s 巡检保留为兜底，
+//! 于是「实时性」的定义是「链路一断就收到通知」，而不是「亚秒级」——后者受限于链路层，任何库都给不了。
+//!
+//! 事件桥只在**协调线程之外**的一个 task 里 drain，原因：事件流容量有限且无重放
+//! （Windows/Android 是 `broadcast(16)`，lag 的事件被静默丢弃），drain 侧不能有任何阻塞工作。
+//!
+//! 各后端语义差异（决定谁能收到事件，见 `spawn_event_bridge` 的注释）：
+//!
+//! | 后端 | 事件来源 | 覆盖范围 |
+//! | --- | --- | --- |
+//! | Windows / WinRT | `BluetoothLEDevice.ConnectionStatusChanged`，在 `connect()` 内注册 | **仅有本进程 `connect()` 过的设备** |
+//! | Linux / bluez | bluer 的 `Device1.Connected` 属性变更 | 系统级，含别的进程连的设备 |
+//!
+//! 因此：① 任何平台都必须对本会话跟踪的设备调过 `connect()`，否则 Windows 收不到事件；
+//! ② bluez 的事件可能指向本进程从未跟踪的地址，必须按会话表过滤；
+//! ③ 事件只做「变化通知」，设备清单仍然只能来自 `retrieve_peripherals`（bluez 会回放已连接设备，Windows 不会，
+//!    二者不可互换）。
+//!
+//! 重连策略：不主动拉起。断链后清掉会话与策略计数（`PolicyBook::on_link_lost`，不计失败、不进退避），
+//! 等系统自己把设备重连回来，由下一轮枚举重新建会话；系统重连发生在去抖窗口内时，直接吞掉这次断链，不对外发事件。
 //!
 //! # 设备类型识别（与电量采集解耦）
 //! 证据只来自本会话已做的事：服务发现 + 一次 GAP `0x2A01` 只读，故不额外建链、不订阅、不写特征。
@@ -34,14 +61,19 @@
 //! | manager 缓存由 start_scan 填充 | **不成立**：bluez 没有这层缓存，本模块也从不 start_scan | 无影响 |
 //! | 已连接设备重复 connect() 是幂等 no-op | **不成立**：bluez 对已连接设备再 Connect 返回 org.bluez.Error.AlreadyConnected | 先 is_connected()，已连接则跳过 connect()；失败清理只断开自己建立的链路 |
 //! | 发现失败 = 无服务，直接负缓存 30 分钟 | **不成立**：bluez 的 discover_services() 读的是已解析的服务树，未解析时为空集，与「没有 0x180F」是两件事 | 服务列表为空时不进负缓存，按 IoTimeout 退避重试 |
+//! | `DeviceDisconnected` 只覆盖本进程连的设备 | **不成立**：bluez 是 `Device1.Connected` 属性变更，系统级，含别的进程连的设备 | 事件入协调线程前按会话表过滤，未跟踪地址直接丢弃 |
 
 use crate::bas;
 use crate::policy::{Admission, BlePolicy, PolicyBook};
-use crate::{ENUM_FAILURES_BEFORE_DOWN, INIT_TIMEOUT_MS, IO_WORKERS};
-use btleplug::api::{
-    Central, CharPropFlags, Manager as _, Peripheral as _, RetrievePeripheralsOptions,
+use crate::{
+    ENUM_FAILURES_BEFORE_DOWN, EVENT_RESUBSCRIBE_DELAY_MS, INIT_TIMEOUT_MS, IO_WORKERS,
+    LINK_CONFIRM_TIMEOUT_MS, LINK_LOSS_DEBOUNCE_MS,
 };
-use btleplug::platform::{Adapter, Manager, Peripheral};
+use btleplug::api::{
+    Central, CentralEvent, CentralState, CharPropFlags, Manager as _, Peripheral as _,
+    RetrievePeripheralsOptions,
+};
+use btleplug::platform::{Adapter, Manager, Peripheral, PeripheralId};
 use futures::StreamExt;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -63,7 +95,7 @@ use voltnest_provider::{
 const PLATFORM_HINT: &str = "（Linux/bluez：需 bluetoothd 运行且系统 dbus 可用；当前用户需在 bluetooth 组或有 polkit 授权；无适配器时请检查 rfkill / WSL2 蓝牙直通）";
 
 /// 后端不可用时写进 `detail` 的平台提示：诊断页要能直接告诉用户该查什么。
-#[cfg(not(target_os = "linux"))]
+#[cfg(target_os = "windows")]
 const PLATFORM_HINT: &str = "（Windows：请检查蓝牙服务是否运行、适配器是否启用）";
 
 /// 失败清理时是否可以断开链路。
@@ -74,7 +106,7 @@ const PLATFORM_HINT: &str = "（Windows：请检查蓝牙服务是否运行、�
 const DISCONNECT_SHARED_LINKS: bool = true;
 
 /// 失败清理时是否可以断开链路，见同名的 Windows 定义。
-#[cfg(not(target_os = "windows"))]
+#[cfg(target_os = "linux")]
 const DISCONNECT_SHARED_LINKS: bool = false;
 
 /// Provider 启动/运行期的结构化失败：`run` 把它原样转成 `ProviderEvent::TransportDown`。
@@ -184,10 +216,102 @@ enum BleSessionEvent {
         /// 诊断细节（被拒的通知帧字节）；无可用数据时为 `None`。
         detail: Option<String>,
     },
+    /// 事件桥：链路已断（未去抖、未确认）。
+    LinkDown {
+        id: PeripheralId,
+    },
+    /// 事件桥：链路已恢复，用于在同一去抖窗口内抵消 `LinkDown`。
+    LinkUp {
+        id: PeripheralId,
+    },
+    /// 事件桥：适配器掉电/被移除，所有会话立即失效。
+    AdapterOff,
 }
 
 struct SessionHandle {
     task: tokio::task::JoinHandle<()>,
+    /// 去抖窗口到期后用来复核「是否真的还断着」；`is_connected()` 在 `connect()` 之后才可信。
+    peripheral: Peripheral,
+}
+
+/// 协调线程退出时（含 `?` 提前返回）必须停掉事件桥，否则会一直持有事件流。
+struct AbortOnDrop(tokio::task::JoinHandle<()>);
+
+impl Drop for AbortOnDrop {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
+}
+
+/// 事件桥：全进程唯一的事件流消费者。
+///
+/// 只做「取 `PeripheralId` → 转发」，不要在 drain 循环里做任何耗时工作：
+/// Windows/Android 的事件是 `broadcast(16)`，消费者慢了会 lag，而 lag 错误被 btleplug 静默丢弃。
+///
+/// 事件流结束（后端重启、dbus 断流）后自动重订阅：实时检测不能因为一次断流就永久退化成巡检。
+fn spawn_event_bridge(
+    adapter: Adapter,
+    tx: tokio_mpsc::UnboundedSender<BleSessionEvent>,
+    stop: Arc<AtomicBool>,
+) -> tokio::task::JoinHandle<()> {
+    tokio::spawn(async move {
+        while !stop.load(Ordering::Relaxed) {
+            let mut events =
+                match timeout(Duration::from_millis(INIT_TIMEOUT_MS), adapter.events()).await {
+                    Ok(Ok(events)) => events,
+                    Ok(Err(e)) => {
+                        log::warn!("ble-bas 事件流订阅失败（实时断链不可用，退回巡检）：{e}");
+                        tokio::time::sleep(Duration::from_millis(EVENT_RESUBSCRIBE_DELAY_MS)).await;
+                        continue;
+                    }
+                    Err(_) => {
+                        log::warn!("ble-bas 事件流订阅超时（实时断链不可用，退回巡检）");
+                        tokio::time::sleep(Duration::from_millis(EVENT_RESUBSCRIBE_DELAY_MS)).await;
+                        continue;
+                    }
+                };
+
+            while let Some(event) = events.next().await {
+                let msg = match event {
+                    CentralEvent::DeviceDisconnected(id) => BleSessionEvent::LinkDown { id },
+                    CentralEvent::DeviceConnected(id) => BleSessionEvent::LinkUp { id },
+                    CentralEvent::StateUpdate(CentralState::PoweredOff) => {
+                        BleSessionEvent::AdapterOff
+                    }
+                    _ => continue,
+                };
+                if tx.send(msg).is_err() {
+                    // 协调线程已经收场，事件桥没有存在意义。
+                    return;
+                }
+            }
+
+            if !stop.load(Ordering::Relaxed) {
+                log::warn!("ble-bas 事件流结束，{EVENT_RESUBSCRIBE_DELAY_MS}ms 后重订阅");
+                tokio::time::sleep(Duration::from_millis(EVENT_RESUBSCRIBE_DELAY_MS)).await;
+            }
+        }
+    })
+}
+
+/// 事件里的 `PeripheralId` → 本会话跟踪的地址。
+///
+/// 不能直接用 `PeripheralId` 转地址：WinRT 的 `address()` 是 `pub(crate)`（外部拿不到），
+/// bluez 的 `PeripheralId` 里根本没有 MAC（只有 `DeviceId`）。也不能调 `adapter.peripheral(&id)`：
+/// WinRT 后端在 emit `DeviceDisconnected` 之前就把它从 manager 表里删掉了，反查必然失败。
+/// 故只能拿会话表的 `Peripheral::id()` 反查（≤ `MAX_TRACKED` 台，线性扫描足够）。
+fn addr_of(sessions: &HashMap<[u8; 6], SessionHandle>, id: &PeripheralId) -> Option<[u8; 6]> {
+    sessions
+        .iter()
+        .find(|(_, handle)| handle.peripheral.id() == *id)
+        .map(|(addr, _)| *addr)
+}
+
+/// 去抖到期后的判定：只有**明确读到仍然连接**才放弃上报。
+///
+/// 读失败/超时按断链处理——`DeviceDisconnected` 是比一次查询更强的证据（bluez 侧查询可能刚好撞上 dbus 抖动）。
+fn keep_link(reconnected: Option<bool>) -> bool {
+    matches!(reconnected, Some(true))
 }
 
 /// 协调线程：枚举、策略裁决、事件映射。独占全部 per-device 状态。
@@ -234,6 +358,15 @@ async fn coordinator(
     let mut book = PolicyBook::new(policy_cfg);
     let semaphore = Arc::new(Semaphore::new(policy_cfg.max_concurrent));
     let (msg_tx, mut msg_rx) = tokio_mpsc::unbounded_channel::<BleSessionEvent>();
+
+    // 事件桥必须在任何 connect() 之前启动：事件流无重放，订阅晚了会漏掉建立期间的断链。
+    let _events = AbortOnDrop(spawn_event_bridge(
+        adapter.clone(),
+        msg_tx.clone(),
+        Arc::clone(&stop),
+    ));
+    // 去抖中的断链：地址 → 首次收到断链事件的时刻。
+    let mut pending: HashMap<[u8; 6], Instant> = HashMap::new();
 
     let mut sessions: HashMap<[u8; 6], SessionHandle> = HashMap::new();
     let mut announced: HashSet<[u8; 6]> = HashSet::new();
@@ -319,8 +452,8 @@ async fn coordinator(
                             });
                         }
                         ErrorCode::DeviceGone => {
-                            // 链路不存在 → Offline，不是 Unavailable。
-                            book.on_failure(addr, now, code);
+                            // 链路不存在 → Offline，不是 Unavailable。断链不是我方失败，不进退避。
+                            book.on_link_lost(addr);
                             let _ = tx.send(ProviderEvent::LinkLost { stable_id, code });
                         }
                         other => {
@@ -333,12 +466,79 @@ async fn coordinator(
                         }
                     }
                 }
+                BleSessionEvent::LinkDown { id } => {
+                    // 未跟踪的地址一律丢弃：bluez 的事件是系统级的，别的进程连的设备也会进来。
+                    let Some(addr) = addr_of(&sessions, &id) else {
+                        continue;
+                    };
+                    // 连续事件只保留最早时刻，避免把窗口不断往后推。
+                    pending.entry(addr).or_insert_with(Instant::now);
+                    log::debug!(
+                        "ble-bas {addr:?} 断链事件到达，进入 {LINK_LOSS_DEBOUNCE_MS}ms 去抖"
+                    );
+                }
+                BleSessionEvent::LinkUp { id } => {
+                    if let Some(addr) = addr_of(&sessions, &id)
+                        && pending.remove(&addr).is_some()
+                    {
+                        log::info!("ble-bas {addr:?} 在去抖窗口内重连，吞掉本次断链");
+                    }
+                }
+                BleSessionEvent::AdapterOff => {
+                    log::warn!("ble-bas 适配器掉电：{} 个会话立即断链", sessions.len());
+                    pending.clear();
+                    for addr in sessions.keys().copied().collect::<Vec<_>>() {
+                        if let Some(handle) = sessions.remove(&addr) {
+                            handle.task.abort();
+                        }
+                        announced.remove(&addr);
+                        book.on_link_lost(addr);
+                        let _ = tx.send(ProviderEvent::LinkLost {
+                            stable_id: StableId::ble(addr),
+                            code: ErrorCode::DeviceGone,
+                        });
+                    }
+                }
             }
         }
 
+        // 1.5) 去抖到期 → 复核 → 上报。复核只信「明确仍连接」，读失败/超时都按断链处理（事件是更强证据）。
+        let due: Vec<[u8; 6]> = pending
+            .iter()
+            .filter(|(_, at)| at.elapsed() >= Duration::from_millis(LINK_LOSS_DEBOUNCE_MS))
+            .map(|(addr, _)| *addr)
+            .collect();
+        for addr in due {
+            pending.remove(&addr);
+            let Some(peripheral) = sessions.get(&addr).map(|h| h.peripheral.clone()) else {
+                continue;
+            };
+            let reconnected = timeout(
+                Duration::from_millis(LINK_CONFIRM_TIMEOUT_MS),
+                peripheral.is_connected(),
+            )
+            .await
+            .ok()
+            .and_then(Result::ok);
+            if keep_link(reconnected) {
+                log::info!("ble-bas {:?} 去抖到期时已重连，取消断链上报", addr);
+                continue;
+            }
+            if let Some(handle) = sessions.remove(&addr) {
+                handle.task.abort();
+            }
+            announced.remove(&addr);
+            book.on_link_lost(addr);
+            log::info!("ble-bas {:?} 链路断开（事件驱动）", addr);
+            let _ = tx.send(ProviderEvent::LinkLost {
+                stable_id: StableId::ble(addr),
+                code: ErrorCode::DeviceGone,
+            });
+        }
+
         // 2) 周期性重新枚举（保底轮询同时承担「出现检测」，60–300s 由 Provider 声明）
-        let due = last_scan.is_none_or(|t| t.elapsed() >= Duration::from_millis(poll_ms));
-        if due {
+        let scan_due = last_scan.is_none_or(|t| t.elapsed() >= Duration::from_millis(poll_ms));
+        if scan_due {
             last_scan = Some(Instant::now());
             match scan_and_spawn(
                 &adapter,
@@ -407,7 +607,7 @@ async fn candidate_peripherals(adapter: &Adapter) -> Result<Vec<Peripheral>, btl
 /// bluez：`Device1.Connected` 才是「已在链上」的权威判据，而 `Device1.UUIDs` 只在 bluetoothd
 /// 解析过服务后才含 `0x180F`，把它当选择器会让电池设备在首次枚举时被永久排除（详见模块文档复核表）。
 /// 故这里取全量已知设备 → 本地按「已连接」过滤 → 再按 `UUIDs` 排除明确不是电池设备的设备。
-#[cfg(not(target_os = "windows"))]
+#[cfg(target_os = "linux")]
 async fn candidate_peripherals(adapter: &Adapter) -> Result<Vec<Peripheral>, btleplug::Error> {
     let all = adapter
         .retrieve_peripherals(RetrievePeripheralsOptions::default())
@@ -426,27 +626,18 @@ async fn candidate_peripherals(adapter: &Adapter) -> Result<Vec<Peripheral>, btl
 ///
 /// bluez 的 `UUIDs` 已解析且不含 `0x180F` → 不是电池设备，直接跳过：不去读它的特征，
 /// 更不会在失败清理时打扰用户正在用的耳机/手机。`UUIDs` 为空 = 尚未解析，交给会话内服务发现判定。
-/// 该启发式只在 Linux 生效：Windows/WinRT 侧同样的筛选由 `retrieve_peripherals` 的选择器完成，
-/// 故 Windows 下本函数不参与编译（避免变成未使用代码）。
-#[cfg(not(target_os = "windows"))]
+/// Windows 侧同样的筛选由 `retrieve_peripherals` 的选择器完成，故本函数只在 Linux 编译。
+#[cfg(target_os = "linux")]
 async fn worth_probing(p: &Peripheral) -> bool {
-    #[cfg(target_os = "linux")]
-    {
-        match p.properties().await {
-            Ok(Some(props)) => worth_probing_uuids(&props.services),
-            // 拿不到属性就不据此排除：宁可多发现一次，也不误杀电池设备。
-            _ => true,
-        }
-    }
-    #[cfg(not(target_os = "linux"))]
-    {
-        let _ = p;
-        true
+    match p.properties().await {
+        Ok(Some(props)) => worth_probing_uuids(&props.services),
+        // 拿不到属性就不据此排除：宁可多发现一次，也不误杀电池设备。
+        _ => true,
     }
 }
 
 /// `worth_probing` 的判定本体：`UUIDs` 为空视为「尚未解析」，放行。
-#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+#[cfg_attr(target_os = "windows", allow(dead_code))]
 fn worth_probing_uuids(uuids: &[Uuid]) -> bool {
     uuids.is_empty() || uuids.contains(&uuid16(bas::SERVICE_BATTERY))
 }
@@ -489,14 +680,21 @@ async fn scan_and_spawn(
 
         book.track(addr);
         let task = tokio::spawn(session_task(
-            p,
+            p.clone(),
             addr,
             msg_tx.clone(),
             Arc::clone(semaphore),
             *book.policy(),
             poll_ms,
         ));
-        sessions.insert(addr, SessionHandle { task });
+        // 会话句柄保留 `Peripheral`：事件桥按 `Peripheral::id()` 反查地址，去抖到期还要用它复核连接态。
+        sessions.insert(
+            addr,
+            SessionHandle {
+                task,
+                peripheral: p,
+            },
+        );
     }
 
     // 消失的设备：retrieve 不再返回 → Removed（唯一的图标销毁路径）。
@@ -556,7 +754,7 @@ async fn session_task(
     // Windows：列表本身即「已连接」，connect() 对已连接设备是幂等 no-op，行为保持不变。
     #[cfg(target_os = "windows")]
     let already_connected = false;
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(target_os = "linux")]
     let already_connected = matches!(peripheral.is_connected().await, Ok(true));
 
     let connect: Result<Result<(), btleplug::Error>, Elapsed> = if already_connected {
@@ -573,7 +771,7 @@ async fn session_task(
     };
     #[cfg(target_os = "windows")]
     let connect_ok = matches!(connect, Ok(Ok(())));
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(target_os = "linux")]
     let connect_ok = matches!(connect, Ok(Ok(())))
         // 与上面的预检存在竞态：别的进程刚好把设备连上 → bluez 返回 AlreadyConnected。
         // 链路确实在就不是失败；链路不在时 is_connected() 为 false，仍然判失败。
@@ -603,7 +801,7 @@ async fn session_task(
     let services = peripheral.services();
     // bluez：discover_services() 读的是 bluetoothd 已解析的服务树，设备刚连上还没解析时得到空集。
     // 空集 ≠「没有 0x180F」：判成 ServiceMissing 会把一台电池设备拉黑 30 分钟（Windows 侧维持既有分支）。
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(target_os = "linux")]
     if services.is_empty() {
         log::info!(
             "ble-bas {:?} 服务列表为空（bluez 尚未完成服务解析），按退避重试、不进负缓存",
@@ -722,6 +920,8 @@ async fn session_task(
                     }
                     Some(_) => {}
                     None => {
+                        // 通知流是 broadcast：链路断开时发送端仍活着，流不会结束。
+                        // 这里只覆盖「本进程内发送端全部析构」，断链判定由事件桥与巡检负责。
                         let _ = msg_tx.send(BleSessionEvent::Failed {
                             addr,
                             code: ErrorCode::DeviceGone,
@@ -864,6 +1064,14 @@ mod tests {
             "{}",
             failure.detail
         );
+    }
+
+    /// 去抖到期后只有「明确仍连接」才取消上报：读失败不能当成还连着。
+    #[test]
+    fn keep_link_only_trusts_explicit_true() {
+        assert!(keep_link(Some(true)));
+        assert!(!keep_link(Some(false)));
+        assert!(!keep_link(None), "查询失败按断链处理");
     }
 
     /// bluez 的候选筛选：UUIDs 为空 = 尚未解析，必须放行；已解析且不含 0x180F 才排除。

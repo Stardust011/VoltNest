@@ -21,6 +21,13 @@
 #![deny(clippy::disallowed_types)]
 #![warn(missing_docs)]
 
+// 只实现了 Windows 与 Linux 两套后端语义（见 runtime 模块文档的复核表）。
+// 其它平台必须显式失败：静默套用 bluez 假设会得到「能编译、行为错」的运行时。
+#[cfg(not(any(target_os = "windows", target_os = "linux")))]
+compile_error!(
+    "voltnest-ble 仅支持 Windows 与 Linux；新增平台需先按 runtime 模块文档的复核表逐条核对 btleplug 后端语义"
+);
+
 pub mod bas;
 pub mod policy;
 pub mod runtime;
@@ -64,3 +71,14 @@ pub const INIT_TIMEOUT_MS: u64 = 5_000;
 /// 单轮失败常见的是一次 dbus 抖动或设备刚好消失，立刻拆掉整个 transport 会让所有设备闪断；
 /// 连续失败说明后端真的不在了（bluetoothd 退出、适配器被拔出），此时才交给 supervisor 退避重启。
 pub const ENUM_FAILURES_BEFORE_DOWN: u32 = 3;
+
+/// 断链去抖窗口：事件到达后先等这么久再判定，等的是「系统自动重连」。
+///
+/// HID 鼠标断电/休眠会被系统立刻重连，若立即上报 `LinkLost`，托盘图标会闪一下 Offline 又回 Online。
+pub const LINK_LOSS_DEBOUNCE_MS: u64 = 1_500;
+
+/// 去抖窗口到期后，用一次 `is_connected()` 复核，避免把「已经重连上」误判成断链。
+pub const LINK_CONFIRM_TIMEOUT_MS: u64 = 500;
+
+/// 事件流结束（后端重启、dbus 断流）后的重订阅间隔。
+pub const EVENT_RESUBSCRIBE_DELAY_MS: u64 = 2_000;
