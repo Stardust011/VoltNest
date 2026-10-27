@@ -98,7 +98,8 @@ Tauri 2 会自动把同目录的 `tauri.linux.conf.json` 合并进 `tauri.conf.j
 
 CI 侧：`git tag v0.1.0 && git push origin v0.1.0` 会双平台打包并挂到 Draft Release
 （`.github/workflows/release.yml`，v1 不签名，需手动发布）；`cargo-deny` 与工具链漂移扫描每周一跑
-（`.github/workflows/security.yml`）。
+（`.github/workflows/security.yml`）；型号表每月 1 日抓取厂商网页驱动并开 PR
+（`.github/workflows/mappings.yml`，脚本在 `mappings/scripts/`）。
 
 ## Linux 运行期前提
 

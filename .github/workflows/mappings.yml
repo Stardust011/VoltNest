@@ -1,0 +1,104 @@
+name: Mappings
+
+# 每月抓取厂商网页驱动里的型号表，有变化就开 PR。
+on:
+  schedule:
+    # 每月 1 日 03:00 UTC（北京时间 11:00）
+    - cron: "0 3 1 * *"
+  workflow_dispatch:
+    inputs:
+      brand:
+        description: 只抓某个品牌
+        type: choice
+        default: all
+        options: [all, dareu, mchose, rapoo]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: mappings-refresh
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    name: refresh mappings
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      # hidapi 的 hidraw 后端构建期需要 libudev 开发文件。
+      - name: Install libudev
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libudev-dev
+
+      # 单品牌失败只跳过该品牌：旧表留着也比没有表强，失败率由最后一步汇总暴露。
+      - name: Fetch mappings
+        id: fetch
+        shell: bash
+        run: |
+          set -u
+          report="$RUNNER_TEMP/report.md"
+          echo "### 型号码表抓取" > "$report"
+          brands="${{ inputs.brand }}"
+          if [ -z "$brands" ] || [ "$brands" = "all" ]; then
+            brands="dareu mchose rapoo"
+          fi
+          failed=0
+          for brand in $brands; do
+            dest="crates/voltnest-hid/data/mappings/${brand}.json"
+            tmp="$RUNNER_TEMP/${brand}.json"
+            if ! timeout 600 python "mappings/scripts/${brand}_device_map.py" -q -o "$tmp"; then
+              echo "::warning title=${brand} 抓取失败::沿用仓库内旧表"
+              echo "- \`${brand}.json\`：抓取失败，未更新" >> "$report"
+              failed=1
+              continue
+            fi
+            if ! python mappings/scripts/mapping_report.py "$tmp" --old "$dest" >> "$report"; then
+              echo "::error title=${brand} 输出非法::沿用仓库内旧表"
+              failed=1
+              continue
+            fi
+            cp "$tmp" "$dest"
+          done
+          echo "failed=$failed" >> "$GITHUB_OUTPUT"
+          cat "$report" >> "$GITHUB_STEP_SUMMARY"
+
+      # 型号表格式由 crate 的测试守，不靠抓取脚本自证。
+      - name: Verify tables parse
+        id: verify
+        continue-on-error: true
+        run: cargo test -p voltnest-hid
+
+      - name: Create pull request
+        if: always()
+        uses: peter-evans/create-pull-request@v7
+        with:
+          branch: chore/mappings-refresh
+          delete-branch: true
+          add-paths: crates/voltnest-hid/data/mappings/
+          commit-message: "chore(mappings): 同步厂商型号表"
+          title: "chore(mappings): 同步厂商型号表"
+          body: |
+            定时抓取 DAREU / MCHOSE / RAPOO 网页驱动的型号表，逐条对比见本次 run 的 Summary。
+
+            改动只落在 `crates/voltnest-hid/data/mappings/`。合并前请确认：
+            - [ ] 新增型号的 VID:PID 没有与其它品牌重复登记
+            - [ ] 消失的型号是厂商下架，而不是抓取口径变化
+          labels: dependencies
+          # 用 GITHUB_TOKEN 建的 PR 不会触发 CI；配了 MAPPINGS_TOKEN（PAT）才会自动跑。
+          token: ${{ secrets.MAPPINGS_TOKEN || secrets.GITHUB_TOKEN }}
+
+      - name: Fail on partial refresh
+        if: always() && (steps.fetch.outputs.failed == '1' || steps.verify.outcome == 'failure')
+        run: |
+          echo "抓取或解析校验未通过，详见上方日志与 Summary" >&2
+          exit 1
