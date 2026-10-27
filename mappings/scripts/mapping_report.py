@@ -8,7 +8,10 @@ mapping_report.py
 
 用法：
     python mapping_report.py 新表.json --old 旧表.json
+    python mapping_report.py 新表.json --old 旧表.json --require-change
     python mapping_report.py 新表.json            # 不比对旧表
+
+退出码：0 = devices 有变化（或未比对），1 = 表非法，3 = devices 与旧表一致（仅 --require-change）。
 """
 
 from __future__ import annotations
@@ -56,20 +59,34 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="校验型号码表并输出摘要")
     parser.add_argument("new", type=Path, help="新抓取的型号表")
     parser.add_argument("--old", type=Path, help="仓库内旧表，用于统计差异")
+    parser.add_argument(
+        "--require-change",
+        action="store_true",
+        help="devices 与旧表一致时以退出码 3 结束（config_version 变化不算）",
+    )
     args = parser.parse_args()
 
     new = load_devices(args.new)
-    keys = set(new["devices"])
+    devices = new["devices"]
+    keys = set(devices)
 
+    same = False
     delta = ""
     if args.old and args.old.is_file():
-        old_keys = set(load_devices(args.old)["devices"])
+        old_devices = load_devices(args.old)["devices"]
+        old_keys = set(old_devices)
         added = len(keys - old_keys)
         removed = len(old_keys - keys)
+        # 顺序无关：只比内容。config_version / source 不参与比较。
+        same = old_devices == devices
         if added or removed:
             delta = f"，+{added} / −{removed}"
-        else:
-            delta = "，无变化"
+        elif not same:
+            delta = "，条目数不变但内容有变化"
+
+    if same:
+        print(f"- `{args.new.name}`：{len(keys)} 台，devices 无变化，跳过")
+        return 3 if args.require_change else 0
 
     print(f"- `{args.new.name}`：{len(keys)} 台{delta}（版本 {new['version']}）")
     return 0
