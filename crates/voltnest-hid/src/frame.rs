@@ -573,7 +573,7 @@ mod tests {
         ack: None,
         fallback_report_id: None,
         expected_interval_ms: 20_000,
-        device_table_json: crate::brands::ajazz::SPEC.device_table_json,
+        device_table_file: crate::brands::ajazz::SPEC.device_table_file,
         variants: &[],
         route: None,
     };

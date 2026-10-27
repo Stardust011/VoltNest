@@ -31,9 +31,6 @@ use crate::spec::{
 };
 use crate::table::Entry;
 
-/// 型号表快照（编译期嵌入，四套协议共用一份；每条带官方 `driver`）。
-const TABLE: &str = include_str!("../../data/mappings/rapoo.json");
-
 /// VT_nrf54L（146 条，雷柏主力鼠标）：监听功能态快照，报告 ID `0x07`。
 ///
 /// 网页驱动 `VTNrf54LMouseDevice.handleReport`：报告 ID `7` → `parseUserCustomData`-等价解析
@@ -76,7 +73,7 @@ pub const NRF54L: BrandSpec = BrandSpec {
     ack: None,
     fallback_report_id: None,
     expected_interval_ms: 30_000,
-    device_table_json: TABLE,
+    device_table_file: "rapoo.json",
     variants: &[],
     route: None,
 };
@@ -180,7 +177,7 @@ pub const AP: BrandSpec = BrandSpec {
     ack: None,
     fallback_report_id: None,
     expected_interval_ms: 30_000,
-    device_table_json: TABLE,
+    device_table_file: "rapoo.json",
     variants: &[],
     route: None,
 };

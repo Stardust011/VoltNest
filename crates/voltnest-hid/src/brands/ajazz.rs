@@ -56,7 +56,8 @@ pub const SPEC: BrandSpec = BrandSpec {
     // 报告 ID 不随连接方式变化。
     fallback_report_id: None,
     expected_interval_ms: 30_000,
-    device_table_json: include_str!("../../data/mappings/ajazz.json"),
+    // 型号表由运行时从映射目录读取（`crate::mappings`），此处只声明文件名。
+    device_table_file: "ajazz.json",
     // 单协议品牌：没有变体，也不按型号表字段分派。
     variants: &[],
     route: None,
@@ -245,7 +246,7 @@ mod tests {
 
     #[test]
     fn device_table_covers_verified_generation() {
-        let table = crate::table::DeviceTable::parse(super::SPEC.device_table_json).unwrap();
+        let table = crate::mappings::load_table(super::SPEC.device_table_file).unwrap();
         assert_eq!(table.len(), 16, "8 型号 × 2 模式");
         assert_eq!(table.config_version, "1.0.0");
         assert_eq!(table.source, "config.xml · AJAZZ Driver（W1） · 1.0.7.6");
