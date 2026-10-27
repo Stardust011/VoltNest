@@ -1,6 +1,9 @@
 //! 「VID:PID → 型号」快照表（品牌无关的加载器）。
 //!
-//! 每品牌一份 JSON 快照，由 [`crate::spec::BrandSpec::device_table_json`] 编译期嵌入（`include_str!`），安装目录无需带数据文件，也不会与二进制版本分叉。新增品牌只加数据文件 + 注册项，本文件不变。
+//! 每品牌一份 JSON 型号表，由 [`crate::spec::BrandSpec::device_table_file`] 声明文件名，进程启动时
+//! 由 [`crate::mappings`] 从 `data/mappings/` **运行时读取**（不再 `include_str!` 编译期嵌入）：
+//! 换表只换文件、不必重编二进制，代价是安装包必须随二进制带上该目录，目录定位见 [`crate::mappings`]。
+//! 新增品牌只加数据文件 + 注册项，本文件不变。
 //!
 //! # 统一数据规范
 //!
@@ -8,7 +11,7 @@
 //!
 //! ```json
 //! {
-//!   "config_version": "1.0.0",
+//!   "config_version": "2026-10-27T08",
 //!   "source": { "file": "config.xml", "software": "AJAZZ Driver（W1）", "software_version": "1.0.7.6" },
 //!   "devices": {
 //!     "7768:6426": { "name": "AJ159 NL", "vendorDeviceId": 102, "deviceType": "mouse", "mode": "2.4G" }
@@ -16,6 +19,7 @@
 //! }
 //! ```
 //!
+//! - `config_version` 是型号表的抓取时刻（UTC、精确到小时，形如 `2026-10-27T08`），只做非空校验，格式不限定。
 //! - `devices` 的键是 `VID:PID`（大端十六进制、无 `0x` 前缀、冒号分隔），值是唯一的型号条目来源；不再有并行的 `by_vid_pid` 副本。
 //! - `source` 只供展示，结构不校验：桌面驱动的 `{file, software, software_version}`、网页版驱动的 `{url, web_version}` 乃至任意形状都会被压成一行来源摘要。
 //! - `deviceType` 是厂商声明的类型词（`mouse` / `keyboard` …），只有恰好等于规范类型词时才被采纳，见 [`Entry::declared_device_type`]。
@@ -127,11 +131,14 @@ fn source_label(source: &serde_json::Value) -> String {
     parts.join(" · ")
 }
 
-/// 一个品牌编译期嵌入的型号表。
-#[derive(Debug)]
+/// 一个品牌从型号表目录里加载到的型号表。
+///
+/// `Clone` 仅供注册表使用：多个协议共用同一份表文件时（达尔优 3 套、迈从 5 套、雷柏 4 套）
+/// 各自持有一份副本，避免为「读同一份数据」引入共享所有权。
+#[derive(Clone, Debug)]
 pub struct DeviceTable {
     map: HashMap<(u16, u16), Entry>,
-    /// 数据规范版本（诊断页展示）。
+    /// 型号表抓取时刻（UTC、精确到小时；诊断页展示）。
     pub config_version: String,
     /// 来源摘要（诊断页展示）。
     pub source: String,
