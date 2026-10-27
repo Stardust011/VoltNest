@@ -28,7 +28,6 @@ function device(overrides: Partial<DeviceDto> = {}): DeviceDto {
     isCharging: false,
     state: "online",
     lastValidAtMs: 1_000,
-    lastPushAtMs: 1_000,
     lastError: null,
     ...overrides,
   };

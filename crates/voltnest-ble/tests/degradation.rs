@@ -8,7 +8,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::time::Duration;
-use voltnest_ble::provider::BleProvider;
+use voltnest_ble::runtime::BleProvider;
 use voltnest_provider::{Provider, ProviderEvent};
 
 #[test]

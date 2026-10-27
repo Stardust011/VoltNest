@@ -21,7 +21,7 @@ pub struct Snapshot {
     /// `devices` 中未被任何卡片引用的成员，不做二次归一化。
     pub cards: Vec<CardDto>,
     /// 托盘可见集合。
-    pub tray: TrayDto,
+    pub tray: TraySnapshotDto,
 }
 
 /// 单台设备。
@@ -32,7 +32,9 @@ pub struct DeviceDto {
     pub stable_id: String,
     /// `hid` / `ble`。
     pub transport: String,
-    /// 协议家族 ID。
+    /// 协议家族 ID，值取自 `DeviceRecord::family_id`。
+    ///
+    /// 字段名固定为 `provider`（wire 契约，前端 `types.ts` 依赖），**不得**跟随内部改名。
     pub provider: String,
     /// 型号名（Provider 表查得 / GAP 原文）。
     pub display_name: String,
@@ -56,8 +58,6 @@ pub struct DeviceDto {
     pub state: DeviceState,
     /// 最后一次有效读数时间；退化判定的唯一依据。
     pub last_valid_at_ms: Option<u64>,
-    /// 最后一次推送时间，仅诊断。
-    pub last_push_at_ms: Option<u64>,
     /// 最近一次结构化错误码。
     pub last_error: Option<String>,
 }
@@ -85,7 +85,7 @@ pub struct CardDto {
 /// 托盘可见集合与顺序。
 #[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct TrayDto {
+pub struct TraySnapshotDto {
     /// 应存在的托盘图标（按 `settings.tray.order`，上限 4）。
     pub visible_device_ids: Vec<String>,
 }
@@ -113,11 +113,10 @@ mod tests {
                 is_charging: Some(true),
                 state: DeviceState::Unknown,
                 last_valid_at_ms: None,
-                last_push_at_ms: None,
                 last_error: Some("malformed_frame".into()),
             }],
             cards: vec![],
-            tray: TrayDto {
+            tray: TraySnapshotDto {
                 visible_device_ids: vec![],
             },
         };
@@ -151,7 +150,7 @@ mod tests {
                 state: DeviceState::Stale,
                 inactive_member_text: "2.4G 链路 · 未活动（12 分钟前）".into(),
             }],
-            tray: TrayDto {
+            tray: TraySnapshotDto {
                 visible_device_ids: vec!["hid:7768:6426".into()],
             },
         };

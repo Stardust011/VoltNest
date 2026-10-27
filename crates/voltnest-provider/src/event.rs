@@ -18,7 +18,9 @@ pub struct DeviceFact {
     /// 传输层。
     pub transport: Transport,
     /// 协议家族 ID（`ProviderProfile::family_id`）。
-    pub provider: &'static str,
+    ///
+    /// 曾名 `provider`，会与「采集线程 trait `Provider`」混淆，故改名为 `family_id`。
+    pub family_id: &'static str,
     /// 表查得的型号名（HID）/ GAP `0x2A00` 原文（BLE）。必须是可读型号名；
     /// HID 不得直接回填 ProductString（8 型号全同，无法区分）。
     pub display_name: String,
@@ -36,14 +38,14 @@ impl DeviceFact {
     pub fn new(
         stable_id: StableId,
         transport: Transport,
-        provider: &'static str,
+        family_id: &'static str,
         display_name: impl Into<String>,
         model_name_raw: impl Into<String>,
     ) -> Self {
         Self {
             stable_id,
             transport,
-            provider,
+            family_id,
             display_name: display_name.into(),
             model_name_raw: model_name_raw.into(),
             path: None,

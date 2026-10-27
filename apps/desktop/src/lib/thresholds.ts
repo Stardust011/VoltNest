@@ -22,7 +22,7 @@ export const FIRST_BELOW_MESSAGE = "第一档不能低于第二档";
 export type ThresholdIndex = 0 | 1;
 
 // 两档阈值。
-export type Thresholds = [number, number];
+export type LowBatteryLevels = [number, number];
 
 // 解析输入框原始串为整数：仅接受十进制整数（允许前后空白与正负号），空串/小数/`1e2`/`abc` 一律返回 `null`——既非「未输完」也不可静默取整。
 export function parseThresholdInput(raw: string): number | null {
@@ -77,15 +77,15 @@ export function validateThresholdPair(
 // 设置页失焦不再自动修正，非法输入直接不提交；此处仅作写入口兜底（盘上本就非法的组合）。
 // 输入非整数返回 `null`（调用方放弃提交，正式值不变）；返回新数组，不改 `current`。
 export function applyThresholdEdit(
-  current: Thresholds,
+  current: LowBatteryLevels,
   index: ThresholdIndex,
   raw: string | number,
-): Thresholds | null {
+): LowBatteryLevels | null {
   const parsed =
     typeof raw === "number" ? (Number.isInteger(raw) ? raw : null) : parseThresholdInput(raw);
   if (parsed === null) return null;
 
-  const next: Thresholds = [current[0], current[1]];
+  const next: LowBatteryLevels = [current[0], current[1]];
   next[index] = clampThreshold(parsed);
   if (next[0] - next[1] >= THRESHOLD_MIN_GAP) return next;
 

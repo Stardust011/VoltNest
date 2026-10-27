@@ -11,7 +11,7 @@ import {
   ORDER_MESSAGE,
   RANGE_MESSAGE,
   SECOND_ABOVE_MESSAGE,
-  type Thresholds,
+  type LowBatteryLevels,
 } from "../lib/thresholds";
 
 // 两档都不报错。
@@ -21,7 +21,7 @@ function isValidPair(raws: [string, string]): boolean {
 }
 
 // 正式值须始终满足约束：0~95 且第一档比第二档至少高 1%。
-function expectInvariant(pair: Thresholds) {
+function expectInvariant(pair: LowBatteryLevels) {
   for (const value of pair) {
     expect(Number.isInteger(value)).toBe(true);
     expect(value).toBeGreaterThanOrEqual(THRESHOLD_MIN);
@@ -157,7 +157,7 @@ describe("applyThresholdEdit", () => {
     // 旧实现：next[0] = 95 + 1 = 96。
     const next = applyThresholdEdit([90, 95], 0, "90");
     expect(next).toEqual([95, 94]);
-    expectInvariant(next as Thresholds);
+    expectInvariant(next as LowBatteryLevels);
     expect(applyThresholdEdit([10, 95], 0, "95")).toEqual([95, 94]);
   });
 
@@ -165,13 +165,13 @@ describe("applyThresholdEdit", () => {
     // 旧实现：next[1] = 0 - 1 越界。
     const next = applyThresholdEdit([0, 1], 1, "0");
     expect(next).toEqual([1, 0]);
-    expectInvariant(next as Thresholds);
+    expectInvariant(next as LowBatteryLevels);
     // 常规下界修正：第二档让位到第一档之下。
     expect(applyThresholdEdit([5, 10], 1, "6")).toEqual([5, 4]);
   });
 
   it("不修改传入的正式值", () => {
-    const current: Thresholds = [20, 10];
+    const current: LowBatteryLevels = [20, 10];
     applyThresholdEdit(current, 0, "60");
     expect(current).toEqual([20, 10]);
   });
