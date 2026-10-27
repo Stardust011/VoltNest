@@ -22,7 +22,7 @@ pub struct SettingsDto {
     /// 首次引导是否完成。
     pub onboarding_completed: bool,
     /// 托盘顺序与隐藏列表。
-    pub tray: TrayDto,
+    pub tray: TraySettingsDto,
 }
 
 /// 通知设置。
@@ -38,7 +38,7 @@ pub struct NotificationDto {
 /// 托盘设置。
 #[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct TrayDto {
+pub struct TraySettingsDto {
     /// 用户指定的设备顺序。
     pub order: Vec<String>,
     /// 用户隐藏的设备。
@@ -58,7 +58,7 @@ impl SettingsDto {
             autostart: s.autostart,
             start_minimized: s.start_minimized,
             onboarding_completed: s.onboarding_completed,
-            tray: TrayDto {
+            tray: TraySettingsDto {
                 order: s.tray.order.clone(),
                 hidden: s.tray.hidden.clone(),
             },
@@ -71,7 +71,7 @@ impl SettingsDto {
             target.set_sensitivity(sensitivity);
         }
         target.notifications.mode = self.notifications.mode;
-        target.notifications.low_thresholds = clamp_thresholds(self.notifications.low_thresholds);
+        target.notifications.low_thresholds = clamp_low_battery_levels(self.notifications.low_thresholds);
         target.autostart = self.autostart;
         target.start_minimized = self.start_minimized;
         target.onboarding_completed = self.onboarding_completed;
@@ -84,7 +84,7 @@ impl SettingsDto {
 }
 
 /// 阈值必须是一对 `0..=95` 且严格递减的整数。IPC 是不可信边界：越界值若落盘，`NotificationConfig::normalized()` 下次启动会静默改值，用户会看到「设置自己变了」。下界取 `0` 而非 `5`，须与设置页输入框的 `THRESHOLD_MIN`（`lib/thresholds.ts`）一致，否则用户填的 0 会在保存瞬间被改成 5。
-fn clamp_thresholds(pair: [u8; 2]) -> [u8; 2] {
+fn clamp_low_battery_levels(pair: [u8; 2]) -> [u8; 2] {
     let a = pair[0].clamp(0, 95);
     let b = pair[1].clamp(0, 95);
     let (high, low) = if a == b {
@@ -109,7 +109,7 @@ pub struct DiagnosticsDto {
     /// 采集线程组状态。
     pub transports: Vec<TransportStatusDto>,
     /// 通知 `(device, threshold)` 状态。
-    pub notifications: Vec<NotificationStateDto>,
+    pub notifications: Vec<NotificationNodeDto>,
     /// 自启项是否已写入。
     pub autostart_registered: bool,
     /// AUMID 是否已注册。
@@ -169,7 +169,7 @@ pub struct TransportStatusDto {
 /// 通知状态。
 #[derive(Clone, PartialEq, Eq, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct NotificationStateDto {
+pub struct NotificationNodeDto {
     /// 节点覆盖的设备标识（合并卡的主成员在前）。
     pub device_ids: Vec<String>,
     /// 阈值。
@@ -182,7 +182,7 @@ pub struct NotificationStateDto {
     pub last_result: Option<String>,
 }
 
-impl From<NotificationNode> for NotificationStateDto {
+impl From<NotificationNode> for NotificationNodeDto {
     fn from(n: NotificationNode) -> Self {
         Self {
             device_ids: n.device_ids,
@@ -212,7 +212,7 @@ pub struct TransportStatus {
     /// 家族 ID。
     pub family: &'static str,
     /// 当前状态。
-    pub status: TransportState,
+    pub status: TransportHealth,
     /// 连续失败次数。
     pub failures: u32,
     /// 累计重启次数。
@@ -223,7 +223,7 @@ pub struct TransportStatus {
 
 /// 线程组状态。
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum TransportState {
+pub enum TransportHealth {
     /// 运行中。
     Running,
     /// 正在退避重启。
@@ -232,7 +232,7 @@ pub enum TransportState {
     Unavailable,
 }
 
-impl TransportState {
+impl TransportHealth {
     /// 稳定字符串。
     pub const fn as_str(self) -> &'static str {
         match self {
@@ -250,19 +250,19 @@ mod tests {
 
     #[test]
     fn thresholds_are_kept_strictly_descending() {
-        assert_eq!(clamp_thresholds([20, 10]), [20, 10]);
+        assert_eq!(clamp_low_battery_levels([20, 10]), [20, 10]);
         // 逆序：以数值大小重排，高阈值在前。
-        assert_eq!(clamp_thresholds([10, 20]), [20, 10]);
+        assert_eq!(clamp_low_battery_levels([10, 20]), [20, 10]);
         // 相等：拆开一位，避免同一档重复触发。
-        assert_eq!(clamp_thresholds([15, 15]), [15, 14]);
+        assert_eq!(clamp_low_battery_levels([15, 15]), [15, 14]);
         // 下界 0 合法：设置页允许填 0%。
-        assert_eq!(clamp_thresholds([0, 0]), [1, 0]);
-        assert_eq!(clamp_thresholds([1, 0]), [1, 0]);
+        assert_eq!(clamp_low_battery_levels([0, 0]), [1, 0]);
+        assert_eq!(clamp_low_battery_levels([1, 0]), [1, 0]);
         // 越界：夹到 0..=95 后重排。
-        assert_eq!(clamp_thresholds([200, 5]), [95, 5]);
-        assert_eq!(clamp_thresholds([5, 250]), [95, 5]);
+        assert_eq!(clamp_low_battery_levels([200, 5]), [95, 5]);
+        assert_eq!(clamp_low_battery_levels([5, 250]), [95, 5]);
         // 上界修正不能把值推出区间。
-        assert_eq!(clamp_thresholds([95, 95]), [95, 94]);
+        assert_eq!(clamp_low_battery_levels([95, 95]), [95, 94]);
     }
 
     #[test]

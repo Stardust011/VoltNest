@@ -54,7 +54,9 @@ pub enum HostEvent {
 }
 
 /// 跨线程共享的宿主状态。
-pub struct Shared {
+///
+/// 曾名 `Shared`（不含任何信息），现按职责命名；同名变量 `shared` 保持不变。
+pub struct HostState {
     /// 设备状态唯一所有者。
     pub engine: Mutex<Engine>,
     /// 当前设置（内存副本，落盘由 `settings_store` 负责）。
@@ -89,7 +91,7 @@ pub fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
     }
 }
 
-impl Shared {
+impl HostState {
     /// 组装共享状态并回填 `state.json`。
     pub fn new(
         paths: DataPaths,
@@ -145,12 +147,12 @@ impl Shared {
     }
 
     /// 记录一次事件入队。
-    pub fn note_queued(&self) {
+    pub fn mark_enqueued(&self) {
         self.queued.fetch_add(1, Ordering::Relaxed);
     }
 
     /// 记录一次事件出队。
-    pub fn note_dequeued(&self) {
+    pub fn mark_dequeued(&self) {
         self.queued.fetch_sub(1, Ordering::Relaxed);
     }
 }
@@ -189,26 +191,26 @@ fn seed_entries(state: &StateFile) -> Vec<SeedEntry> {
 }
 
 /// 当前快照（命令 `get_snapshot` 用）。
-pub fn snapshot(shared: &Shared) -> Snapshot {
+pub fn snapshot(shared: &HostState) -> Snapshot {
     let mut engine = lock(&shared.engine);
     engine.snapshot(clock::now_utc_ms())
 }
 
 /// 发布一次快照：事件 → 托盘 → 通知 → 落盘。
-pub fn publish(app: &AppHandle, shared: &Arc<Shared>, now: u64) {
-    let (snap, alerts) = {
+pub fn publish_snapshot(app: &AppHandle, shared: &Arc<HostState>, now: u64) {
+    let (snap, notifications) = {
         let mut engine = lock(&shared.engine);
         let snap = engine.snapshot(now);
-        let alerts = engine.take_alerts();
-        (snap, alerts)
+        let notifications = engine.take_notifications();
+        (snap, notifications)
     };
 
     if let Err(err) = app.emit(SNAPSHOT_EVENT, &snap) {
         log::warn!("快照事件发送失败: {err}");
     }
-    tray::sync(app, shared, &snap);
-    notification::dispatch(app, shared, &snap, alerts, now);
-    persist(shared, now, false);
+    tray::sync_tray_icons(app, shared, &snap);
+    notification::dispatch_notifications(app, shared, &snap, notifications, now);
+    persist_state(shared, now, false);
 }
 
 /// 通知前端诊断数据已变。`restarts`/`status` 不属于设备、不在快照里，
@@ -220,7 +222,7 @@ fn emit_diagnostics(app: &AppHandle) {
 }
 
 /// 把 `Engine` 当前状态整理成可落盘的 `state.json`。
-pub fn build_state(shared: &Shared) -> StateFile {
+pub fn build_state_file(shared: &HostState) -> StateFile {
     let engine = lock(&shared.engine);
     let notifications = engine.notification_entries();
     let mut file = StateFile {
@@ -258,8 +260,8 @@ pub fn build_state(shared: &Shared) -> StateFile {
 }
 
 /// 落盘：默认走 5s 节流，`force` 用于退出 / 隐藏 / 状态退化。
-pub fn persist(shared: &Shared, now: u64, force: bool) {
-    let file = build_state(shared);
+pub fn persist_state(shared: &HostState, now: u64, force: bool) {
+    let file = build_state_file(shared);
     let mut throttle = lock(&shared.state_throttle);
     let result = if force {
         throttle.flush_now(&shared.state_store, &file, now)
@@ -285,16 +287,16 @@ pub fn engine_config(settings: &Settings) -> EngineConfig {
 /// 由设置构造通知策略。
 pub fn notification_config(settings: &Settings) -> NotificationConfig {
     NotificationConfig {
-        thresholds: settings.notifications.low_thresholds.to_vec(),
+        low_battery_levels: settings.notifications.low_thresholds.to_vec(),
         ..NotificationConfig::default()
     }
     .normalized()
 }
 
 /// 应用一个 Provider 事件，返回是否需要发布快照。
-fn apply_event(shared: &Shared, transport: Transport, event: &ProviderEvent, now: u64) -> bool {
+fn apply_event(shared: &HostState, transport: Transport, event: &ProviderEvent, now: u64) -> bool {
     let mut engine = lock(&shared.engine);
-    let visible = engine.apply_event(event, Some(transport), now).is_visible();
+    let visible = engine.apply_event(event, Some(transport), now).should_publish();
     // 队列深度按 64 的整数倍节流记录：积压时不要每来一条事件就写一条诊断。
     let depth = shared.queue_depth();
     if depth > QUEUE_ALERT_DEPTH && depth.is_multiple_of(QUEUE_ALERT_DEPTH) {
@@ -310,7 +312,7 @@ fn apply_event(shared: &Shared, transport: Transport, event: &ProviderEvent, now
 }
 
 /// 启动宿主事件循环线程。
-pub fn spawn_loop(app: AppHandle, shared: Arc<Shared>, rx: Receiver<HostEvent>) -> JoinHandle<()> {
+pub fn spawn_host_loop(app: AppHandle, shared: Arc<HostState>, rx: Receiver<HostEvent>) -> JoinHandle<()> {
     std::thread::Builder::new()
         .name("voltnest-host".into())
         .spawn(move || {
@@ -327,7 +329,7 @@ pub fn spawn_loop(app: AppHandle, shared: Arc<Shared>, rx: Receiver<HostEvent>) 
 
                 match rx.recv_timeout(std::time::Duration::from_millis(wait)) {
                     Ok(HostEvent::Provider { transport, event }) => {
-                        shared.note_dequeued();
+                        shared.mark_dequeued();
                         dirty |= apply_event(&shared, transport, &event, clock::now_utc_ms());
                     }
                     Ok(HostEvent::Wake) => dirty = true,
@@ -341,7 +343,7 @@ pub fn spawn_loop(app: AppHandle, shared: Arc<Shared>, rx: Receiver<HostEvent>) 
                 while let Ok(next) = rx.try_recv() {
                     match next {
                         HostEvent::Provider { transport, event } => {
-                            shared.note_dequeued();
+                            shared.mark_dequeued();
                             dirty |= apply_event(&shared, transport, &event, clock::now_utc_ms());
                         }
                         HostEvent::Wake => dirty = true,
@@ -363,7 +365,7 @@ pub fn spawn_loop(app: AppHandle, shared: Arc<Shared>, rx: Receiver<HostEvent>) 
                 if let Some(at) = deadline
                     && now >= at
                 {
-                    publish(&app, &shared, now);
+                    publish_snapshot(&app, &shared, now);
                     deadline = None;
                     dirty = false;
                 }

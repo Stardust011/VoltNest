@@ -11,8 +11,12 @@ pub mod dareu;
 pub mod mchose;
 pub mod rapoo;
 
+/// 厂商私有校验和（品牌模块专用，不对外暴露）。
+pub(crate) mod checksum;
+
 use crate::spec::{BrandSpec, SpecError};
 use crate::table::{DeviceTable, Entry};
+use std::collections::HashSet;
 use std::sync::OnceLock;
 use voltnest_provider::ProviderProfile;
 
@@ -44,19 +48,31 @@ impl Registry {
     }
 
     /// 用给定品牌列表建立注册表（测试注入自定义品牌时使用）。
+    ///
+    /// 除顶层描述外，每个品牌的 [`BrandSpec::variants`] 也会逐份校验：变体只在 `route` 里用到，
+    /// 少写一份单测就没人管它的下标越界 —— 而这类错误的表现是「读不出电量」，
+    /// 比启动失败难查一个数量级。
     pub fn build(specs: &'static [&'static BrandSpec]) -> Result<Self, SpecError> {
         let mut brands = Vec::with_capacity(specs.len());
+        let mut seen_ids: HashSet<&'static str> = HashSet::new();
         for spec in specs {
             spec.validate()?;
+            if !seen_ids.insert(spec.id) {
+                return Err(SpecError::DuplicateBrandId { brand: spec.id });
+            }
+            for variant in spec.variants {
+                variant.validate()?;
+                // 品牌标识不参与匹配，但它是日志与诊断的唯一线索：重复即分不清是哪套协议出的问题。
+                if !seen_ids.insert(variant.id) {
+                    return Err(SpecError::DuplicateBrandId { brand: variant.id });
+                }
+            }
             let table = DeviceTable::parse(spec.device_table_json).map_err(|detail| {
                 SpecError::DeviceTable {
                     brand: spec.id,
                     detail,
                 }
             })?;
-            if brands.iter().any(|b: &Brand| b.spec.id == spec.id) {
-                return Err(SpecError::DuplicateBrandId { brand: spec.id });
-            }
             // 精确匹配必须唯一：同一 VID:PID 落到两品牌时型号名与字段位置会随枚举顺序漂移，属配置错误，不能拖到运行期。
             for other in &brands {
                 let other: &Brand = other;
@@ -88,12 +104,37 @@ impl Registry {
             .find_map(|b| b.table.lookup(vid, pid).map(|e| (b, e)))
     }
 
-    /// 全部品牌的节奏都必须落在家族声明的预算内。
+    /// 全部品牌的节奏都必须落在家族声明的预算内（含每个品牌的变体协议）。
     pub fn validate_against(&self, profile: &ProviderProfile) -> Result<(), SpecError> {
         for b in &self.brands {
             b.spec.validate_against(profile)?;
+            for variant in b.spec.variants {
+                variant.validate_against(profile)?;
+            }
         }
         Ok(())
+    }
+}
+
+/// 品牌模块单测的共享构造器（`route` 分派只读型号表附加字段，故只需造出这些字段）。
+#[cfg(test)]
+pub(crate) mod test_support {
+    use crate::table::Entry;
+    use std::collections::HashMap;
+
+    /// 造一条只带 `key = value` 附加字段的型号表条目；`value` 为 `None` 时字段缺失。
+    pub(crate) fn entry_with(key: &str, value: Option<serde_json::Value>) -> Entry {
+        let mut extra = HashMap::new();
+        if let Some(value) = value {
+            extra.insert(key.to_string(), value);
+        }
+        Entry {
+            name: None,
+            vendor_device_id: None,
+            device_type: String::new(),
+            mode: String::new(),
+            extra,
+        }
     }
 }
 
@@ -147,8 +188,11 @@ mod tests {
             id: "broken",
             label: "Broken",
             usage_page: 0xFFB4,
+            usage_page_alt: None,
+            usage: None,
             usage_page_write: None,
-            transport: crate::spec::ReplyTransport::Push,
+            reassembly: None,
+            transport: crate::spec::ReplyTransport::Listen,
             reply_inverted: false,
             clamp_percent: false,
             frame: crate::spec::FrameLayout {
@@ -160,16 +204,88 @@ mod tests {
                 fixed_payload_len: 4,
             },
             battery: crate::spec::BatteryFields {
-                cmd: 0x01,
+                cmd: Some(0x01),
                 subtag: None,
                 percent_index: 0,
                 charging: None,
             },
+            listen: None,
             request: None,
+            ack: None,
+            fallback_report_id: None,
             expected_interval_ms: 30_000,
             device_table_json: ajazz::SPEC.device_table_json,
+            variants: &[],
+            route: None,
         };
         static LIST: [&BrandSpec; 1] = [&BROKEN];
         assert!(Registry::build(&LIST).is_err());
+    }
+
+    /// 变体协议也必须在启动前逐份校验：越界下标若不在这里拦，就会变成「读不出电量」。
+    #[test]
+    fn build_rejects_broken_variant() {
+        static BAD_VARIANT: BrandSpec = BrandSpec {
+            id: "bad-variant",
+            label: "坏变体",
+            // 头体重叠：命令字落在 payload 内（payload 从 cmd_index 处开始）。
+            frame: crate::spec::FrameLayout {
+                payload_offset: 1,
+                ..ajazz::SPEC.frame
+            },
+            ..ajazz::SPEC
+        };
+        static WITH_BAD: BrandSpec = BrandSpec {
+            id: "with-bad-variant",
+            label: "带坏变体的品牌",
+            variants: &[&BAD_VARIANT],
+            ..ajazz::SPEC
+        };
+        static LIST: [&BrandSpec; 1] = [&WITH_BAD];
+        assert_eq!(
+            Registry::build(&LIST).err(),
+            Some(SpecError::HeaderOverlap {
+                brand: "bad-variant",
+                cmd_index: 1,
+                payload_offset: 1,
+            })
+        );
+    }
+
+    /// 变体 id 与品牌标识共用一个命名空间：重名等于日志里分不清哪套协议出事。
+    #[test]
+    fn build_rejects_duplicate_variant_id() {
+        // 变体 id 与自己的品牌标识重名。
+        static CLONE: BrandSpec = BrandSpec {
+            id: "dup-brand",
+            label: "同名变体",
+            ..ajazz::SPEC
+        };
+        static WITH_DUP: BrandSpec = BrandSpec {
+            id: "dup-brand",
+            label: "重名品牌",
+            variants: &[&CLONE],
+            ..ajazz::SPEC
+        };
+        static LIST: [&BrandSpec; 1] = [&WITH_DUP];
+        assert_eq!(
+            Registry::build(&LIST).err(),
+            Some(SpecError::DuplicateBrandId { brand: "dup-brand" })
+        );
+    }
+
+    /// 顶层 4 份 + 变体 12 份全部进注册表：新增变体必须登记，否则启动校验覆盖不到它。
+    #[test]
+    fn every_variant_is_registered_and_valid() {
+        let reg = Registry::embedded();
+        let total: usize = reg.brands().iter().map(|b| 1 + b.spec.variants.len()).sum();
+        assert_eq!(total, 16, "4 顶层 + 3 达尔优 + 5 迈从 + 4 雷柏");
+        for b in reg.brands() {
+            for variant in b.spec.variants {
+                assert!(variant.validate().is_ok(), "{} 非法", variant.id);
+                assert_ne!(variant.id, b.spec.id, "变体不得与品牌标识重名");
+            }
+        }
+        assert!(reg.validate_against(&HID_VBAS).is_ok());
     }
 }

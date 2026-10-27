@@ -18,7 +18,6 @@ export interface DeviceDto {
   isCharging: boolean | null;
   state: DeviceState;
   lastValidAtMs: number | null;
-  lastPushAtMs: number | null;
   lastError: string | null;
 }
 
@@ -71,7 +70,7 @@ export interface TransportStatusDto {
   queuedEvents: number;
 }
 
-export interface NotificationStateDto {
+export interface NotificationNodeDto {
   // 节点覆盖的设备标识：合并卡的多条链路合成一个节点，主成员在前。
   deviceIds: string[];
   threshold: number;
@@ -83,7 +82,7 @@ export interface NotificationStateDto {
 export interface DiagnosticsDto {
   events: DiagEventDto[];
   transports: TransportStatusDto[];
-  notifications: NotificationStateDto[];
+  notifications: NotificationNodeDto[];
   autostartRegistered: boolean;
   aumidRegistered: boolean;
   dataRoot: string;

@@ -9,22 +9,22 @@ use voltnest_provider::{Transport, clock};
 use voltnest_storage::Settings;
 
 use crate::dto::{
-    DiagEventDto, DiagnosticsDto, NotificationStateDto, OnboardingChoice, SettingsDto,
+    DiagEventDto, DiagnosticsDto, NotificationNodeDto, OnboardingChoice, SettingsDto,
     TransportStatusDto,
 };
-use crate::host::{self, HostEvent, Shared, lock};
+use crate::host::{self, HostEvent, HostState, lock};
 use crate::supervisor::SupervisorCmd;
 use crate::{notification, tray};
 
 /// 当前全量快照。
 #[tauri::command]
-pub fn get_snapshot(shared: State<'_, Arc<Shared>>) -> Snapshot {
+pub fn get_snapshot(shared: State<'_, Arc<HostState>>) -> Snapshot {
     host::snapshot(&shared)
 }
 
 /// 当前设置。
 #[tauri::command]
-pub fn get_settings(shared: State<'_, Arc<Shared>>) -> SettingsDto {
+pub fn get_settings(shared: State<'_, Arc<HostState>>) -> SettingsDto {
     SettingsDto::from_settings(&lock(&shared.settings))
 }
 
@@ -32,7 +32,7 @@ pub fn get_settings(shared: State<'_, Arc<Shared>>) -> SettingsDto {
 #[tauri::command]
 pub fn update_settings(
     settings: SettingsDto,
-    shared: State<'_, Arc<Shared>>,
+    shared: State<'_, Arc<HostState>>,
 ) -> Result<SettingsDto, String> {
     let next = write_settings(&shared, |current| settings.apply_to(current))?;
     notify_wake(&shared);
@@ -43,7 +43,7 @@ pub fn update_settings(
 
 /// 诊断页数据。
 #[tauri::command]
-pub fn get_diagnostics(shared: State<'_, Arc<Shared>>) -> DiagnosticsDto {
+pub fn get_diagnostics(shared: State<'_, Arc<HostState>>) -> DiagnosticsDto {
     let (events, notifications) = {
         let engine = lock(&shared.engine);
         let events: Vec<DiagEventDto> = engine
@@ -52,10 +52,10 @@ pub fn get_diagnostics(shared: State<'_, Arc<Shared>>) -> DiagnosticsDto {
             .into_iter()
             .map(DiagEventDto::from)
             .collect();
-        let notifications: Vec<NotificationStateDto> = engine
+        let notifications: Vec<NotificationNodeDto> = engine
             .notification_nodes(clock::now_utc_ms())
             .into_iter()
-            .map(NotificationStateDto::from)
+            .map(NotificationNodeDto::from)
             .collect();
         (events, notifications)
     };
@@ -86,7 +86,7 @@ pub fn get_diagnostics(shared: State<'_, Arc<Shared>>) -> DiagnosticsDto {
 
 /// 手动重启某个采集线程组（诊断页按钮）。
 #[tauri::command]
-pub fn restart_transport(transport: String, shared: State<'_, Arc<Shared>>) -> Result<(), String> {
+pub fn restart_transport(transport: String, shared: State<'_, Arc<HostState>>) -> Result<(), String> {
     let Some(kind) = Transport::from_prefix(&transport) else {
         return Err(format!("未知的 transport：{transport}"));
     };
@@ -111,12 +111,12 @@ pub fn restart_transport(transport: String, shared: State<'_, Arc<Shared>>) -> R
 /// 发送一条测试通知。
 #[tauri::command]
 pub fn test_notification(app: AppHandle) -> Result<(), String> {
-    notification::test(&app)
+    notification::send_test_notification(&app)
 }
 
 /// 开/关开机自启。返回**注册表实际状态**而非请求值：写 `HKCU\...\Run` 可能被组策略/安全软件拦掉，前端用返回值回拨开关，避免「界面显示已开启、实际不自启」。
 #[tauri::command]
-pub fn set_autostart(enabled: bool, shared: State<'_, Arc<Shared>>) -> Result<bool, String> {
+pub fn set_autostart(enabled: bool, shared: State<'_, Arc<HostState>>) -> Result<bool, String> {
     let actual = apply_autostart(enabled)?;
     write_settings(&shared, |current| current.autostart = actual)?;
     Ok(actual)
@@ -126,7 +126,7 @@ pub fn set_autostart(enabled: bool, shared: State<'_, Arc<Shared>>) -> Result<bo
 #[tauri::command]
 pub fn complete_onboarding(
     choice: OnboardingChoice,
-    shared: State<'_, Arc<Shared>>,
+    shared: State<'_, Arc<HostState>>,
 ) -> Result<SettingsDto, String> {
     let actual = apply_autostart(choice.autostart).unwrap_or_else(|err| {
         log::warn!("引导期间写启动项失败: {err}");
@@ -149,12 +149,12 @@ pub fn show_panel(app: AppHandle) {
 
 /// 收进托盘：隐藏主窗口，进程与采集线程照旧。前端不自己调 `hide()` —— 那样会绕开落盘，最后几秒的电量变化可能丢。
 #[tauri::command]
-pub fn hide_to_tray(app: AppHandle, shared: State<'_, Arc<Shared>>) -> Result<(), String> {
+pub fn hide_to_tray(app: AppHandle, shared: State<'_, Arc<HostState>>) -> Result<(), String> {
     let Some(window) = app.get_webview_window("main") else {
         return Err("主窗口不存在".to_string());
     };
     window.hide().map_err(|e| format!("隐藏窗口失败：{e}"))?;
-    host::persist(&shared, clock::now_utc_ms(), true);
+    host::persist_state(&shared, clock::now_utc_ms(), true);
     Ok(())
 }
 
@@ -165,12 +165,12 @@ pub fn quit_app(app: AppHandle) {
     app.exit(0);
 }
 
-fn notify_wake(shared: &Shared) {
+fn notify_wake(shared: &HostState) {
     let _ = shared.tx.send(HostEvent::Wake);
 }
 
 /// 提示前端「诊断数据已变」。
-fn notify_diagnostics(shared: &Shared) {
+fn notify_diagnostics(shared: &HostState) {
     let _ = shared.tx.send(HostEvent::Diagnostics);
 }
 
@@ -181,7 +181,7 @@ fn apply_autostart(enabled: bool) -> Result<bool, String> {
 }
 
 /// 读-改-写设置：内存副本 → 同步状态机 → 落盘，任一步失败都不留半成品。
-fn write_settings(shared: &Shared, mutate: impl FnOnce(&mut Settings)) -> Result<Settings, String> {
+fn write_settings(shared: &HostState, mutate: impl FnOnce(&mut Settings)) -> Result<Settings, String> {
     let mut next = lock(&shared.settings).clone();
     mutate(&mut next);
     // 先落盘再换内存：写盘失败时界面保持旧值，不出现「看起来改了、重启又变回去」。

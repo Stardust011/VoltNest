@@ -22,8 +22,8 @@ pub use engine::{Engine, EngineConfig, SeedEntry, Transition};
 pub use humanize::humanize_ago;
 pub use normalize::normalize;
 pub use notify::{
-    LowBatteryAlert, NotificationBook, NotificationConfig, NotificationEntry, NotificationNode,
+    LowBatteryNotification, NotificationBook, NotificationConfig, NotificationEntry, NotificationNode,
 };
-pub use record::{Record, UNREADABLE_KINDS_MAX};
-pub use snapshot::{CardDto, DeviceDto, Snapshot, TrayDto};
+pub use record::{DeviceRecord, UNREADABLE_KINDS_MAX};
+pub use snapshot::{CardDto, DeviceDto, Snapshot, TraySnapshotDto};
 pub use state::DeviceState;

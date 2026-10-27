@@ -330,7 +330,7 @@ fn clock_backward_does_not_underflow_and_clears_cooldown() {
     let mut e = engine();
     feed(&mut e, &hid_arrived(), Transport::Hid, T0);
     feed(&mut e, &hid_reading(15), Transport::Hid, T0);
-    assert_eq!(e.take_alerts().len(), 1, "首次低电量必须提醒");
+    assert_eq!(e.take_notifications().len(), 1, "首次低电量必须提醒");
 
     e.tick(T0 + 1_000);
     // 系统时间被调早 1 小时。

@@ -1,7 +1,7 @@
 //! 品牌：AJAZZ（W1 / 星闪代，VID `0x7768`）。协议事实来自本机实测：
 //! - 读通道 `UsagePage = 0xFFB2`（MI_01 / Col02），报告 ≥64 字节；
 //! - `0xFFB1` 是只写通道，读句柄持续报错 → v1 不打开；
-//! - 电量来自 `cmd = 0xFA` 推送帧，约 30s 一次，通常两帧一组：
+//! - 电量来自 `cmd = 0xFA` 监听帧，约 30s 一次，通常两帧一组：
 //!
 //! ```text
 //! [0]        报告 ID = 0x06
@@ -14,7 +14,7 @@
 //!
 //! - `0xFFB3` 在验证设备上无数据 → v1 不实现。
 //!
-//! `request: None` 是**实测结论**而非缺省：该设备纯推送，不发任何报文也能拿到电量。若某固件只在被查询时才回帧，把 `request` 换成 [`crate::spec::RequestTemplate`] 即可，运行时无需改动。
+//! `request: None` 是**实测结论**而非缺省：该设备纯监听，不发任何报文也能拿到电量。若某固件只在被查询时才回帧，把 `request` 换成 [`crate::spec::RequestTemplate`] 即可，运行时无需改动。
 
 use crate::spec::{BatteryFields, BrandSpec, ChargingField, FrameLayout, ReplyTransport};
 
@@ -23,8 +23,11 @@ pub const SPEC: BrandSpec = BrandSpec {
     id: "ajazz",
     label: "AJAZZ（W1 / 星闪代）",
     usage_page: 0xFFB2,
+    usage_page_alt: None,
+    usage: None,
     usage_page_write: Some(0xFFB1),
-    transport: ReplyTransport::Push,
+    reassembly: None,
+    transport: ReplyTransport::Listen,
     reply_inverted: false,
     clamp_percent: false,
     frame: FrameLayout {
@@ -35,18 +38,28 @@ pub const SPEC: BrandSpec = BrandSpec {
         fixed_payload_len: 3,
     },
     battery: BatteryFields {
-        cmd: 0xFA,
+        cmd: Some(0xFA),
         subtag: Some((0, 0x03)),
         percent_index: 1,
         charging: Some(ChargingField {
+            mask: 0xFF,
             index: 2,
             true_values: &[0x01],
+            error_from: None,
         }),
     },
-    // 纯推送：不向设备发任何报文。
+    // 纯监听：不向设备发任何报文。
+    listen: None,
     request: None,
+    // 该固件无应答确认位约定。
+    ack: None,
+    // 报告 ID 不随连接方式变化。
+    fallback_report_id: None,
     expected_interval_ms: 30_000,
     device_table_json: include_str!("../../data/mappings/ajazz.json"),
+    // 单协议品牌：没有变体，也不按型号表字段分派。
+    variants: &[],
+    route: None,
 };
 
 #[cfg(test)]

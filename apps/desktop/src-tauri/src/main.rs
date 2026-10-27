@@ -23,8 +23,8 @@ use voltnest_platform::single_instance::{Instance, acquire};
 use voltnest_provider::clock;
 use voltnest_storage::{DataPaths, SettingsStore, StateStore};
 
-use crate::host::{Shared, lock};
-use crate::supervisor::{Spec, SupervisorCmd};
+use crate::host::{HostState, lock};
+use crate::supervisor::{TransportSpec, SupervisorCmd};
 
 fn main() {
     // 1. 单实例：第二个进程给首实例发信号后立刻退出，绝不创建窗口。
@@ -62,7 +62,7 @@ fn main() {
     let state_store = StateStore::new(paths.clone());
 
     let (tx, rx) = mpsc::channel();
-    let shared = Shared::new(
+    let shared = HostState::new(
         paths.clone(),
         loaded.settings.clone(),
         settings_store,
@@ -124,19 +124,19 @@ fn main() {
             }
 
             // 5.2 宿主事件循环：唯一持有 Engine 的地方。
-            host::spawn_loop(handle.clone(), Arc::clone(&shared), rx);
+            host::spawn_host_loop(handle.clone(), Arc::clone(&shared), rx);
 
             // 5.3 Provider 线程组监管。
             let mut supervisors = HashMap::new();
-            for spec in [Spec::hid(), Spec::ble()] {
+            for spec in [TransportSpec::hid(), TransportSpec::ble()] {
                 let transport = spec.transport;
-                let sender = supervisor::start(Arc::clone(&shared), spec);
+                let sender = supervisor::spawn_supervisor(Arc::clone(&shared), spec);
                 supervisors.insert(transport, sender);
             }
             *lock(&shared.supervisors) = supervisors;
 
             // 5.4 首帧快照：窗口显示时就已经有数据，不会先闪一下空列表。
-            host::publish(&handle, &shared, clock::now_utc_ms());
+            host::publish_snapshot(&handle, &shared, clock::now_utc_ms());
 
             // 5.5 二次启动唤醒。
             if let Some(guard) = guard {
@@ -166,8 +166,8 @@ fn main() {
                 // 真要退出有标题栏 × 和托盘菜单两条明路。
                 api.prevent_close();
                 let _ = window.hide();
-                let shared = window.app_handle().state::<Arc<Shared>>();
-                host::persist(&shared, clock::now_utc_ms(), true);
+                let shared = window.app_handle().state::<Arc<HostState>>();
+                host::persist_state(&shared, clock::now_utc_ms(), true);
             }
         })
         .build(tauri::generate_context!())
@@ -184,7 +184,7 @@ fn main() {
                 let _ = sender.send(SupervisorCmd::Stop);
             }
             // 退出前强制落盘，别让最后 5s 内的电量变化消失。
-            host::persist(&shared_for_exit, clock::now_utc_ms(), true);
+            host::persist_state(&shared_for_exit, clock::now_utc_ms(), true);
             let _ = app;
         }
     });

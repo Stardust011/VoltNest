@@ -10,6 +10,7 @@
       "name": "VT0",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -19,6 +20,7 @@
       "name": "VT3S",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -28,6 +30,7 @@
       "name": "VT3",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -37,6 +40,7 @@
       "name": "VT7",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -46,6 +50,7 @@
       "name": "VT9",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -55,6 +60,7 @@
       "name": "VT1",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -64,6 +70,7 @@
       "name": "VT7 MAX",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -73,6 +80,7 @@
       "name": "VT3 MAX",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -82,6 +90,7 @@
       "name": "VT9 MAX",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -91,6 +100,7 @@
       "name": "VT0 MAX",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -100,6 +110,7 @@
       "name": "VT3S MAX",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -109,6 +120,7 @@
       "name": "VT2",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -118,6 +130,7 @@
       "name": "VT2 MAX",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -127,6 +140,7 @@
       "name": "VT1 MAX",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -136,6 +150,7 @@
       "name": "VT0 MAX MASTER",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -145,6 +160,7 @@
       "name": "VT3S MAX MASTER",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -154,6 +170,7 @@
       "name": "VT6",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -163,6 +180,7 @@
       "name": "VT6 MAX",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -172,6 +190,7 @@
       "name": "VT9S V2",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -181,6 +200,7 @@
       "name": "VT7S V2",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -190,6 +210,7 @@
       "name": "VT4 V2",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -199,6 +220,7 @@
       "name": "VT2S V2",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -208,6 +230,7 @@
       "name": "VT7 V2",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -217,6 +240,7 @@
       "name": "VT3 V2",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -226,6 +250,7 @@
       "name": "VT3S V2",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -235,6 +260,7 @@
       "name": "VT9 V2",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -244,6 +270,7 @@
       "name": "VT2 V2",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -253,6 +280,7 @@
       "name": "VT1S V2",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -262,6 +290,7 @@
       "name": "VT8 V2",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -271,6 +300,7 @@
       "name": "VT3 MAX MASTER V2",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -280,6 +310,7 @@
       "name": "VT3S MAX MASTER V2",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -289,6 +320,7 @@
       "name": "VT7 MAX MASTER V2",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -298,6 +330,7 @@
       "name": "VT7S MAX MASTER V2",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -307,6 +340,7 @@
       "name": "VT2 ULTRA V2",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "Telink3228C_Mouse",
       "channels": [
         "china_game"
       ]
@@ -315,6 +349,7 @@
       "name": "VT9 MAX MASTER V2",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -324,6 +359,7 @@
       "name": "VT9S MAX MASTER V2",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -333,6 +369,7 @@
       "name": "VT2 MAX MASTER V2",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -342,6 +379,7 @@
       "name": "VT2S MAX MASTER V2",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -351,6 +389,7 @@
       "name": "VT4 MAX MASTER V2",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -360,6 +399,7 @@
       "name": "VT8 MAX MASTER V2",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -369,6 +409,7 @@
       "name": "VT0 Air MAX",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -378,6 +419,7 @@
       "name": "VT3S Air Max",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -387,6 +429,7 @@
       "name": "VT2K MAX",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "global"
       ]
@@ -395,6 +438,7 @@
       "name": "VT3 PRO V2",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -404,6 +448,7 @@
       "name": "VT3S PRO V2",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -413,6 +458,7 @@
       "name": "VT7 PRO V2",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -422,6 +468,7 @@
       "name": "VT7S PRO V2",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -431,6 +478,7 @@
       "name": "VT9 PRO V2",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -440,6 +488,7 @@
       "name": "VT9S PRO V2",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -449,6 +498,7 @@
       "name": "V700diy-98",
       "deviceType": "keyboard",
       "mode": "2.4G",
+      "driver": "TelinkKeyboard",
       "channels": [
         "china_game",
         "global"
@@ -458,6 +508,7 @@
       "name": "V700diy-87",
       "deviceType": "keyboard",
       "mode": "2.4G",
+      "driver": "TelinkKeyboard",
       "channels": [
         "china_game",
         "global"
@@ -467,6 +518,7 @@
       "name": "V700diy-75",
       "deviceType": "keyboard",
       "mode": "2.4G",
+      "driver": "TelinkKeyboard",
       "channels": [
         "china_game",
         "global"
@@ -476,6 +528,7 @@
       "name": "A83 Air",
       "deviceType": "keyboard",
       "mode": "2.4G",
+      "driver": "TelinkKeyboard",
       "channels": [
         "china_game",
         "globle"
@@ -485,6 +538,7 @@
       "name": "V700diy-98",
       "deviceType": "keyboard",
       "mode": "2.4G",
+      "driver": "TelinkKeyboard",
       "channels": [
         "china_game",
         "global"
@@ -494,6 +548,7 @@
       "name": "VT7 SE",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_CH584",
       "channels": [
         "global"
       ]
@@ -502,6 +557,7 @@
       "name": "VT1 SE",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_CH584",
       "channels": [
         "global"
       ]
@@ -510,6 +566,7 @@
       "name": "VT9S MAX V2",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -519,6 +576,7 @@
       "name": "VT7S MAX V2",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -528,6 +586,7 @@
       "name": "VT4 MAX V2",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -537,6 +596,7 @@
       "name": "VT2S MAX V2",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -546,6 +606,7 @@
       "name": "VT7 MAX V2",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -555,6 +616,7 @@
       "name": "VT3 MAX V2",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -564,6 +626,7 @@
       "name": "VT3S MAX V2",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -573,6 +636,7 @@
       "name": "VT9 MAX V2",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -582,6 +646,7 @@
       "name": "VT2 MAX V2",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -591,6 +656,7 @@
       "name": "VT1S MAX V2",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -600,6 +666,7 @@
       "name": "VT8 MAX V2",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -609,6 +676,7 @@
       "name": "VT3 Air MAX V2",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -618,6 +686,7 @@
       "name": "VT3S Air MAX V2",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -627,6 +696,7 @@
       "name": "VT7 Air MAX V2",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -636,6 +706,7 @@
       "name": "VT7S Air MAX V2",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -645,6 +716,7 @@
       "name": "VT9 Air MAX V2",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -654,6 +726,7 @@
       "name": "VT9S Air MAX V2",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -663,6 +736,7 @@
       "name": "VT2 Air MAX V2",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -672,6 +746,7 @@
       "name": "VT2S Air MAX V2",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -681,6 +756,7 @@
       "name": "VT4 Air MAX V2",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -690,6 +766,7 @@
       "name": "VT8 Air MAX V2",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -699,6 +776,7 @@
       "name": "VT2 RT V2",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "LM20RT",
       "channels": [
         "china_game",
         "global"
@@ -708,6 +786,7 @@
       "name": "VT2 RT MASTER V2",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "LM20RT",
       "channels": [
         "china_game",
         "global"
@@ -717,6 +796,7 @@
       "name": "VT0",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -726,6 +806,7 @@
       "name": "VT3S",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -735,6 +816,7 @@
       "name": "VT3",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -744,6 +826,7 @@
       "name": "VT7",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -753,6 +836,7 @@
       "name": "VT9",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -762,6 +846,7 @@
       "name": "VT1",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -771,6 +856,7 @@
       "name": "VT7 MAX",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -780,6 +866,7 @@
       "name": "VT3 MAX",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -789,6 +876,7 @@
       "name": "VT9 MAX",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -798,6 +886,7 @@
       "name": "VT0 MAX",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -807,6 +896,7 @@
       "name": "VT3S MAX",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -816,6 +906,7 @@
       "name": "VT2",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -825,6 +916,7 @@
       "name": "VT2 MAX",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -834,6 +926,7 @@
       "name": "ESM612PRO",
       "deviceType": "mouse",
       "mode": "USB",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_cybercafe"
       ]
@@ -842,6 +935,7 @@
       "name": "ESM622PRO",
       "deviceType": "mouse",
       "mode": "USB",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_cybercafe"
       ]
@@ -850,6 +944,7 @@
       "name": "ESM652PRO",
       "deviceType": "mouse",
       "mode": "USB",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_cybercafe"
       ]
@@ -858,6 +953,7 @@
       "name": "ESM672PRO",
       "deviceType": "mouse",
       "mode": "USB",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_cybercafe"
       ]
@@ -866,6 +962,7 @@
       "name": "ESM622MAX",
       "deviceType": "mouse",
       "mode": "USB",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_cybercafe"
       ]
@@ -874,6 +971,7 @@
       "name": "ESM672MAX",
       "deviceType": "mouse",
       "mode": "USB",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_cybercafe"
       ]
@@ -882,6 +980,7 @@
       "name": "VT1 MAX",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -891,6 +990,7 @@
       "name": "VT0 MAX MASTER",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -900,6 +1000,7 @@
       "name": "VT3S MAX MASTER",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -909,6 +1010,7 @@
       "name": "ESM612ACE",
       "deviceType": "mouse",
       "mode": "USB",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_cybercafe"
       ]
@@ -917,6 +1019,7 @@
       "name": "VT6",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -926,6 +1029,7 @@
       "name": "VT6 MAX",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -935,6 +1039,7 @@
       "name": "VT9S V2",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -944,6 +1049,7 @@
       "name": "VT7S V2",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -953,6 +1059,7 @@
       "name": "VT4 V2",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -962,6 +1069,7 @@
       "name": "VT2S V2",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -971,6 +1079,7 @@
       "name": "VT7 V2",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -980,6 +1089,7 @@
       "name": "VT3 V2",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -989,6 +1099,7 @@
       "name": "VT3S V2",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -998,6 +1109,7 @@
       "name": "VT9 V2",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -1007,6 +1119,7 @@
       "name": "VT2 V2",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -1016,6 +1129,7 @@
       "name": "VT1S V2",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -1025,6 +1139,7 @@
       "name": "VT8 V2",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -1034,6 +1149,7 @@
       "name": "VT3 MAX MASTER V2",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -1043,6 +1159,7 @@
       "name": "VT3S MAX MASTER V2",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -1052,6 +1169,7 @@
       "name": "VT7 MAX MASTER V2",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -1061,6 +1179,7 @@
       "name": "VT7S MAX MASTER V2",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -1070,6 +1189,7 @@
       "name": "VT2 ULTRA V2",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "Telink3228C_Mouse",
       "channels": [
         "china_game"
       ]
@@ -1078,6 +1198,7 @@
       "name": "VT9 MAX MASTER V2",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -1087,6 +1208,7 @@
       "name": "VT9S MAX MASTER V2",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -1096,6 +1218,7 @@
       "name": "VT2 MAX MASTER V2",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -1105,6 +1228,7 @@
       "name": "VT2S MAX MASTER V2",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -1114,6 +1238,7 @@
       "name": "VT4 MAX MASTER V2",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -1123,6 +1248,7 @@
       "name": "VT8 MAX MASTER V2",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -1132,6 +1258,7 @@
       "name": "ESM612MAX",
       "deviceType": "mouse",
       "mode": "USB",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_cybercafe"
       ]
@@ -1140,6 +1267,7 @@
       "name": "VT0 Air MAX",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -1149,6 +1277,7 @@
       "name": "VT3S Air Max",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -1158,6 +1287,7 @@
       "name": "VT2K MAX",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "global"
       ]
@@ -1166,6 +1296,7 @@
       "name": "VT3 PRO V2",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -1175,6 +1306,7 @@
       "name": "VT3S PRO V2",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -1184,6 +1316,7 @@
       "name": "VT7 PRO V2",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -1193,6 +1326,7 @@
       "name": "VT7S PRO V2",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -1202,6 +1336,7 @@
       "name": "VT9 PRO V2",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -1211,6 +1346,7 @@
       "name": "VT9S PRO V2",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -1220,6 +1356,7 @@
       "name": "V700diy-98",
       "deviceType": "keyboard",
       "mode": "2.4G",
+      "driver": "TelinkKeyboard",
       "channels": [
         "china_game",
         "global"
@@ -1229,6 +1366,7 @@
       "name": "V700diy-87",
       "deviceType": "keyboard",
       "mode": "2.4G",
+      "driver": "TelinkKeyboard",
       "channels": [
         "china_game",
         "global"
@@ -1238,6 +1376,7 @@
       "name": "V700diy-75",
       "deviceType": "keyboard",
       "mode": "2.4G",
+      "driver": "TelinkKeyboard",
       "channels": [
         "china_game",
         "global"
@@ -1247,6 +1386,7 @@
       "name": "A83 Air",
       "deviceType": "keyboard",
       "mode": "2.4G",
+      "driver": "TelinkKeyboard",
       "channels": [
         "china_game",
         "globle"
@@ -1256,6 +1396,7 @@
       "name": "ESK900-98RT",
       "deviceType": "keyboard",
       "mode": "USB",
+      "driver": "CH585M",
       "channels": [
         "china_cybercafe"
       ]
@@ -1264,6 +1405,7 @@
       "name": "ESK900-83RT",
       "deviceType": "keyboard",
       "mode": "USB",
+      "driver": "CH585M",
       "channels": [
         "china_cybercafe"
       ]
@@ -1272,6 +1414,7 @@
       "name": "V700diy-98",
       "deviceType": "keyboard",
       "mode": "2.4G",
+      "driver": "TelinkKeyboard",
       "channels": [
         "china_game",
         "global"
@@ -1281,6 +1424,7 @@
       "name": "ESK900-75RT",
       "deviceType": "keyboard",
       "mode": "USB",
+      "driver": "CH585M",
       "channels": [
         "china_cybercafe"
       ]
@@ -1289,6 +1433,7 @@
       "name": "VT68",
       "deviceType": "keyboard",
       "mode": "USB",
+      "driver": "GCOME_AP",
       "channels": [
         "china_game"
       ]
@@ -1297,6 +1442,7 @@
       "name": "VT7 SE",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_CH584",
       "channels": [
         "global"
       ]
@@ -1305,6 +1451,7 @@
       "name": "VT1 SE",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_CH584",
       "channels": [
         "global"
       ]
@@ -1313,6 +1460,7 @@
       "name": "VT9S MAX V2",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -1322,6 +1470,7 @@
       "name": "VT7S MAX V2",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -1331,6 +1480,7 @@
       "name": "VT4 MAX V2",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -1340,6 +1490,7 @@
       "name": "VT2S MAX V2",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -1349,6 +1500,7 @@
       "name": "VT7 MAX V2",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -1358,6 +1510,7 @@
       "name": "VT3 MAX V2",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -1367,6 +1520,7 @@
       "name": "VT3S MAX V2",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -1376,6 +1530,7 @@
       "name": "VT9 MAX V2",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -1385,6 +1540,7 @@
       "name": "VT2 MAX V2",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -1394,6 +1550,7 @@
       "name": "VT1S MAX V2",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -1403,6 +1560,7 @@
       "name": "VT8 MAX V2",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -1412,6 +1570,7 @@
       "name": "VT3 Air MAX V2",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -1421,6 +1580,7 @@
       "name": "VT3S Air MAX V2",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -1430,6 +1590,7 @@
       "name": "VT7 Air MAX V2",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -1439,6 +1600,7 @@
       "name": "VT7S Air MAX V2",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -1448,6 +1610,7 @@
       "name": "VT9 Air MAX V2",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -1457,6 +1620,7 @@
       "name": "VT9S Air MAX V2",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -1466,6 +1630,7 @@
       "name": "VT2 Air MAX V2",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -1475,6 +1640,7 @@
       "name": "VT2S Air MAX V2",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -1484,6 +1650,7 @@
       "name": "VT4 Air MAX V2",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -1493,6 +1660,7 @@
       "name": "VT8 Air MAX V2",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "VT_nrf54L",
       "channels": [
         "china_game",
         "global"
@@ -1502,6 +1670,7 @@
       "name": "VT2 RT V2",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "LM20RT",
       "channels": [
         "china_game",
         "global"
@@ -1511,6 +1680,7 @@
       "name": "VT2 RT MASTER V2",
       "deviceType": "mouse",
       "mode": "2.4G",
+      "driver": "LM20RT",
       "channels": [
         "china_game",
         "global"
@@ -1520,6 +1690,7 @@
       "name": "ESK800-75RT",
       "deviceType": "keyboard",
       "mode": "USB",
+      "driver": "OHID",
       "channels": [
         "china_cybercafe"
       ]
