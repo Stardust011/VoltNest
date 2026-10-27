@@ -95,6 +95,10 @@ Tauri 2 会自动把同目录的 `tauri.linux.conf.json` 合并进 `tauri.conf.j
 所以 Linux 侧不动基础配置、Windows 侧仍是 NSIS。deb / AppImage 的运行期依赖由 Tauri 依据链接到的库
 自动生成，因此不在配置里手写 `depends`（手写会在 Ubuntu 24.04 这类 `t64` 重命名的发行版上写错）。
 
+CI 侧：`git tag v0.1.0 && git push origin v0.1.0` 会双平台打包并挂到 Draft Release
+（`.github/workflows/release.yml`，v1 不签名，需手动发布）；`cargo-deny` 与工具链漂移扫描每周一跑
+（`.github/workflows/security.yml`）。
+
 ## Linux 运行期前提
 
 - **HID（2.4G 接收器）**：读 `/dev/hidraw*` 需要当前用户有权限（发行版通常用 `plugdev` 组或 udev 规则放行）。
