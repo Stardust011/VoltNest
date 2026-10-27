@@ -43,6 +43,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import datetime
 import gzip
 import io
 import json
@@ -607,10 +608,15 @@ def build_output(models: list[dict], *, key_format: str, source: dict, mouse_vid
               + (" ..." if len(conflicted_keys) > 5 else ""), file=sys.stderr)
 
     return {
-        "config_version": source.get("web_version") or "1.0.0",
+        "config_version": fetch_stamp(),
         "source": source,
         "devices": dict(sorted(devices.items())),
     }
+
+
+def fetch_stamp() -> str:
+    """抓取时刻（UTC，精确到小时），作为 config_version。"""
+    return datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H")
 
 
 # --------------------------------------------------------------------------
@@ -731,7 +737,7 @@ def main(argv: list[str] | None = None) -> int:
                       indent=None if args.compact else 2,
                       separators=(",", ":") if args.compact else None)
     if args.output:
-        with open(args.output, "w", encoding="utf-8") as fh:
+        with open(args.output, "w", encoding="utf-8", newline="\n") as fh:
             fh.write(text + "\n")
         if not args.quiet:
             print(f"[info] 已写入 {args.output}（{len(result['devices'])} 个设备标识）", file=sys.stderr)
