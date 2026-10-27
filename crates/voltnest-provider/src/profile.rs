@@ -1,8 +1,8 @@
 //! Provider 能力声明：能力与节奏是编译期常量，不是 `settings.json`。
 //! 型号表加一行不改这里，而阈值链与状态机不变量强耦合，写坏即「永不过期」。
 //!
-//! 可调数值（三档阈值链）集中在 `data/profiles.json`，
-//! 由 `build.rs` 生成本文件的常量；节奏与充电语义仍写死在下方声明里。
+//! 可调数值（采集节奏、出现检测间隔、三档阈值链）集中在 `data/profiles.json`，
+//! 由 `build.rs` 生成本文件的常量；充电语义仍写死在下方声明里。
 
 use crate::transport::Transport;
 
@@ -10,7 +10,10 @@ mod generated {
     include!(concat!(env!("OUT_DIR"), "/profiles_generated.rs"));
 }
 
-use generated::{BLE_BAS_THRESHOLDS, HID_VBAS_THRESHOLDS};
+use generated::{
+    BLE_BAS_CADENCE, BLE_BAS_PRESENCE_POLL_MS, BLE_BAS_THRESHOLDS, HID_VBAS_CADENCE,
+    HID_VBAS_PRESENCE_POLL_MS, HID_VBAS_THRESHOLDS,
+};
 
 /// 充电状态的可获得性。
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -394,7 +397,7 @@ impl core::fmt::Display for ProfileError {
 
 impl std::error::Error for ProfileError {}
 
-/// `hid-vbas` 的能力声明。三档阈值链在 `data/profiles.json`，节奏在此固定，有测试断言防止漂移。
+/// `hid-vbas` 的能力声明。节奏与三档阈值链在 `data/profiles.json`，有测试断言防止漂移。
 /// 家族级能力声明只有一份：品牌再多也不新增家族；品牌各自的上报节奏由
 /// `voltnest-hid` 的品牌描述声明，并在启动期与本声明做兼容校验。
 ///
@@ -405,31 +408,23 @@ impl std::error::Error for ProfileError {}
 pub static HID_VBAS: ProviderProfile = ProviderProfile {
     family_id: crate::FAMILY_HID_VBAS,
     transport: Transport::Hid,
-    cadence: Cadence::Polled {
-        interval_ms: 30_000,
-    },
+    cadence: HID_VBAS_CADENCE,
     thresholds: HID_VBAS_THRESHOLDS,
     charging: ChargingSupport::FromReading,
     // 内部常量，不进 settings.json。
-    presence_poll_ms: Some(5_000),
+    presence_poll_ms: HID_VBAS_PRESENCE_POLL_MS,
 };
 
-/// `ble-bas` 的能力声明。三档阈值链在 `data/profiles.json`。
+/// `ble-bas` 的能力声明。节奏与三档阈值链在 `data/profiles.json`。
 pub static BLE_BAS: ProviderProfile = ProviderProfile {
     family_id: crate::FAMILY_BLE_BAS,
     transport: Transport::Ble,
-    cadence: Cadence::NotifyWithPoll {
-        poll: PollPolicy {
-            min_ms: 60_000,
-            max_ms: 300_000,
-            default_ms: 60_000,
-        },
-    },
+    cadence: BLE_BAS_CADENCE,
     thresholds: BLE_BAS_THRESHOLDS,
     // 0x2BF0 / 0x2BEA 未实现，0x2BED 失真（BLE 充电状态不可用）。
     charging: ChargingSupport::Unavailable,
-    // 出现由 60s 巡检天然覆盖。
-    presence_poll_ms: None,
+    // 出现由兜底轮询天然覆盖。
+    presence_poll_ms: BLE_BAS_PRESENCE_POLL_MS,
 };
 
 /// 启动期自检，断言 `(family_id, transport)` 唯一。违反时宿主不启动该 Provider，
