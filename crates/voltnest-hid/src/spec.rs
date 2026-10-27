@@ -392,8 +392,11 @@ pub struct BrandSpec {
     pub fallback_report_id: Option<u8>,
     /// 实测的读数期望间隔（毫秒）：纯监听品牌是设备自发上报的周期，查询品牌是宿主的查询周期。
     pub expected_interval_ms: u64,
-    /// 型号表快照（`VID:PID → 型号`），编译期嵌入。
-    pub device_table_json: &'static str,
+    /// 型号表文件名（相对型号表目录，如 `ajazz.json`），**运行时**由 [`crate::mappings`] 从文件系统加载。
+    ///
+    /// 不再编译期嵌入：目录定位规则见 [`crate::mappings`]（安装包须随二进制分发该目录）。
+    /// 多个协议共用一份表时（达尔优 3 套 / 迈从 5 套 / 雷柏 4 套）各写同一个文件名。
+    pub device_table_file: &'static str,
     /// 本品牌下**其它**已接入的协议描述（不含自身）。`&[]` = 单协议品牌。
     ///
     /// 只给注册表用：启动时逐份 [`BrandSpec::validate`]，把「新增一台变体却忘了写测试」
@@ -798,6 +801,9 @@ pub enum SpecError {
         second: &'static str,
     },
     /// 型号表无法解析。
+    ///
+    /// 注意：内置注册表现按**品牌粒度跳过**坏表（见 [`crate::brands::Registry::skipped`]），
+    /// 不再用它表达「某份表坏了」；保留此变体供自定义装配方与诊断信息使用。
     DeviceTable {
         /// 品牌标识。
         brand: &'static str,

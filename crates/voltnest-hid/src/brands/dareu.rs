@@ -21,9 +21,6 @@ use crate::spec::{
 };
 use crate::table::Entry;
 
-/// 型号表快照（编译期嵌入，三套协议共用一份）。
-const TABLE: &str = include_str!("../../data/mappings/dareu.json");
-
 /// 匠盟查询报文载荷：末字节 `[15]` 是厂商校验和。
 ///
 /// `CheckSum(buffer)`（`jmdevice.js:1449`）= `0x55 - Σ(buffer[0..15])`，其中 `buffer[0..2]`
@@ -89,7 +86,7 @@ pub const JM: BrandSpec = BrandSpec {
     ack: None,
     fallback_report_id: None,
     expected_interval_ms: 30_000,
-    device_table_json: TABLE,
+    device_table_file: "dareu.json",
     variants: &[],
     route: None,
 };
@@ -155,7 +152,7 @@ pub const TG: BrandSpec = BrandSpec {
     }),
     fallback_report_id: Some(0x07),
     expected_interval_ms: 30_000,
-    device_table_json: TABLE,
+    device_table_file: "dareu.json",
     variants: &[],
     route: None,
 };

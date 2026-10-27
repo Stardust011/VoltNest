@@ -1,0 +1,2 @@
+# 型号表由 mappings/scripts 生成，跨平台必须保持 LF，否则月度抓取会产生整文件假 diff。
+crates/voltnest-hid/data/mappings/*.json text eol=lf
