@@ -1,10 +1,16 @@
 name: Release
 
 # release-please 按 Conventional Commits 在 master 上维护 release PR（CHANGELOG + 版本号）；
-# PR 合并后建 tag 与 Draft Release，同一次 run 里矩阵打包把安装包挂上去。
+# 合并 release PR 的那次 master push 建 tag 与 Draft Release，同一次 run 里矩阵打包把安装包挂上去。
+#
+# 三个入口：
+# - master push：release-please 开/更新 release PR；若这次 push 就是合并 PR，则发布。
+# - workflow_dispatch：手动跑一次，可填 release-as 强制版本（如 0.2.0），建的仍是 release PR。
+# - v*.*.* tag push：tag 已存在，跳过 release-please，直接按该 tag 重新打包挂资产。
 on:
   push:
     branches: [master]
+    tags: ["v[0-9]+.[0-9]+.[0-9]+"]
   workflow_dispatch:
     inputs:
       release-as:
@@ -27,14 +33,16 @@ concurrency:
 jobs:
   release-please:
     name: release-please
+    # tag push 时 tag 已存在，没有 PR 可维护，交给 bundle 直接按 tag 打包。
+    if: github.ref_type == 'branch'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     outputs:
-      released: ${{ steps.release.outputs.release_created }}
-      tag: ${{ steps.release.outputs.tag_name }}
+      released: ${{ steps.release-note.outputs.release_created }}
+      tag: ${{ steps.release-note.outputs.tag_name }}
     steps:
       - uses: googleapis/release-please-action@v5
-        id: release
+        id: release-note
         with:
           # 用 GITHUB_TOKEN 开的 PR 不会触发 CI；配了 RELEASE_PLEASE_TOKEN（PAT）才会。
           token: ${{ secrets.RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN }}
@@ -46,7 +54,10 @@ jobs:
   bundle:
     name: bundle (${{ matrix.target }})
     needs: release-please
-    if: needs.release-please.outputs.released == 'true'
+    # release-please 在 tag push 时被跳过，outputs 为空，故先 always 兜住再按事件判定。
+    if: |
+      always() && !cancelled()
+      && (needs.release-please.outputs.released == 'true' || github.ref_type == 'tag')
     strategy:
       fail-fast: false
       matrix:
@@ -63,8 +74,8 @@ jobs:
       run:
         working-directory: apps/desktop
     steps:
-      # 不 checkout tag：draft release 发布前 GitHub 还没建这个 tag。
-      # 这里的 HEAD 就是刚合并的 release PR，与 tag 指向同一提交。
+      # 不按 tag 显式 checkout：master push 触发时 draft release 发布前 GitHub 还没建这个 tag，
+      # 此时 HEAD 就是刚合并的 release PR，与 tag 指向同一提交；tag push 触发时 HEAD 已是该 tag。
       - uses: actions/checkout@v7
 
       - uses: dtolnay/rust-toolchain@stable
@@ -100,9 +111,10 @@ jobs:
         with:
           projectPath: apps/desktop
           args: --target ${{ matrix.target }}
-          # 只按 tag 找 release-please 建好的 draft 上传安装包。
+          # 只按 tag 找 release-please 建好的 draft 上传安装包；
+          # tag push 重打包时 release-please 没有输出，直接用当前 ref。
           # 不传 releaseName / releaseBody：正文来自 CHANGELOG，v1 的 updateRelease 会用空串覆盖。
-          tagName: ${{ needs.release-please.outputs.tag }}
+          tagName: ${{ needs.release-please.outputs.tag || github.ref_name }}
           releaseDraft: true
           # v1 不做签名与自动更新，latest.json 没有可用的签名，不上传。
           uploadUpdaterJson: false
