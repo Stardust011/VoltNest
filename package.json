@@ -1,11 +1,22 @@
 {
   "name": "voltnest",
   "private": true,
-  "description": "VoltNest 仓库级开发工具（提交钩子与提交信息校验）",
+  "description": "VoltNest 仓库级工具与统一入口（提交钩子、格式化、前端构建）",
   "scripts": {
     "prepare": "husky",
+    "dev": "npm --prefix apps/desktop run dev --",
+    "build": "npm --prefix apps/desktop run build --",
+    "preview": "npm --prefix apps/desktop run preview --",
+    "test": "npm --prefix apps/desktop run test --",
+    "tauri": "npm --prefix apps/desktop run tauri --",
     "format": "npm --prefix apps/desktop run format",
     "format:check": "npm --prefix apps/desktop run format:check",
+    "format:rust": "npm --prefix apps/desktop run format:rust",
+    "format:web": "npm --prefix apps/desktop run format:web",
+    "format:repo": "npm --prefix apps/desktop run format:repo",
+    "format:check:rust": "npm --prefix apps/desktop run format:check:rust",
+    "format:check:web": "npm --prefix apps/desktop run format:check:web",
+    "format:check:repo": "npm --prefix apps/desktop run format:check:repo",
     "hooks:install": "husky"
   },
   "devDependencies": {

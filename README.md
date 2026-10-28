@@ -37,7 +37,8 @@ crates/voltnest-hid/
 ## 开发
 
 需要 Rust 稳定版（见 `rust-toolchain.toml`）与 Node 22+（前端用 npm，仓库带 `package-lock.json`）。
-仓库根还有一份 `package.json` 只装开发工具（husky / commitlint），克隆后先 `npm install` 才有提交钩子。
+仓库根还有一份 `package.json`：装开发工具（husky / commitlint），同时是所有脚本的统一入口。
+克隆后 `npm install` 挂上提交钩子，`npm --prefix apps/desktop ci` 装前端依赖，之后各命令都在根目录执行。
 两个平台共用的门禁：
 
 ```bash
@@ -64,15 +65,20 @@ cargo fmt --all -- --check
 另需 WebView2（Windows 11 自带）。
 
 ```bash
-cd apps/desktop
-npm ci
+npm install                     # 仓库根：钩子工具（husky / commitlint）
+npm --prefix apps/desktop ci    # 前端依赖
+
 npm run test                    # Vitest，只测纯函数
 npm run build                   # vue-tsc + vite build
 npm run format                  # 全仓格式化：Rust + 仓库根目录文本 + 前端
 npm run format:check            # 同上的只检查模式，CI 用
+npm run dev                     # 只起 Vite
 npm run tauri dev               # 开发调试（会先起 Vite）
 npm run tauri build             # 出 NSIS 安装包
 ```
+
+以上都在仓库根目录执行，根 `package.json` 会把带参数的脚本（`dev` / `build` / `test` / `tauri`）
+连同参数一起转给 `apps/desktop`，不必 `cd` 进去。
 
 ### Linux
 
@@ -90,10 +96,10 @@ sudo apt install libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev \
 - `libayatana-appindicator3-dev`：托盘（StatusNotifierItem）。
 - `libdbus-1-dev`：bluez（BLE）与系统通知的 D-Bus 绑定。
 
-命令与 Windows 完全相同（`npm ci` → `npm run test` → `npm run build` → `npm run tauri dev|build`）。
+命令与 Windows 完全相同，同样在仓库根目录执行（`npm run test` → `npm run build` → `npm run tauri dev|build`）。
 
-格式化统一从 `apps/desktop` 发起：`npm run format` 先跑 `cargo fmt --all`（借用
-`--manifest-path ../../Cargo.toml` 覆盖整个 workspace，含 `src-tauri`），再跑 `prettier --write .`；
+格式化也从仓库根发起：`npm run format` 先跑 `cargo fmt --all`（借用 `--manifest-path ../../Cargo.toml`
+覆盖整个 workspace，含 `src-tauri`），再跑两轮 `prettier --write`（仓库根目录文本 + 前端）；
 `npm run format:check` 是同一套的只检查模式。
 
 ### 打包
