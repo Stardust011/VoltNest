@@ -577,6 +577,53 @@ mod tests {
         std::fs::remove_dir_all(&dir).ok();
     }
 
+    /// 注册表失败与跳过项的诊断文本：宿主只靠这一行定位问题。
+    #[test]
+    fn registry_error_display_covers_every_variant() {
+        let dir = PathBuf::from("/opt/voltnest/mappings");
+        let skipped = vec![
+            SkippedBrand {
+                brand: "dareu",
+                file: "dareu.json",
+                error: MappingError::MissingTable {
+                    dir: dir.clone(),
+                    file: "dareu.json".to_string(),
+                    available: Vec::new(),
+                },
+            },
+            SkippedBrand {
+                brand: "rapoo",
+                file: "rapoo.json",
+                error: MappingError::Empty { dir: dir.clone() },
+            },
+        ];
+
+        let text = RegistryError::NoUsableBrand {
+            skipped: skipped.clone(),
+        }
+        .to_string();
+        assert!(text.contains("没有任何可用品牌"), "{text}");
+        assert!(text.contains("dareu") && text.contains("rapoo"), "{text}");
+        // 多个跳过项必须分隔，否则两个品牌会连成一串。
+        assert!(text.contains('；'), "{text}");
+
+        assert!(
+            skipped[0].to_string().contains("dareu.json"),
+            "{}",
+            skipped[0]
+        );
+        assert!(
+            RegistryError::Spec(SpecError::EmptyBrandId)
+                .to_string()
+                .contains("品牌标识")
+        );
+        assert!(
+            RegistryError::Mappings(MappingError::Empty { dir: dir.clone() })
+                .to_string()
+                .contains("/opt/voltnest/mappings")
+        );
+    }
+
     /// 型号表目录（源码树里那份，测试用它复制真实表）。
     fn manifest_mappings() -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
