@@ -27,6 +27,12 @@ jobs:
   # --------------------------------------------------
   changes:
     name: detect changes
+    if: |
+      github.event_name != 'pull_request'
+      || (
+        !startsWith(github.head_ref, 'release-please--')
+        && github.event.pull_request.user.login != 'release-please[bot]'
+      )
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:

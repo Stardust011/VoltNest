@@ -6,6 +6,10 @@ apps/desktop/src-tauri/gen/
 .pnpm-store/
 .corepack/
 
+CHANGELOG.md
+apps/desktop/src-tauri/tauri.conf.json
+apps/desktop/src-tauri/tauri.linux.conf.json
+
 # 锁文件由工具链生成
 Cargo.lock
 package-lock.json
