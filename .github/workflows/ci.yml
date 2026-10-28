@@ -139,20 +139,19 @@ jobs:
     name: frontend
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    defaults:
-      run:
-        working-directory: apps/desktop
     steps:
       - uses: actions/checkout@v7
+      # 版本取自根 package.json 的 packageManager 字段。
+      - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v7
         with:
           node-version: 22
-          cache: npm
-          cache-dependency-path: apps/desktop/package-lock.json
-      - run: npm ci
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
       # Rust 侧的格式由上面的 `rustfmt` job 负责；本 job 没有 Rust 工具链。
-      - run: npm run format:check:web
+      - run: pnpm run format:check:web
       # 仓库根目录的 Markdown / JSON / YAML。
-      - run: npm run format:check:repo
-      - run: npm run test
-      - run: npm run build
+      - run: pnpm run format:check:repo
+      - run: pnpm run test
+      - run: pnpm run build
