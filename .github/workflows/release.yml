@@ -69,7 +69,8 @@ jobs:
       - run: npm ci
 
       # beforeBuildCommand（npm run build）由 tauri-action 负责执行。
-      - uses: tauri-apps/tauri-action@v0
+      # v1 起 releaseDraft 为 true 时，若同名 tag 的 release 已发布（非 draft）会直接失败。
+      - uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
