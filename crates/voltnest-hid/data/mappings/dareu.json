@@ -11,10 +11,7 @@
       "deviceType": "keyboard",
       "mode": "2.4G",
       "internalModel": "TK51A",
-      "modes": [
-        "USB",
-        "2.4G"
-      ],
+      "modes": ["USB", "2.4G"],
       "fwType": 0,
       "hasBattery": true,
       "note": "TK51A - Z82 - Dongle: 0x1092"
@@ -33,10 +30,7 @@
       "deviceType": "keyboard",
       "mode": "2.4G",
       "internalModel": "TK51G",
-      "modes": [
-        "USB",
-        "2.4G"
-      ],
+      "modes": ["USB", "2.4G"],
       "fwType": 0,
       "hasBattery": true,
       "note": "TK51G - EK75 - Dongle: 0x0042"
@@ -46,10 +40,7 @@
       "deviceType": "keyboard",
       "mode": "2.4G",
       "internalModel": "TK51V",
-      "modes": [
-        "USB",
-        "2.4G"
-      ],
+      "modes": ["USB", "2.4G"],
       "fwType": 0,
       "hasBattery": true,
       "note": "TK51V - A98 - Dongle: 0x0037"
@@ -68,10 +59,7 @@
       "deviceType": "keyboard",
       "mode": "2.4G",
       "internalModel": "TK51CF",
-      "modes": [
-        "USB",
-        "2.4G"
-      ],
+      "modes": ["USB", "2.4G"],
       "fwType": 0,
       "hasBattery": true,
       "note": "TK51CF - EK87 PRO - Dongle: 0x0037"
@@ -90,10 +78,7 @@
       "deviceType": "keyboard",
       "mode": "2.4G",
       "internalModel": "TK51ARGB",
-      "modes": [
-        "USB",
-        "2.4G"
-      ],
+      "modes": ["USB", "2.4G"],
       "fwType": 0,
       "hasBattery": true,
       "note": "TK51ARGB - Z82 Pro - Dongle: 0x0037"
@@ -120,11 +105,7 @@
       "deviceType": "keyboard",
       "mode": "2.4G",
       "internalModel": "TK52L",
-      "modes": [
-        "USB",
-        "2.4G",
-        "BLE"
-      ],
+      "modes": ["USB", "2.4G", "BLE"],
       "fwType": 4,
       "hasBattery": true,
       "note": "TK52L三模 - 自研2.4G + 合盈"
@@ -337,10 +318,7 @@
       "deviceType": "keyboard",
       "mode": "2.4G",
       "internalModel": "TK51Q",
-      "modes": [
-        "USB",
-        "2.4G"
-      ],
+      "modes": ["USB", "2.4G"],
       "fwType": 2,
       "hasBattery": false,
       "note": "TK51Q 匠盟"
@@ -880,10 +858,7 @@
       "deviceType": "mouse",
       "mode": "2.4G",
       "internalModel": "TM243F",
-      "modes": [
-        "USB",
-        "2.4G"
-      ],
+      "modes": ["USB", "2.4G"],
       "fwType": 2,
       "hasBattery": true,
       "note": "TM243F08001G/02G/03G AIM-WL + CX52850"
@@ -893,10 +868,7 @@
       "deviceType": "mouse",
       "mode": "2.4G",
       "internalModel": "TM230G",
-      "modes": [
-        "USB",
-        "2.4G"
-      ],
+      "modes": ["USB", "2.4G"],
       "fwType": 2,
       "hasBattery": true,
       "note": "TM230G"
@@ -906,10 +878,7 @@
       "deviceType": "mouse",
       "mode": "2.4G",
       "internalModel": "TM265",
-      "modes": [
-        "USB",
-        "2.4G"
-      ],
+      "modes": ["USB", "2.4G"],
       "fwType": 2,
       "hasBattery": true,
       "note": "TM265"
@@ -919,10 +888,7 @@
       "deviceType": "mouse",
       "mode": "2.4G",
       "internalModel": "TM271F",
-      "modes": [
-        "USB",
-        "2.4G"
-      ],
+      "modes": ["USB", "2.4G"],
       "fwType": 2,
       "hasBattery": true,
       "note": "TM271"
@@ -932,10 +898,7 @@
       "deviceType": "mouse",
       "mode": "2.4G",
       "internalModel": "TM265KR",
-      "modes": [
-        "USB",
-        "2.4G"
-      ],
+      "modes": ["USB", "2.4G"],
       "fwType": 2,
       "hasBattery": true,
       "note": "TM265KR"
@@ -963,10 +926,7 @@
       "deviceType": "mouse",
       "mode": "2.4G",
       "internalModel": "TM243F",
-      "modes": [
-        "USB",
-        "2.4G"
-      ],
+      "modes": ["USB", "2.4G"],
       "fwType": 2,
       "hasBattery": true,
       "note": "TM243F"
@@ -976,10 +936,7 @@
       "deviceType": "mouse",
       "mode": "2.4G",
       "internalModel": "TM242F",
-      "modes": [
-        "USB",
-        "2.4G"
-      ],
+      "modes": ["USB", "2.4G"],
       "fwType": 2,
       "hasBattery": true,
       "note": "TM242F"
@@ -1043,10 +1000,7 @@
       "deviceType": "mouse",
       "mode": "2.4G",
       "internalModel": "TM271F",
-      "modes": [
-        "USB",
-        "2.4G"
-      ],
+      "modes": ["USB", "2.4G"],
       "fwType": 2,
       "hasBattery": true,
       "note": "TM271F"
@@ -1056,10 +1010,7 @@
       "deviceType": "mouse",
       "mode": "2.4G",
       "internalModel": "TM243G",
-      "modes": [
-        "USB",
-        "2.4G"
-      ],
+      "modes": ["USB", "2.4G"],
       "fwType": 2,
       "hasBattery": true,
       "note": "TM243F08010G/11G(TM243G?)"
@@ -1078,10 +1029,7 @@
       "deviceType": "mouse",
       "mode": "2.4G",
       "internalModel": "TM265D",
-      "modes": [
-        "USB",
-        "2.4G"
-      ],
+      "modes": ["USB", "2.4G"],
       "fwType": 2,
       "hasBattery": true,
       "note": "TM265D08005G/08G"
@@ -1100,10 +1048,7 @@
       "deviceType": "mouse",
       "mode": "2.4G",
       "internalModel": "TM243F",
-      "modes": [
-        "USB",
-        "2.4G"
-      ],
+      "modes": ["USB", "2.4G"],
       "fwType": 2,
       "hasBattery": true,
       "note": "TM243F08012G?"
@@ -1122,10 +1067,7 @@
       "deviceType": "mouse",
       "mode": "2.4G",
       "internalModel": "TM275F",
-      "modes": [
-        "USB",
-        "2.4G"
-      ],
+      "modes": ["USB", "2.4G"],
       "fwType": 2,
       "hasBattery": true,
       "note": "TM275F (P3395+CX52850P2) // 改DPI按键功能无效???"
@@ -1135,10 +1077,7 @@
       "deviceType": "mouse",
       "mode": "2.4G",
       "internalModel": "TM265D",
-      "modes": [
-        "USB",
-        "2.4G"
-      ],
+      "modes": ["USB", "2.4G"],
       "fwType": 2,
       "hasBattery": true,
       "note": "TM265D08001G/02G/03G/04G"
@@ -1148,10 +1087,7 @@
       "deviceType": "mouse",
       "mode": "2.4G",
       "internalModel": "TM265D",
-      "modes": [
-        "USB",
-        "2.4G"
-      ],
+      "modes": ["USB", "2.4G"],
       "fwType": 2,
       "hasBattery": true,
       "note": "TM265D AIM-750U + CX52850P2"
@@ -1161,10 +1097,7 @@
       "deviceType": "mouse",
       "mode": "2.4G",
       "internalModel": "TM275D",
-      "modes": [
-        "USB",
-        "2.4G"
-      ],
+      "modes": ["USB", "2.4G"],
       "fwType": 2,
       "hasBattery": true,
       "note": "TM275D (AIM750U + Nordic)"
@@ -1174,10 +1107,7 @@
       "deviceType": "mouse",
       "mode": "2.4G",
       "internalModel": "TM275D",
-      "modes": [
-        "USB",
-        "2.4G"
-      ],
+      "modes": ["USB", "2.4G"],
       "fwType": 2,
       "hasBattery": true,
       "note": "TM275D08007G/08G P3395 + CX52850P2（BK）"
@@ -1187,10 +1117,7 @@
       "deviceType": "mouse",
       "mode": "2.4G",
       "internalModel": "TM275D",
-      "modes": [
-        "USB",
-        "2.4G"
-      ],
+      "modes": ["USB", "2.4G"],
       "fwType": 2,
       "hasBattery": true,
       "note": "TM275D KR P3395 + CX52850P2（BK）"
@@ -1200,10 +1127,7 @@
       "deviceType": "mouse",
       "mode": "2.4G",
       "internalModel": "TM283",
-      "modes": [
-        "USB",
-        "2.4G"
-      ],
+      "modes": ["USB", "2.4G"],
       "fwType": 2,
       "hasBattery": true,
       "note": "TM283 (A950 Ultra)"
@@ -1213,10 +1137,7 @@
       "deviceType": "mouse",
       "mode": "2.4G",
       "internalModel": "TM290D",
-      "modes": [
-        "USB",
-        "2.4G"
-      ],
+      "modes": ["USB", "2.4G"],
       "fwType": 2,
       "hasBattery": true,
       "note": "TM290D (AIM750U + CX52860)"
@@ -1226,10 +1147,7 @@
       "deviceType": "mouse",
       "mode": "2.4G",
       "internalModel": "TM287D",
-      "modes": [
-        "USB",
-        "2.4G"
-      ],
+      "modes": ["USB", "2.4G"],
       "fwType": 2,
       "hasBattery": true,
       "note": "TM287D (AIM750U + CX52860)"
@@ -1239,10 +1157,7 @@
       "deviceType": "mouse",
       "mode": "2.4G",
       "internalModel": "TM290F",
-      "modes": [
-        "USB",
-        "2.4G"
-      ],
+      "modes": ["USB", "2.4G"],
       "fwType": 2,
       "hasBattery": true,
       "note": "TM290F"
@@ -1252,10 +1167,7 @@
       "deviceType": "mouse",
       "mode": "2.4G",
       "internalModel": "TM290F",
-      "modes": [
-        "USB",
-        "2.4G"
-      ],
+      "modes": ["USB", "2.4G"],
       "fwType": 2,
       "hasBattery": true,
       "note": "TM290F - (AIM750U + CX52860) - 宝飞亚马逊客户"
@@ -1265,10 +1177,7 @@
       "deviceType": "mouse",
       "mode": "2.4G",
       "internalModel": "TM287F",
-      "modes": [
-        "USB",
-        "2.4G"
-      ],
+      "modes": ["USB", "2.4G"],
       "fwType": 2,
       "hasBattery": true,
       "note": "TM287F - (AIM750U + CX52860) - 宝飞亚马逊客户"
@@ -1278,10 +1187,7 @@
       "deviceType": "mouse",
       "mode": "2.4G",
       "internalModel": "TM290F",
-      "modes": [
-        "USB",
-        "2.4G"
-      ],
+      "modes": ["USB", "2.4G"],
       "fwType": 2,
       "hasBattery": true,
       "note": "TM290 极风Max 网吧版"
@@ -1291,10 +1197,7 @@
       "deviceType": "mouse",
       "mode": "2.4G",
       "internalModel": "TM265F",
-      "modes": [
-        "USB",
-        "2.4G"
-      ],
+      "modes": ["USB", "2.4G"],
       "fwType": 2,
       "hasBattery": true,
       "note": "A950GM"
@@ -1304,10 +1207,7 @@
       "deviceType": "mouse",
       "mode": "2.4G",
       "internalModel": "TM265",
-      "modes": [
-        "USB",
-        "2.4G"
-      ],
+      "modes": ["USB", "2.4G"],
       "fwType": 2,
       "hasBattery": true,
       "note": "TM265"
@@ -1317,10 +1217,7 @@
       "deviceType": "mouse",
       "mode": "2.4G",
       "internalModel": "TM287",
-      "modes": [
-        "USB",
-        "2.4G"
-      ],
+      "modes": ["USB", "2.4G"],
       "fwType": 2,
       "hasBattery": true
     },
@@ -1329,10 +1226,7 @@
       "deviceType": "mouse",
       "mode": "2.4G",
       "internalModel": "TM265F",
-      "modes": [
-        "USB",
-        "2.4G"
-      ],
+      "modes": ["USB", "2.4G"],
       "fwType": 2,
       "hasBattery": true,
       "note": "TM265F A950GD"
@@ -1342,10 +1236,7 @@
       "deviceType": "mouse",
       "mode": "2.4G",
       "internalModel": "TM00J",
-      "modes": [
-        "USB",
-        "2.4G"
-      ],
+      "modes": ["USB", "2.4G"],
       "fwType": 2,
       "hasBattery": true,
       "note": "TM00J"
@@ -1363,10 +1254,7 @@
       "deviceType": "mouse",
       "mode": "2.4G",
       "internalModel": "TM290",
-      "modes": [
-        "USB",
-        "2.4G"
-      ],
+      "modes": ["USB", "2.4G"],
       "fwType": 2,
       "hasBattery": true
     },
@@ -1375,10 +1263,7 @@
       "deviceType": "mouse",
       "mode": "2.4G",
       "internalModel": "TM290",
-      "modes": [
-        "USB",
-        "2.4G"
-      ],
+      "modes": ["USB", "2.4G"],
       "fwType": 2,
       "hasBattery": true
     },
@@ -1387,10 +1272,7 @@
       "deviceType": "mouse",
       "mode": "2.4G",
       "internalModel": "TM00AF",
-      "modes": [
-        "USB",
-        "2.4G"
-      ],
+      "modes": ["USB", "2.4G"],
       "fwType": 2,
       "hasBattery": true
     },
@@ -1399,10 +1281,7 @@
       "deviceType": "mouse",
       "mode": "2.4G",
       "internalModel": "TM265F",
-      "modes": [
-        "USB",
-        "2.4G"
-      ],
+      "modes": ["USB", "2.4G"],
       "fwType": 2,
       "hasBattery": true,
       "note": "TM256F"
@@ -1412,10 +1291,7 @@
       "deviceType": "mouse",
       "mode": "2.4G",
       "internalModel": "TM265D",
-      "modes": [
-        "USB",
-        "2.4G"
-      ],
+      "modes": ["USB", "2.4G"],
       "fwType": 2,
       "hasBattery": true,
       "note": "TM265D 韩国"
@@ -1425,10 +1301,7 @@
       "deviceType": "mouse",
       "mode": "2.4G",
       "internalModel": "TM265F",
-      "modes": [
-        "USB",
-        "2.4G"
-      ],
+      "modes": ["USB", "2.4G"],
       "fwType": 2,
       "hasBattery": true,
       "note": "TM265F 韩国"
@@ -1438,10 +1311,7 @@
       "deviceType": "mouse",
       "mode": "2.4G",
       "internalModel": "TM01A",
-      "modes": [
-        "USB",
-        "2.4G"
-      ],
+      "modes": ["USB", "2.4G"],
       "fwType": 2,
       "hasBattery": true,
       "note": "TM01A"
@@ -1451,10 +1321,7 @@
       "deviceType": "mouse",
       "mode": "2.4G",
       "internalModel": "TM00P",
-      "modes": [
-        "USB",
-        "2.4G"
-      ],
+      "modes": ["USB", "2.4G"],
       "fwType": 2,
       "hasBattery": true
     },
@@ -1481,10 +1348,7 @@
       "deviceType": "mouse",
       "mode": "2.4G",
       "internalModel": "TM290D",
-      "modes": [
-        "USB",
-        "2.4G"
-      ],
+      "modes": ["USB", "2.4G"],
       "fwType": 2,
       "hasBattery": true
     },
@@ -1493,10 +1357,7 @@
       "deviceType": "mouse",
       "mode": "2.4G",
       "internalModel": "TM00PF",
-      "modes": [
-        "USB",
-        "2.4G"
-      ],
+      "modes": ["USB", "2.4G"],
       "fwType": 2,
       "hasBattery": true
     },
@@ -1505,10 +1366,7 @@
       "deviceType": "mouse",
       "mode": "2.4G",
       "internalModel": "TM290F",
-      "modes": [
-        "USB",
-        "2.4G"
-      ],
+      "modes": ["USB", "2.4G"],
       "fwType": 2,
       "hasBattery": true
     },
@@ -1517,10 +1375,7 @@
       "deviceType": "mouse",
       "mode": "2.4G",
       "internalModel": "TM01AF",
-      "modes": [
-        "USB",
-        "2.4G"
-      ],
+      "modes": ["USB", "2.4G"],
       "fwType": 2,
       "hasBattery": true,
       "note": "TM01AF A950星河"
@@ -1530,10 +1385,7 @@
       "deviceType": "mouse",
       "mode": "2.4G",
       "internalModel": "TM265D",
-      "modes": [
-        "USB",
-        "2.4G"
-      ],
+      "modes": ["USB", "2.4G"],
       "fwType": 2,
       "hasBattery": true,
       "note": "TM265"
@@ -1543,10 +1395,7 @@
       "deviceType": "mouse",
       "mode": "2.4G",
       "internalModel": "TM265D",
-      "modes": [
-        "USB",
-        "2.4G"
-      ],
+      "modes": ["USB", "2.4G"],
       "fwType": 2,
       "hasBattery": true
     },
@@ -1555,10 +1404,7 @@
       "deviceType": "mouse",
       "mode": "2.4G",
       "internalModel": "TM290",
-      "modes": [
-        "USB",
-        "2.4G"
-      ],
+      "modes": ["USB", "2.4G"],
       "fwType": 2,
       "hasBattery": true
     },
@@ -1567,10 +1413,7 @@
       "deviceType": "mouse",
       "mode": "2.4G",
       "internalModel": "TM173",
-      "modes": [
-        "USB",
-        "2.4G"
-      ],
+      "modes": ["USB", "2.4G"],
       "fwType": 2,
       "hasBattery": true,
       "note": "TM173"
@@ -1580,10 +1423,7 @@
       "deviceType": "mouse",
       "mode": "2.4G",
       "internalModel": "TM290F",
-      "modes": [
-        "USB",
-        "2.4G"
-      ],
+      "modes": ["USB", "2.4G"],
       "fwType": 2,
       "hasBattery": true,
       "note": "TM290F"
@@ -1593,10 +1433,7 @@
       "deviceType": "mouse",
       "mode": "2.4G",
       "internalModel": "TM265D",
-      "modes": [
-        "USB",
-        "2.4G"
-      ],
+      "modes": ["USB", "2.4G"],
       "fwType": 2,
       "hasBattery": true,
       "note": "TM265D"
@@ -1606,10 +1443,7 @@
       "deviceType": "mouse",
       "mode": "2.4G",
       "internalModel": "TM290F",
-      "modes": [
-        "USB",
-        "2.4G"
-      ],
+      "modes": ["USB", "2.4G"],
       "fwType": 2,
       "hasBattery": true,
       "note": "TM290F"
@@ -1619,10 +1453,7 @@
       "deviceType": "mouse",
       "mode": "2.4G",
       "internalModel": "TM259F",
-      "modes": [
-        "USB",
-        "2.4G"
-      ],
+      "modes": ["USB", "2.4G"],
       "fwType": 2,
       "hasBattery": true,
       "note": "TM259F"
@@ -1632,10 +1463,7 @@
       "deviceType": "mouse",
       "mode": "2.4G",
       "internalModel": "TM290D",
-      "modes": [
-        "USB",
-        "2.4G"
-      ],
+      "modes": ["USB", "2.4G"],
       "fwType": 2,
       "hasBattery": false,
       "note": "TM290D"

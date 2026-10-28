@@ -951,6 +951,38 @@ mod tests {
         ajazz::SPEC
     }
 
+    /// AJAZZ 读页上的合法查询模板：写页、读页与模板三者一致。
+    fn valid_request() -> RequestTemplate {
+        RequestTemplate {
+            usage_page: 0xFFB2,
+            cmd: 0xFB,
+            prefix: &[],
+            report_len: 8,
+            cmd_index: 1,
+            payload_offset: 5,
+            payload: &[0x03],
+            interval_ms: Some(10_000),
+            inverted: false,
+            retry: 0,
+        }
+    }
+
+    /// 带合法查询模板的 AJAZZ 描述（写页迁到读页上）。
+    fn with_request(mut spec: BrandSpec) -> BrandSpec {
+        spec.usage_page_write = Some(0xFFB2);
+        spec.request = Some(valid_request());
+        spec
+    }
+
+    const SYNTHETIC_REASSEMBLY: Reassembly = Reassembly {
+        cmd: 0x55,
+        total_index: 1,
+        seq_index: 2,
+        payload_offset: 4,
+        trailer_len: 1,
+        timeout_ms: 200,
+    };
+
     #[test]
     fn real_brand_spec_is_valid() {
         assert!(base().validate().is_ok());
@@ -1298,5 +1330,176 @@ mod tests {
             timeout_ms: 200,
         };
         assert_eq!(reasm.min_packet_len(), 4);
+    }
+
+    /// feature 通道要带读取长度，其余两条通道没有这个字段。
+    #[test]
+    fn transport_reports_feature_shape() {
+        assert!(
+            ReplyTransport::FeatureQuery { reply_len: 32 }.is_feature(),
+            "feature 查询属于 feature 通道"
+        );
+        assert!(ReplyTransport::FeaturePoll { reply_len: 8 }.is_feature());
+        assert!(!ReplyTransport::Listen.is_feature());
+        assert!(!ReplyTransport::InterruptQuery.is_feature());
+
+        assert_eq!(
+            ReplyTransport::FeatureQuery { reply_len: 32 }.reply_len(),
+            Some(32)
+        );
+        assert_eq!(
+            ReplyTransport::FeaturePoll { reply_len: 8 }.reply_len(),
+            Some(8)
+        );
+        assert_eq!(ReplyTransport::Listen.reply_len(), None);
+        assert_eq!(ReplyTransport::InterruptQuery.reply_len(), None);
+    }
+
+    /// 有查询模板 = 节奏由宿主决定；纯监听 = 节奏由设备决定，两者共用同一间隔预算。
+    #[test]
+    fn cadence_follows_request_template() {
+        assert_eq!(
+            base().cadence(),
+            Cadence::ListenOnly {
+                expected_interval_ms: base().expected_interval_ms
+            }
+        );
+        let polled = with_request(base()).cadence();
+        assert_eq!(
+            polled,
+            Cadence::Polled {
+                interval_ms: base().expected_interval_ms
+            }
+        );
+    }
+
+    /// 取反只作用于报告 ID 之后的字节：ID 本身被取反的话设备会直接丢掉整帧。
+    #[test]
+    fn inverted_template_flips_bytes_after_report_id() {
+        let mut req = valid_request();
+        req.inverted = true;
+        assert_eq!(
+            req.build(Some(0x06)),
+            vec![0x06, 0x04, 0xFF, 0xFF, 0xFF, 0xFC, 0xFF, 0xFF]
+        );
+        // 无报告 ID 时整帧取反（没有需要保留的首字节）。
+        assert_eq!(
+            req.build(None),
+            vec![0xFF, 0x04, 0xFF, 0xFF, 0xFF, 0xFC, 0xFF, 0xFF]
+        );
+    }
+
+    /// 布局错误逐条可辨：每条只违反一条不变量，且拒绝原因不得互相冒充。
+    #[test]
+    fn validate_rejects_layout_mistakes() {
+        fn rejects(mutate: impl FnOnce(&mut BrandSpec), want: fn(&SpecError) -> bool, label: &str) {
+            let mut spec = base();
+            mutate(&mut spec);
+            match spec.validate() {
+                Err(err) if want(&err) => {}
+                other => panic!("{label}：期望被拒绝，实际 {other:?}"),
+            }
+        }
+
+        rejects(
+            |s| s.id = "",
+            |e| matches!(e, SpecError::EmptyBrandId),
+            "空品牌标识",
+        );
+        rejects(
+            |s| s.label = "",
+            |e| matches!(e, SpecError::EmptyLabel { .. }),
+            "空展示名",
+        );
+        // 监听帧：子标签与电量抢同一字节。
+        rejects(
+            |s| {
+                s.listen = Some(ListenSpec {
+                    cmd: 0xFA,
+                    subtag_index: 1,
+                    subtag_value: 0x03,
+                    percent_index: 1,
+                    status_index: 2,
+                    charging_low_nibble: 0,
+                })
+            },
+            |e| matches!(e, SpecError::ListenLayoutInvalid { .. }),
+            "监听帧字段重叠",
+        );
+        // 写页与读页不同：查询会写到读集合上，表现为永远没应答。
+        rejects(
+            |s| {
+                s.usage_page_write = Some(0xFFB1);
+                s.request = Some(RequestTemplate {
+                    usage_page: 0xFFB1,
+                    ..valid_request()
+                });
+            },
+            |e| matches!(e, SpecError::RequestPageDiffersFromRead { .. }),
+            "写页与读页不一致",
+        );
+        // feature 通道读不出满足最小帧长的应答。
+        rejects(
+            |s| {
+                *s = with_request(*s);
+                s.transport = ReplyTransport::FeatureQuery { reply_len: 1 };
+            },
+            |e| matches!(e, SpecError::FeatureLayoutInvalid { .. }),
+            "feature 读取长度不足",
+        );
+        rejects(
+            |s| {
+                *s = with_request(*s);
+                s.transport = ReplyTransport::FeaturePoll { reply_len: 64 };
+            },
+            |e| matches!(e, SpecError::FeaturePollHasRequest { .. }),
+            "轮询通道不得带查询模板",
+        );
+        rejects(
+            |s| s.transport = ReplyTransport::FeatureQuery { reply_len: 64 },
+            |e| matches!(e, SpecError::FeatureQueryWithoutRequest { .. }),
+            "查询通道必须有查询模板",
+        );
+        rejects(
+            |s| {
+                *s = with_request(*s);
+                s.reassembly = Some(SYNTHETIC_REASSEMBLY);
+            },
+            |e| matches!(e, SpecError::ReassemblyWithoutQuery { .. }),
+            "多包重组只能挂在 output 查询上",
+        );
+        rejects(
+            |s| {
+                *s = with_request(*s);
+                s.transport = ReplyTransport::InterruptQuery;
+                s.reassembly = Some(Reassembly {
+                    seq_index: 1,
+                    ..SYNTHETIC_REASSEMBLY
+                });
+            },
+            |e| matches!(e, SpecError::ReassemblyLayoutInvalid { .. }),
+            "总包数与序号抢同一字节",
+        );
+        rejects(
+            |s| s.usage_page_alt = Some(s.usage_page),
+            |e| matches!(e, SpecError::AltUsagePageInvalid { .. }),
+            "备用页与主页相同",
+        );
+        rejects(
+            |s| {
+                s.ack = Some(crate::spec::AckField {
+                    index: 99,
+                    mask: 0x0F,
+                    value: 0x02,
+                })
+            },
+            |e| matches!(e, SpecError::AckOutsideReport { .. }),
+            "确认位落在一帧之外",
+        );
+        rejects(
+            |s| s.fallback_report_id = Some(0x06),
+            |e| matches!(e, SpecError::FallbackReportIdInvalid { .. }),
+            "监听通道没有备用报告 ID",
+        );
     }
 }

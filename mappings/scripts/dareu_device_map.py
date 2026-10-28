@@ -72,8 +72,13 @@ TYPE_MAP = {0: "mouse", 1: "keyboard", 2: "receiver"}
 class Fetcher:
     """带重试、gzip、可选磁盘缓存的取数器。"""
 
-    def __init__(self, timeout: float = 20.0, retries: int = 3,
-                 cache_dir: str | None = None, offline: bool = False) -> None:
+    def __init__(
+        self,
+        timeout: float = 20.0,
+        retries: int = 3,
+        cache_dir: str | None = None,
+        offline: bool = False,
+    ) -> None:
         self.timeout = timeout
         self.retries = retries
         self.cache_dir = cache_dir
@@ -212,7 +217,7 @@ def split_top_level_objects(body: str) -> list[str]:
             end = match_pair(body, i, "{", "}")
             if end < 0:
                 break
-            objs.append(body[i:end + 1])
+            objs.append(body[i : end + 1])
             i = end + 1
         else:
             i += 1
@@ -228,7 +233,7 @@ def parse_vendor_id(js_clean: str) -> int:
     """取 DEVICE_FILTERS 中第一个 vendorId，兜底 0x260D。"""
     m = re.search(r"DEVICE_FILTERS\s*=\s*\[", js_clean)
     if m:
-        vid = _hex(js_clean[m.start(): m.start() + 800], "vendorId")
+        vid = _hex(js_clean[m.start() : m.start() + 800], "vendorId")
         if vid:
             return vid
     return 0x260D
@@ -249,7 +254,7 @@ def parse_pid_list(js_raw: str) -> dict[int, str]:
     end = match_pair(js_raw, b, "[", "]")
     if end < 0:
         raise RuntimeError("AVAILABLE_PID_LIST 未正确闭合")
-    body = js_raw[b + 1:end]
+    body = js_raw[b + 1 : end]
 
     result: dict[int, str] = {}
     for line in body.splitlines():
@@ -257,10 +262,10 @@ def parse_pid_list(js_raw: str) -> dict[int, str]:
         if not m:
             continue
         cmt_at = line.find("//")
-        if cmt_at >= 0 and m.start() > cmt_at:   # PID 落在注释里 -> 未启用
+        if cmt_at >= 0 and m.start() > cmt_at:  # PID 落在注释里 -> 未启用
             continue
         pid = int(m.group(1), 16)
-        comment = line[cmt_at + 2:].strip() if cmt_at >= 0 else ""
+        comment = line[cmt_at + 2 :].strip() if cmt_at >= 0 else ""
         result.setdefault(pid, comment)
     return result
 
@@ -274,7 +279,7 @@ def parse_wireless_map(js_clean: str) -> dict[int, dict]:
     end = match_pair(js_clean, b, "[", "]")
     if b < 0 or end < 0:
         return {}
-    body = js_clean[b + 1:end]
+    body = js_clean[b + 1 : end]
 
     result: dict[int, dict] = {}
     for obj in split_top_level_objects(body):
@@ -287,16 +292,18 @@ def parse_wireless_map(js_clean: str) -> dict[int, dict]:
             ab = obj.find("[", p)
             ae = match_pair(obj, ab, "[", "]") if ab >= 0 else -1
             if ab >= 0 and ae > ab:
-                for item in split_top_level_objects(obj[ab + 1:ae]):
+                for item in split_top_level_objects(obj[ab + 1 : ae]):
                     pair_pid = _hex(item, "PID")
                     if pair_pid is None:
                         continue
-                    entry["pairs"].append({
-                        "pid": pair_pid,
-                        "cid": _hex(item, "CID"),
-                        "mid": _hex(item, "MID"),
-                        "type": _hex(item, "Type"),
-                    })
+                    entry["pairs"].append(
+                        {
+                            "pid": pair_pid,
+                            "cid": _hex(item, "CID"),
+                            "mid": _hex(item, "MID"),
+                            "type": _hex(item, "Type"),
+                        }
+                    )
         result.setdefault(pid, entry)
     return result
 
@@ -318,8 +325,9 @@ def product_url(base: str, pid: int) -> str:
     return urllib.parse.urljoin(base, f"products/{h}/{h}.json")
 
 
-def fetch_products(fetcher: Fetcher, base: str, pids: Iterable[int],
-                   workers: int = 8) -> tuple[dict[int, dict], list[int]]:
+def fetch_products(
+    fetcher: Fetcher, base: str, pids: Iterable[int], workers: int = 8
+) -> tuple[dict[int, dict], list[int]]:
     pids = sorted(set(pids))
 
     def one(pid: int):
@@ -353,9 +361,14 @@ def guess_type(comment: str, model: str) -> str:
     return "unknown"
 
 
-def derive_modes(pid: int, device_type: str, comment: str,
-                 dongle_map: dict[int, dict], pair_pids: set[int],
-                 dongle_pid: int | None) -> set[str]:
+def derive_modes(
+    pid: int,
+    device_type: str,
+    comment: str,
+    dongle_map: dict[int, dict],
+    pair_pids: set[int],
+    dongle_pid: int | None,
+) -> set[str]:
     """推导该 PID 支持的连接方式集合。"""
     modes: set[str] = {"2.4G"} if device_type == "receiver" else {"USB"}
 
@@ -412,9 +425,11 @@ def split_fallback_name(comment: str) -> tuple[str, str]:
 def resolve_readable(stem: str, model_index: dict[str, str]) -> str:
     """把只含内部型号的串（如 "TK52L三模"）换成可读型号；有歧义则不换。"""
     up = stem.upper()
-    hits = [ (k, v) for k, v in model_index.items()
-             if up.startswith(k.upper())
-             and (len(up) == len(k) or not up[len(k)].isalnum()) ]
+    hits = [
+        (k, v)
+        for k, v in model_index.items()
+        if up.startswith(k.upper()) and (len(up) == len(k) or not up[len(k)].isalnum())
+    ]
     if not hits:
         return stem
     longest = max(len(k) for k, _ in hits)
@@ -422,9 +437,14 @@ def resolve_readable(stem: str, model_index: dict[str, str]) -> str:
     return cands.pop() if len(cands) == 1 else stem
 
 
-def receiver_name(pid: int, model: str, comment: str,
-                  dongle_map: dict[int, dict], readable: dict[int, str],
-                  model_index: dict[str, str] | None = None) -> str:
+def receiver_name(
+    pid: int,
+    model: str,
+    comment: str,
+    dongle_map: dict[int, dict],
+    readable: dict[int, str],
+    model_index: dict[str, str] | None = None,
+) -> str:
     """接收器的可读名：优先用其配对设备的可读型号，其次从注释里剥掉 Dongle 字样。"""
     pairs = dongle_map.get(pid, {}).get("pairs", [])
     paired = sorted({readable.get(p["pid"], "") for p in pairs} - {""})
@@ -432,8 +452,9 @@ def receiver_name(pid: int, model: str, comment: str,
         head = " / ".join(paired[:2]) + ("等" if len(paired) > 2 else "")
         return f"{head} 接收器"
 
-    stem = re.sub(r"\b(dongle|receiver|reciver|接收器)\b", " ", clean_comment(comment),
-                  flags=re.IGNORECASE)
+    stem = re.sub(
+        r"\b(dongle|receiver|reciver|接收器)\b", " ", clean_comment(comment), flags=re.IGNORECASE
+    )
     stem = re.sub(r"\s+", " ", stem).strip(" -/")
     generic = {"common", "wireless", "2.4g", "usb", "dareu", "receiver", "reciver", ""}
     if stem and stem.lower() not in generic:
@@ -441,17 +462,26 @@ def receiver_name(pid: int, model: str, comment: str,
             stem = resolve_readable(stem, model_index)
         return f"{stem} 接收器"
 
-    base = re.sub(r"\s*(dongle|receiver|reciver|接收器)\s*$", "", model or "",
-                  flags=re.IGNORECASE).strip()
+    base = re.sub(
+        r"\s*(dongle|receiver|reciver|接收器)\s*$", "", model or "", flags=re.IGNORECASE
+    ).strip()
     if base and base.upper() != (model or "").upper():
         return f"{base} 接收器"
     return model or f"DAREU_{pid:04X}"
 
 
-def build_output(*, metas: dict[int, dict], comments: dict[int, str],
-                 dongle_map: dict[int, dict], vendor_id: int,
-                 key_format: str, mode_priority: str, include_receiver: bool,
-                 config_version: str, source: dict) -> tuple[dict, Counter]:
+def build_output(
+    *,
+    metas: dict[int, dict],
+    comments: dict[int, str],
+    dongle_map: dict[int, dict],
+    vendor_id: int,
+    key_format: str,
+    mode_priority: str,
+    include_receiver: bool,
+    config_version: str,
+    source: dict,
+) -> tuple[dict, Counter]:
     hints = collect_dongle_hints(comments)
 
     # 用 "Dongle: 0xXXXX" 注释补全 JM_WIRELESS_MAP 之外的配对关系
@@ -481,9 +511,13 @@ def build_output(*, metas: dict[int, dict], comments: dict[int, str],
         # 接收器的 ProductName 多是 "USB 2.4G Receiver" 这类通用串，不当作可读型号
         readable = "" if device_type == "receiver" else (product or alias)
         info[pid] = {
-            "meta": meta, "comment": comment, "rawType": raw_type,
-            "deviceType": device_type, "model": internal,
-            "product": product, "readable": readable,
+            "meta": meta,
+            "comment": comment,
+            "rawType": raw_type,
+            "deviceType": device_type,
+            "model": internal,
+            "product": product,
+            "readable": readable,
         }
 
     readable_names = {pid: it["readable"] for pid, it in info.items() if it["readable"]}
@@ -512,15 +546,15 @@ def build_output(*, metas: dict[int, dict], comments: dict[int, str],
         name = it["readable"]
         if not name:
             if device_type == "receiver":
-                name = receiver_name(pid, it["model"], comment, dongle_map,
-                                     readable_names, model_index)
+                name = receiver_name(
+                    pid, it["model"], comment, dongle_map, readable_names, model_index
+                )
             else:
                 name, alias = split_fallback_name(comment)
                 name = name or it["model"] or f"DAREU_{pid:04X}"
                 it["readable"] = name
 
-        modes = derive_modes(pid, device_type, comment, dongle_map, pair_pids,
-                             hints.get(pid))
+        modes = derive_modes(pid, device_type, comment, dongle_map, pair_pids, hints.get(pid))
         entry: dict = {
             "name": name,
             "deviceType": device_type,
@@ -594,9 +628,12 @@ def run(args: argparse.Namespace) -> dict:
     hints = collect_dongle_hints(comments)
 
     if not args.quiet:
-        print(f"[info] web_version={web_version or '-'} vendorId=0x{vendor_id:04X} "
-              f"PID白名单={len(comments)} 无线配对表={len(dongle_map)} "
-              f"Dongle注释={len(hints)}", file=sys.stderr)
+        print(
+            f"[info] web_version={web_version or '-'} vendorId=0x{vendor_id:04X} "
+            f"PID白名单={len(comments)} 无线配对表={len(dongle_map)} "
+            f"Dongle注释={len(hints)}",
+            file=sys.stderr,
+        )
 
     all_pids = set(comments) | set(dongle_map) | pair_pids | set(hints.values())
     metas, missing = fetch_products(fetcher, base, all_pids, args.workers)
@@ -604,11 +641,16 @@ def run(args: argparse.Namespace) -> dict:
         raise RuntimeError("未获取到任何 products/*.json，无法生成映射表")
 
     if not args.quiet:
-        print(f"[info] 产品元数据 {len(metas)}/{len(all_pids)} 成功"
-              + (f"，缺失 {len(missing)} 个（用注释兜底）" if missing else ""), file=sys.stderr)
+        print(
+            f"[info] 产品元数据 {len(metas)}/{len(all_pids)} 成功"
+            + (f"，缺失 {len(missing)} 个（用注释兜底）" if missing else ""),
+            file=sys.stderr,
+        )
         if missing:
-            print("[warn] 缺失 PID: " + ", ".join(f"{p:04X}" for p in sorted(missing)),
-                  file=sys.stderr)
+            print(
+                "[warn] 缺失 PID: " + ", ".join(f"{p:04X}" for p in sorted(missing)),
+                file=sys.stderr,
+            )
 
     source = {
         "file": args.cache_dir if (args.offline and args.cache_dir) else "",
@@ -616,10 +658,15 @@ def run(args: argparse.Namespace) -> dict:
         "web_version": web_version,
     }
     result, stats = build_output(
-        metas=metas, comments=comments, dongle_map=dongle_map,
-        vendor_id=vendor_id, key_format=args.key_format,
-        mode_priority=args.mode_priority, include_receiver=args.include_receiver,
-        config_version=args.config_version, source=source,
+        metas=metas,
+        comments=comments,
+        dongle_map=dongle_map,
+        vendor_id=vendor_id,
+        key_format=args.key_format,
+        mode_priority=args.mode_priority,
+        include_receiver=args.include_receiver,
+        config_version=args.config_version,
+        source=source,
     )
 
     if not args.quiet:
@@ -634,17 +681,36 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(description="抓取并转换 DAREU 网页配置工具的设备映射表")
     p.add_argument("--url", default=DEFAULT_BASE_URL, help=f"站点根地址（默认 {DEFAULT_BASE_URL}）")
     p.add_argument("-o", "--output", help="输出 JSON 路径（默认打印到 stdout）")
-    p.add_argument("--key-format", choices=["hex", "dec"], default="hex",
-                   help="设备标识键格式：hex 如 260D:0030（默认），dec 如 9739:48")
-    p.add_argument("--vid", type=lambda s: int(s, 0), help="覆盖 vendorId（默认从 DEVICE_FILTERS 读取）")
-    p.add_argument("--config-version", default=None,
-                   help="覆盖 config_version（默认取抓取时刻，UTC，精确到小时）")
-    p.add_argument("--mode-priority", choices=["wireless", "wired"], default="wireless",
-                   help="多模设备 mode 取值优先级：wireless=2.4G>BLE>USB（默认），wired=USB 优先")
-    p.add_argument("--include-receiver", action="store_true",
-                   help="保留 2.4G 接收器（Type=2）条目；默认过滤掉")
-    p.add_argument("--no-receiver", dest="include_receiver", action="store_false", default=False,
-                   help="（默认行为）过滤接收器条目，保留此开关以兼容旧命令")
+    p.add_argument(
+        "--key-format",
+        choices=["hex", "dec"],
+        default="hex",
+        help="设备标识键格式：hex 如 260D:0030（默认），dec 如 9739:48",
+    )
+    p.add_argument(
+        "--vid", type=lambda s: int(s, 0), help="覆盖 vendorId（默认从 DEVICE_FILTERS 读取）"
+    )
+    p.add_argument(
+        "--config-version",
+        default=None,
+        help="覆盖 config_version（默认取抓取时刻，UTC，精确到小时）",
+    )
+    p.add_argument(
+        "--mode-priority",
+        choices=["wireless", "wired"],
+        default="wireless",
+        help="多模设备 mode 取值优先级：wireless=2.4G>BLE>USB（默认），wired=USB 优先",
+    )
+    p.add_argument(
+        "--include-receiver", action="store_true", help="保留 2.4G 接收器（Type=2）条目；默认过滤掉"
+    )
+    p.add_argument(
+        "--no-receiver",
+        dest="include_receiver",
+        action="store_false",
+        default=False,
+        help="（默认行为）过滤接收器条目，保留此开关以兼容旧命令",
+    )
     p.set_defaults(include_receiver=False)
     p.add_argument("--cache-dir", help="缓存目录（global.js 与 products/*.json 落盘复用）")
     p.add_argument("--offline", action="store_true", help="只用缓存，不发起网络请求")
@@ -664,15 +730,21 @@ def main(argv: list[str] | None = None) -> int:
         print(f"[error] {exc}", file=sys.stderr)
         return 1
 
-    text = json.dumps(result, ensure_ascii=False,
-                      indent=None if args.compact else 2,
-                      separators=(",", ":") if args.compact else None)
+    text = json.dumps(
+        result,
+        ensure_ascii=False,
+        indent=None if args.compact else 2,
+        separators=(",", ":") if args.compact else None,
+    )
     if args.output:
         with open(args.output, "w", encoding="utf-8", newline="\n") as fh:
             fh.write(text)
             fh.write("\n")
         if not args.quiet:
-            print(f"[info] 已写入 {args.output}（{len(result['devices'])} 个设备标识）", file=sys.stderr)
+            print(
+                f"[info] 已写入 {args.output}（{len(result['devices'])} 个设备标识）",
+                file=sys.stderr,
+            )
     else:
         print(text)
     return 0
