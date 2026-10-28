@@ -80,13 +80,10 @@ jobs:
           cat "$report" >> "$GITHUB_STEP_SUMMARY"
 
       # 抓取脚本产出的是 json.dumps 原始排版，落盘前统一成仓库 prettier 口径。
-      - uses: pnpm/action-setup@v4
-        if: steps.fetch.outputs.changed == '1'
-
-      - uses: actions/setup-node@v7
+      - uses: pnpm/setup@v1
         if: steps.fetch.outputs.changed == '1'
         with:
-          node-version: 22
+          runtime: node@24
 
       - name: Format tables
         if: steps.fetch.outputs.changed == '1'

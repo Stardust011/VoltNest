@@ -246,14 +246,13 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # Version is sourced from package.json's packageManager field.
-      - uses: pnpm/action-setup@v4
-
-      - uses: actions/setup-node@v7
+      # pnpm 版本取自 package.json 的 packageManager 字段；Node 由同一步安装。
+      - uses: pnpm/setup@v1
         with:
-          node-version: 24
-          cache: pnpm
+          runtime: node@24
+          cache: true
           cache-dependency-path: pnpm-lock.yaml
+          install: false
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
