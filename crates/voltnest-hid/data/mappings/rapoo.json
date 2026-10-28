@@ -11,1689 +11,1197 @@
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:1411": {
       "name": "VT3S",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:1412": {
       "name": "VT3",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:1413": {
       "name": "VT7",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:1414": {
       "name": "VT9",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:1415": {
       "name": "VT1",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:1416": {
       "name": "VT7 MAX",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:1417": {
       "name": "VT3 MAX",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:1418": {
       "name": "VT9 MAX",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:1420": {
       "name": "VT0 MAX",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:1421": {
       "name": "VT3S MAX",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:1422": {
       "name": "VT2",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:1423": {
       "name": "VT2 MAX",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:1444": {
       "name": "VT1 MAX",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:144A": {
       "name": "VT0 MAX MASTER",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:144B": {
       "name": "VT3S MAX MASTER",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:1451": {
       "name": "VT6",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:1452": {
       "name": "VT6 MAX",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:1453": {
       "name": "VT9S V2",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:1459": {
       "name": "VT7S V2",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:145B": {
       "name": "VT4 V2",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:145D": {
       "name": "VT2S V2",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:1460": {
       "name": "VT7 V2",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:1462": {
       "name": "VT3 V2",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:1464": {
       "name": "VT3S V2",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:1466": {
       "name": "VT9 V2",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:1468": {
       "name": "VT2 V2",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:146A": {
       "name": "VT1S V2",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:146C": {
       "name": "VT8 V2",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:146D": {
       "name": "VT3 MAX MASTER V2",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:146E": {
       "name": "VT3S MAX MASTER V2",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:1470": {
       "name": "VT7 MAX MASTER V2",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:1471": {
       "name": "VT7S MAX MASTER V2",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:1472": {
       "name": "VT2 ULTRA V2",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "Telink3228C_Mouse",
-      "channels": [
-        "china_game"
-      ]
+      "channels": ["china_game"]
     },
     "24AE:1473": {
       "name": "VT9 MAX MASTER V2",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:1474": {
       "name": "VT9S MAX MASTER V2",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:1475": {
       "name": "VT2 MAX MASTER V2",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:1476": {
       "name": "VT2S MAX MASTER V2",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:1477": {
       "name": "VT4 MAX MASTER V2",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:1478": {
       "name": "VT8 MAX MASTER V2",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:14A1": {
       "name": "VT0 Air MAX",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:14A2": {
       "name": "VT3S Air Max",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:14A4": {
       "name": "VT2K MAX",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "global"
-      ]
+      "channels": ["global"]
     },
     "24AE:14A5": {
       "name": "VT3 PRO V2",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:14A6": {
       "name": "VT3S PRO V2",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:14A7": {
       "name": "VT7 PRO V2",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:14A8": {
       "name": "VT7S PRO V2",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:14A9": {
       "name": "VT9 PRO V2",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:14AA": {
       "name": "VT9S PRO V2",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:1905": {
       "name": "V700diy-98",
       "deviceType": "keyboard",
       "mode": "2.4G",
       "driver": "TelinkKeyboard",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:1906": {
       "name": "V700diy-87",
       "deviceType": "keyboard",
       "mode": "2.4G",
       "driver": "TelinkKeyboard",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:1907": {
       "name": "V700diy-75",
       "deviceType": "keyboard",
       "mode": "2.4G",
       "driver": "TelinkKeyboard",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:1914": {
       "name": "A83 Air",
       "deviceType": "keyboard",
       "mode": "2.4G",
       "driver": "TelinkKeyboard",
-      "channels": [
-        "china_game",
-        "globle"
-      ]
+      "channels": ["china_game", "globle"]
     },
     "24AE:1924": {
       "name": "V700diy-98",
       "deviceType": "keyboard",
       "mode": "2.4G",
       "driver": "TelinkKeyboard",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:1A00": {
       "name": "VT7 SE",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_CH584",
-      "channels": [
-        "global"
-      ]
+      "channels": ["global"]
     },
     "24AE:1A11": {
       "name": "VT1 SE",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_CH584",
-      "channels": [
-        "global"
-      ]
+      "channels": ["global"]
     },
     "24AE:1B01": {
       "name": "VT9S MAX V2",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:1B02": {
       "name": "VT7S MAX V2",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:1B03": {
       "name": "VT4 MAX V2",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:1B04": {
       "name": "VT2S MAX V2",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:1B05": {
       "name": "VT7 MAX V2",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:1B06": {
       "name": "VT3 MAX V2",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:1B07": {
       "name": "VT3S MAX V2",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:1B08": {
       "name": "VT9 MAX V2",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:1B09": {
       "name": "VT2 MAX V2",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:1B0A": {
       "name": "VT1S MAX V2",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:1B0B": {
       "name": "VT8 MAX V2",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:1B0C": {
       "name": "VT3 Air MAX V2",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:1B0D": {
       "name": "VT3S Air MAX V2",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:1B0E": {
       "name": "VT7 Air MAX V2",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:1B0F": {
       "name": "VT7S Air MAX V2",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:1B10": {
       "name": "VT9 Air MAX V2",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:1B11": {
       "name": "VT9S Air MAX V2",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:1B12": {
       "name": "VT2 Air MAX V2",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:1B13": {
       "name": "VT2S Air MAX V2",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:1B14": {
       "name": "VT4 Air MAX V2",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:1B15": {
       "name": "VT8 Air MAX V2",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:1B20": {
       "name": "VT2 RT V2",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "LM20RT",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:1B21": {
       "name": "VT2 RT MASTER V2",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "LM20RT",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:4610": {
       "name": "VT0",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:4611": {
       "name": "VT3S",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:4612": {
       "name": "VT3",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:4613": {
       "name": "VT7",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:4614": {
       "name": "VT9",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:4615": {
       "name": "VT1",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:4616": {
       "name": "VT7 MAX",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:4617": {
       "name": "VT3 MAX",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:4618": {
       "name": "VT9 MAX",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:4620": {
       "name": "VT0 MAX",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:4621": {
       "name": "VT3S MAX",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:4622": {
       "name": "VT2",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:4623": {
       "name": "VT2 MAX",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:4631": {
       "name": "ESM612PRO",
       "deviceType": "mouse",
       "mode": "USB",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_cybercafe"
-      ]
+      "channels": ["china_cybercafe"]
     },
     "24AE:4632": {
       "name": "ESM622PRO",
       "deviceType": "mouse",
       "mode": "USB",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_cybercafe"
-      ]
+      "channels": ["china_cybercafe"]
     },
     "24AE:4633": {
       "name": "ESM652PRO",
       "deviceType": "mouse",
       "mode": "USB",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_cybercafe"
-      ]
+      "channels": ["china_cybercafe"]
     },
     "24AE:4635": {
       "name": "ESM672PRO",
       "deviceType": "mouse",
       "mode": "USB",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_cybercafe"
-      ]
+      "channels": ["china_cybercafe"]
     },
     "24AE:4637": {
       "name": "ESM622MAX",
       "deviceType": "mouse",
       "mode": "USB",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_cybercafe"
-      ]
+      "channels": ["china_cybercafe"]
     },
     "24AE:4640": {
       "name": "ESM672MAX",
       "deviceType": "mouse",
       "mode": "USB",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_cybercafe"
-      ]
+      "channels": ["china_cybercafe"]
     },
     "24AE:4644": {
       "name": "VT1 MAX",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:464A": {
       "name": "VT0 MAX MASTER",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:464B": {
       "name": "VT3S MAX MASTER",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:464D": {
       "name": "ESM612ACE",
       "deviceType": "mouse",
       "mode": "USB",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_cybercafe"
-      ]
+      "channels": ["china_cybercafe"]
     },
     "24AE:4651": {
       "name": "VT6",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:4652": {
       "name": "VT6 MAX",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:4653": {
       "name": "VT9S V2",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:4659": {
       "name": "VT7S V2",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:465B": {
       "name": "VT4 V2",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:465D": {
       "name": "VT2S V2",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:4660": {
       "name": "VT7 V2",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:4662": {
       "name": "VT3 V2",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:4664": {
       "name": "VT3S V2",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:4666": {
       "name": "VT9 V2",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:4668": {
       "name": "VT2 V2",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:466A": {
       "name": "VT1S V2",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:466C": {
       "name": "VT8 V2",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:466D": {
       "name": "VT3 MAX MASTER V2",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:466E": {
       "name": "VT3S MAX MASTER V2",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:4670": {
       "name": "VT7 MAX MASTER V2",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:4671": {
       "name": "VT7S MAX MASTER V2",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:4672": {
       "name": "VT2 ULTRA V2",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "Telink3228C_Mouse",
-      "channels": [
-        "china_game"
-      ]
+      "channels": ["china_game"]
     },
     "24AE:4673": {
       "name": "VT9 MAX MASTER V2",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:4674": {
       "name": "VT9S MAX MASTER V2",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:4675": {
       "name": "VT2 MAX MASTER V2",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:4676": {
       "name": "VT2S MAX MASTER V2",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:4677": {
       "name": "VT4 MAX MASTER V2",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:4678": {
       "name": "VT8 MAX MASTER V2",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:4681": {
       "name": "ESM612MAX",
       "deviceType": "mouse",
       "mode": "USB",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_cybercafe"
-      ]
+      "channels": ["china_cybercafe"]
     },
     "24AE:46A1": {
       "name": "VT0 Air MAX",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:46A2": {
       "name": "VT3S Air Max",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:46A4": {
       "name": "VT2K MAX",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "global"
-      ]
+      "channels": ["global"]
     },
     "24AE:46A5": {
       "name": "VT3 PRO V2",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:46A6": {
       "name": "VT3S PRO V2",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:46A7": {
       "name": "VT7 PRO V2",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:46A8": {
       "name": "VT7S PRO V2",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:46A9": {
       "name": "VT9 PRO V2",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:46AA": {
       "name": "VT9S PRO V2",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:4805": {
       "name": "V700diy-98",
       "deviceType": "keyboard",
       "mode": "2.4G",
       "driver": "TelinkKeyboard",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:4806": {
       "name": "V700diy-87",
       "deviceType": "keyboard",
       "mode": "2.4G",
       "driver": "TelinkKeyboard",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:4807": {
       "name": "V700diy-75",
       "deviceType": "keyboard",
       "mode": "2.4G",
       "driver": "TelinkKeyboard",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:4814": {
       "name": "A83 Air",
       "deviceType": "keyboard",
       "mode": "2.4G",
       "driver": "TelinkKeyboard",
-      "channels": [
-        "china_game",
-        "globle"
-      ]
+      "channels": ["china_game", "globle"]
     },
     "24AE:481A": {
       "name": "ESK900-98RT",
       "deviceType": "keyboard",
       "mode": "USB",
       "driver": "CH585M",
-      "channels": [
-        "china_cybercafe"
-      ]
+      "channels": ["china_cybercafe"]
     },
     "24AE:481B": {
       "name": "ESK900-83RT",
       "deviceType": "keyboard",
       "mode": "USB",
       "driver": "CH585M",
-      "channels": [
-        "china_cybercafe"
-      ]
+      "channels": ["china_cybercafe"]
     },
     "24AE:4824": {
       "name": "V700diy-98",
       "deviceType": "keyboard",
       "mode": "2.4G",
       "driver": "TelinkKeyboard",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:482A": {
       "name": "ESK900-75RT",
       "deviceType": "keyboard",
       "mode": "USB",
       "driver": "CH585M",
-      "channels": [
-        "china_cybercafe"
-      ]
+      "channels": ["china_cybercafe"]
     },
     "24AE:4832": {
       "name": "VT68",
       "deviceType": "keyboard",
       "mode": "USB",
       "driver": "GCOME_AP",
-      "channels": [
-        "china_game"
-      ]
+      "channels": ["china_game"]
     },
     "24AE:4A00": {
       "name": "VT7 SE",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_CH584",
-      "channels": [
-        "global"
-      ]
+      "channels": ["global"]
     },
     "24AE:4A11": {
       "name": "VT1 SE",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_CH584",
-      "channels": [
-        "global"
-      ]
+      "channels": ["global"]
     },
     "24AE:4B01": {
       "name": "VT9S MAX V2",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:4B02": {
       "name": "VT7S MAX V2",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:4B03": {
       "name": "VT4 MAX V2",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:4B04": {
       "name": "VT2S MAX V2",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:4B05": {
       "name": "VT7 MAX V2",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:4B06": {
       "name": "VT3 MAX V2",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:4B07": {
       "name": "VT3S MAX V2",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:4B08": {
       "name": "VT9 MAX V2",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:4B09": {
       "name": "VT2 MAX V2",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:4B0A": {
       "name": "VT1S MAX V2",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:4B0B": {
       "name": "VT8 MAX V2",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:4B0C": {
       "name": "VT3 Air MAX V2",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:4B0D": {
       "name": "VT3S Air MAX V2",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:4B0E": {
       "name": "VT7 Air MAX V2",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:4B0F": {
       "name": "VT7S Air MAX V2",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:4B10": {
       "name": "VT9 Air MAX V2",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:4B11": {
       "name": "VT9S Air MAX V2",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:4B12": {
       "name": "VT2 Air MAX V2",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:4B13": {
       "name": "VT2S Air MAX V2",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:4B14": {
       "name": "VT4 Air MAX V2",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:4B15": {
       "name": "VT8 Air MAX V2",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_nrf54L",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:4B20": {
       "name": "VT2 RT V2",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "LM20RT",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "24AE:4B21": {
       "name": "VT2 RT MASTER V2",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "LM20RT",
-      "channels": [
-        "china_game",
-        "global"
-      ]
+      "channels": ["china_game", "global"]
     },
     "2E3C:5745": {
       "name": "ESK800-75RT",
       "deviceType": "keyboard",
       "mode": "USB",
       "driver": "OHID",
-      "channels": [
-        "china_cybercafe"
-      ]
+      "channels": ["china_cybercafe"]
     }
   }
 }
