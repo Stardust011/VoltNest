@@ -3,10 +3,13 @@ node_modules/
 target/
 dist/
 apps/desktop/src-tauri/gen/
+.pnpm-store/
+.corepack/
 
 # 锁文件由工具链生成
 Cargo.lock
 package-lock.json
+pnpm-lock.yaml
 
 # 前端由 apps/desktop/prettier.config.mjs 单独负责（需 Tailwind 插件）
 apps/
