@@ -104,7 +104,8 @@ CI 侧：`release.yml` 在 master 上跑 release-please，它按 Conventional Co
 `Cargo.lock` 里 workspace 成员的版本不在 PR 内，下一次 cargo 构建会自动跟上。
 `cargo-deny` 与工具链漂移扫描每周一跑（`.github/workflows/security.yml`）；
 型号表每月 1 日抓取厂商网页驱动并开 PR
-（`.github/workflows/mappings.yml`，脚本在 `mappings/scripts/`，只在 `devices` 内容有差异时才开 PR）。
+（`.github/workflows/mappings.yml`，脚本在 `mappings/scripts/`，只在 `devices` 内容有差异时才开 PR；
+落盘前用 prettier 统一表格式，本地手工抓取后同样要跑 `npm run format:repo`）。
 
 ## Linux 运行期前提
 
