@@ -41,6 +41,19 @@ jobs:
             exit 1
           fi
 
+  # 版本锁死，格式化结果才与本地一致。
+  fmt-python:
+    name: ruff format
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - run: pip install ruff==0.16.7
+      - run: ruff format --check mappings/scripts/
+
   # 两个平台都要跑：项目已双平台，#[cfg(windows)]（Toast / AUMID / 托盘气泡）与
   # #[cfg(not(windows))]（notification 插件 / hidraw / bluez）是两组互斥代码，只有各自的
   # runner 会真正编译并 lint 它们。clippy.toml 把 SystemTime 列为禁用类型的门禁两边同样有效。
@@ -139,5 +152,7 @@ jobs:
       - run: npm ci
       # Rust 侧的格式由上面的 `rustfmt` job 负责；本 job 没有 Rust 工具链。
       - run: npm run format:check:web
+      # 仓库根目录的 Markdown / JSON / YAML。
+      - run: npm run format:check:repo
       - run: npm run test
       - run: npm run build
