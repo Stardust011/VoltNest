@@ -3,10 +3,13 @@ name: CI
 on:
   push:
     branches: [master]
-  pull_request:
     # 文档改动不触发全量流水线
     paths-ignore:
       - "**.md"
+      - "docs/**"
+  pull_request:
+    # 不按路径裁剪：纯文档 PR 也要让汇总 job 上报，否则 required check 会一直
+    # 停在 Expected。实际开销由 changes job 的区域门控吸收。
   workflow_dispatch:
 
 permissions:
@@ -22,24 +25,75 @@ concurrency:
 
 jobs:
   # --------------------------------------------------
-  # Rust formatting
+  # Change detection
+  # 只有受影响的区域才跑对应 job；workflow_dispatch 全部视为 true。
+  # --------------------------------------------------
+  changes:
+    name: detect changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      rust: ${{ steps.filter.outputs.rust }}
+      web: ${{ steps.filter.outputs.web }}
+      python: ${{ steps.filter.outputs.python }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dorny/paths-filter@v4
+        id: filter
+        with:
+          filters: |
+            rust:
+              - "crates/**"
+              - "apps/desktop/src-tauri/**"
+              - "Cargo.toml"
+              - "Cargo.lock"
+              - "rust-toolchain.toml"
+              - "rustfmt.toml"
+              - "clippy.toml"
+              - "deny.toml"
+              - ".github/workflows/ci.yml"
+            web:
+              - "apps/desktop/src/**"
+              - "apps/desktop/index.html"
+              - "apps/desktop/public/**"
+              - "apps/desktop/package.json"
+              - "apps/desktop/vite.config.*"
+              - "apps/desktop/tsconfig*.json"
+              - "apps/desktop/*.config.*"
+              - "package.json"
+              - "pnpm-lock.yaml"
+              - "pnpm-workspace.yaml"
+              - ".github/workflows/ci.yml"
+            python:
+              - "mappings/scripts/**"
+              - ".github/workflows/ci.yml"
+
+  # --------------------------------------------------
+  # Formatting (Rust + Python)
+  # 两者都是秒级检查，合成一个 job 省一次排队与 setup。
   # --------------------------------------------------
   fmt:
-    name: rustfmt
+    name: format
+    needs: changes
+    if: needs.changes.outputs.rust == 'true' || needs.changes.outputs.python == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
 
       - uses: dtolnay/rust-toolchain@stable
+        if: needs.changes.outputs.rust == 'true'
         with:
           components: rustfmt
 
-      - name: Check formatting
+      - name: Check Rust formatting
+        if: needs.changes.outputs.rust == 'true'
         run: cargo fmt --all --check
 
       # rust-toolchain.toml 锁定 stable 通道，最低版本在这里断言。
       - name: Assert rustc >= 1.98
+        if: needs.changes.outputs.rust == 'true'
         shell: bash
         run: |
           rustc -vV
@@ -51,32 +105,27 @@ jobs:
             exit 1
           fi
 
-  # --------------------------------------------------
-  # Python formatting
-  # --------------------------------------------------
-  fmt-python:
-    name: ruff format
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v7
-
       - uses: actions/setup-python@v7
+        if: needs.changes.outputs.python == 'true'
         with:
           python-version: "3.12"
 
       - name: Install Ruff
+        if: needs.changes.outputs.python == 'true'
         run: pip install ruff
 
       - name: Check Python formatting
+        if: needs.changes.outputs.python == 'true'
         run: ruff format --check mappings/scripts/
 
   # --------------------------------------------------
   # Windows Clippy
-  # Share the Debug Rust cache with Windows package tests.
+  # 全 workspace 的唯一 lint 入口，覆盖 cfg(windows) 分支。
   # --------------------------------------------------
   clippy-windows:
     name: clippy (windows)
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
     runs-on: windows-latest
     timeout-minutes: 40
     steps:
@@ -90,26 +139,28 @@ jobs:
         with:
           shared-key: windows-debug
           cache-on-failure: true
+          # 8 个 job 共用一个键，PR 上只读不写，避免互相覆盖并挤掉已有条目。
+          save-if: ${{ github.ref == 'refs/heads/master' }}
 
       - name: Run Clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
 
   # --------------------------------------------------
   # Windows package tests
-  # Keep matrix parallelism to minimize PR feedback time.
+  # 只测平台相关 crate；voltnest-core / -provider / -storage 由 Linux
+  # 的 cargo test --workspace 覆盖，不重复跑。
   # --------------------------------------------------
   test-windows:
     name: cargo test (windows, ${{ matrix.package }})
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
     strategy:
       fail-fast: true
       matrix:
         package:
-          - voltnest-core
           - voltnest-hid
           - voltnest-ble
-          - voltnest-provider
           - voltnest-platform
-          - voltnest-storage
           - voltnest-desktop
 
     runs-on: windows-latest
@@ -124,16 +175,19 @@ jobs:
         with:
           shared-key: windows-debug
           cache-on-failure: true
+          save-if: ${{ github.ref == 'refs/heads/master' }}
 
       - name: Run package tests
         run: cargo test -p ${{ matrix.package }}
 
   # --------------------------------------------------
   # Windows release build
-  # Keep Release artifacts separate from Debug artifacts.
+  # PR 只做 release 配置下的类型检查；完整 release 打包由 release.yml 负责。
   # --------------------------------------------------
   build-smoke:
     name: release build (windows)
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
     runs-on: windows-latest
     timeout-minutes: 60
 
@@ -146,8 +200,16 @@ jobs:
         with:
           shared-key: windows-release
           cache-on-failure: true
+          save-if: ${{ github.ref == 'refs/heads/master' }}
+
+      - name: Check workspace in release mode
+        if: github.event_name == 'pull_request'
+        run: cargo check --workspace --release
+        env:
+          CARGO_INCREMENTAL: 0
 
       - name: Build workspace in release mode
+        if: github.event_name != 'pull_request'
         run: cargo build --workspace --release
         env:
           CARGO_INCREMENTAL: 0
@@ -157,6 +219,8 @@ jobs:
   # --------------------------------------------------
   clippy-test-linux:
     name: clippy + test (linux)
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 40
 
@@ -171,6 +235,7 @@ jobs:
         with:
           shared-key: linux-debug
           cache-on-failure: true
+          save-if: ${{ github.ref == 'refs/heads/master' }}
 
       # Native dependencies required by Tauri, hidapi, tray,
       # Bluetooth and notification backends.
@@ -197,6 +262,8 @@ jobs:
   # --------------------------------------------------
   coverage:
     name: coverage gate
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 40
 
@@ -211,6 +278,7 @@ jobs:
         with:
           shared-key: linux-coverage
           cache-on-failure: true
+          save-if: ${{ github.ref == 'refs/heads/master' }}
 
       - uses: taiki-e/install-action@cargo-llvm-cov
 
@@ -240,6 +308,8 @@ jobs:
   # --------------------------------------------------
   frontend:
     name: frontend
+    needs: changes
+    if: needs.changes.outputs.web == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -268,3 +338,36 @@ jobs:
 
       - name: Build frontend
         run: pnpm run build
+
+  # --------------------------------------------------
+  # 单一必过检查
+  # job 会按改动区域跳过，分支保护无法用 skipped 的 job 兜底，
+  # 因此统一由这里汇总。
+  # --------------------------------------------------
+  ci-status:
+    name: ci
+    if: always()
+    needs:
+      - changes
+      - fmt
+      - clippy-windows
+      - test-windows
+      - build-smoke
+      - clippy-test-linux
+      - coverage
+      - frontend
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Summarize results
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          printf '%s\n' "$NEEDS"
+          printf '%s' "$NEEDS" | python3 -c "
+          import json, sys
+          needs = json.load(sys.stdin)
+          bad = sorted(k for k, v in needs.items() if v['result'] not in ('success', 'skipped'))
+          print('failed jobs:', ', '.join(bad)) if bad else print('all jobs passed or skipped')
+          sys.exit(1 if bad else 0)
+          "
