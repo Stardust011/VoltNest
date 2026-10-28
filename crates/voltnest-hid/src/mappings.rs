@@ -688,4 +688,70 @@ mod tests {
         }
         dir
     }
+
+    /// 装错包时这行日志就是全部线索：每个变体都要能说清路径与原因。
+    #[test]
+    fn mapping_error_display_covers_every_variant() {
+        let dir = PathBuf::from("/opt/voltnest/mappings");
+        let file = dir.join("ajazz.json");
+        let cases = vec![
+            (
+                MappingError::DirNotFound {
+                    candidates: vec![dir.clone(), PathBuf::from("/usr/share/voltnest/mappings")],
+                },
+                "/usr/share/voltnest/mappings",
+            ),
+            (
+                MappingError::DirUnreadable {
+                    dir: dir.clone(),
+                    detail: "拒绝访问".to_string(),
+                },
+                "拒绝访问",
+            ),
+            (MappingError::Empty { dir: dir.clone() }, "没有任何 *.json"),
+            (
+                MappingError::FileUnreadable {
+                    path: file.clone(),
+                    detail: "不是 UTF-8".to_string(),
+                },
+                "不是 UTF-8",
+            ),
+            (
+                MappingError::InvalidTable {
+                    path: file.clone(),
+                    detail: "缺少 devices".to_string(),
+                },
+                "缺少 devices",
+            ),
+            (
+                MappingError::MissingTable {
+                    dir: dir.clone(),
+                    file: "rapoo.json".to_string(),
+                    available: Vec::new(),
+                },
+                "现有：无",
+            ),
+        ];
+        for (err, needle) in cases {
+            let text = err.to_string();
+            assert!(
+                text.contains(needle),
+                "{err:?} 的诊断文本缺少 {needle}：{text}"
+            );
+        }
+        // 所有候选路径都要列出来，装错包时才能逐条核对。
+        let err = MappingError::DirNotFound {
+            candidates: vec![dir.clone()],
+        };
+        assert!(err.to_string().contains(DIR_ENV), "{err}");
+    }
+
+    /// 正常加载时不该被判成空表，且要报出实际使用的目录。
+    #[test]
+    fn loaded_set_reports_dir_and_is_not_empty() {
+        let set = MappingSet::load().unwrap();
+        assert!(!set.is_empty());
+        assert!(set.dir().ends_with(DIR_NAME), "目录：{:?}", set.dir());
+        assert!(!set.files().is_empty());
+    }
 }
