@@ -1,0 +1,2 @@
+# 与 rustfmt / prettier 对齐的行宽
+line-length = 100
