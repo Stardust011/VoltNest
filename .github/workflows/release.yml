@@ -72,6 +72,8 @@ jobs:
         with:
           shared-key: windows-release
           cache-on-failure: true
+          # tag 触发的缓存只被同名 tag 可见，每次发布都是新 tag，落盘即死缓存。
+          save-if: ${{ github.ref_type == 'branch' }}
 
       - name: Check workspace in release mode
         run: cargo check --workspace --release
@@ -114,11 +116,14 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: release-${{ matrix.target }}
+          # tag 触发的缓存只被同名 tag 可见，每次发布都是新 tag，落盘即死缓存。
+          save-if: ${{ github.ref_type == 'branch' }}
 
-      - uses: pnpm/setup@v1
+      - uses: pnpm/setup@v3
         with:
           runtime: node@24
           cache: true
+          save-cache: ${{ github.ref_type == 'branch' }}
           cache-dependency-path: pnpm-lock.yaml
           install: false
 

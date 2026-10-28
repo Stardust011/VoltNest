@@ -67,22 +67,84 @@ jobs:
               - ".github/workflows/ci.yml"
 
   # --------------------------------------------------
-  # Formatting (Rust + Python)
-  # 两者都是秒级检查，合成一个 job 省一次排队与 setup。
+  # Windows Clippy
+  # 全 workspace 的唯一 lint 入口，覆盖 cfg(windows) 分支。
   # --------------------------------------------------
-  fmt:
-    name: format
+  clippy-windows:
+    name: clippy (windows)
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          # 与测试分开：clippy 只产出 check 口径的依赖产物，和 cargo test 的 build 产物不可互换。
+          shared-key: windows-clippy
+          cache-on-failure: true
+          # PR 上只读不写。
+          save-if: ${{ github.ref == 'refs/heads/master' }}
+
+      - name: Run Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+  # --------------------------------------------------
+  # Windows package tests
+  # 只测平台相关 crate；voltnest-core / -provider / -storage 由 Linux
+  # 的 cargo test --workspace 覆盖，不重复跑。
+  # 合成单个 job：计费是各 job 时长之和，拆矩阵等于每条腿各重编一遍依赖。
+  # --------------------------------------------------
+  test-windows:
+    name: cargo test (windows)
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
+    runs-on: windows-latest
+    timeout-minutes: 40
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: windows-test
+          cache-on-failure: true
+          # PR 上只读不写。
+          save-if: ${{ github.ref == 'refs/heads/master' }}
+
+      - name: Run package tests
+        run: >-
+          cargo test
+          -p voltnest-hid
+          -p voltnest-ble
+          -p voltnest-platform
+          -p voltnest-desktop
+
+  # --------------------------------------------------
+  # Linux 格式 + Clippy + 测试
+  # 格式检查是秒级，挂在这个 job 里：计费按 job 计，单开一个 job 等于多付一分钟。
+  # --------------------------------------------------
+  clippy-test-linux:
+    name: lint + test (linux)
     needs: changes
     if: needs.changes.outputs.rust == 'true' || needs.changes.outputs.python == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 40
+
     steps:
       - uses: actions/checkout@v7
 
       - uses: dtolnay/rust-toolchain@stable
         if: needs.changes.outputs.rust == 'true'
         with:
-          components: rustfmt
+          components: clippy,rustfmt
 
       - name: Check Rust formatting
         if: needs.changes.outputs.rust == 'true'
@@ -115,94 +177,17 @@ jobs:
         if: needs.changes.outputs.python == 'true'
         run: ruff format --check mappings/scripts/
 
-  # --------------------------------------------------
-  # Windows Clippy
-  # 全 workspace 的唯一 lint 入口，覆盖 cfg(windows) 分支。
-  # --------------------------------------------------
-  clippy-windows:
-    name: clippy (windows)
-    needs: changes
-    if: needs.changes.outputs.rust == 'true'
-    runs-on: windows-latest
-    timeout-minutes: 40
-    steps:
-      - uses: actions/checkout@v7
-
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy
-
       - uses: Swatinem/rust-cache@v2
+        if: needs.changes.outputs.rust == 'true'
         with:
-          shared-key: windows-debug
-          cache-on-failure: true
-          # 8 个 job 共用一个键，PR 上只读不写，避免互相覆盖并挤掉已有条目。
-          save-if: ${{ github.ref == 'refs/heads/master' }}
-
-      - name: Run Clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
-
-  # --------------------------------------------------
-  # Windows package tests
-  # 只测平台相关 crate；voltnest-core / -provider / -storage 由 Linux
-  # 的 cargo test --workspace 覆盖，不重复跑。
-  # --------------------------------------------------
-  test-windows:
-    name: cargo test (windows, ${{ matrix.package }})
-    needs: changes
-    if: needs.changes.outputs.rust == 'true'
-    strategy:
-      fail-fast: true
-      matrix:
-        package:
-          - voltnest-hid
-          - voltnest-ble
-          - voltnest-platform
-          - voltnest-desktop
-
-    runs-on: windows-latest
-    timeout-minutes: 40
-
-    steps:
-      - uses: actions/checkout@v7
-
-      - uses: dtolnay/rust-toolchain@stable
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: windows-debug
-          cache-on-failure: true
-          save-if: ${{ github.ref == 'refs/heads/master' }}
-
-      - name: Run package tests
-        run: cargo test -p ${{ matrix.package }}
-
-  # --------------------------------------------------
-  # Linux Clippy + tests
-  # --------------------------------------------------
-  clippy-test-linux:
-    name: clippy + test (linux)
-    needs: changes
-    if: needs.changes.outputs.rust == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 40
-
-    steps:
-      - uses: actions/checkout@v7
-
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: linux-debug
+          shared-key: linux-test
           cache-on-failure: true
           save-if: ${{ github.ref == 'refs/heads/master' }}
 
       # Native dependencies required by Tauri, hidapi, tray,
       # Bluetooth and notification backends.
       - name: Install Linux build dependencies
+        if: needs.changes.outputs.rust == 'true'
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
@@ -214,9 +199,11 @@ jobs:
             libayatana-appindicator3-dev
 
       - name: Run Clippy
+        if: needs.changes.outputs.rust == 'true'
         run: cargo clippy --workspace --all-targets -- -D warnings
 
       - name: Run workspace tests
+        if: needs.changes.outputs.rust == 'true'
         run: cargo test --workspace
 
   # --------------------------------------------------
@@ -233,10 +220,12 @@ jobs:
       - uses: actions/checkout@v7
 
       # pnpm 版本取自 package.json 的 packageManager 字段；Node 由同一步安装。
-      - uses: pnpm/setup@v1
+      - uses: pnpm/setup@v3
         with:
           runtime: node@24
           cache: true
+          # PR 写的缓存作用域是 refs/pull/N/merge，其它 PR 与 master 都读不到，只在 master 落盘。
+          save-cache: ${{ github.ref == 'refs/heads/master' }}
           cache-dependency-path: pnpm-lock.yaml
           install: false
 
@@ -265,7 +254,6 @@ jobs:
     if: always()
     needs:
       - changes
-      - fmt
       - clippy-windows
       - test-windows
       - clippy-test-linux
