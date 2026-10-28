@@ -51,12 +51,41 @@ jobs:
           # 输入名带连字符，只能用下标访问。
           release-as: ${{ inputs['release-as'] }}
 
-  bundle:
-    name: bundle (${{ matrix.target }})
+  # 打包前先在 release 配置下编译一遍：失败要发生在动打包机之前，
+  # 而不是让两条矩阵腿各跑 90 分钟才发现编不过。只跑 Windows 一份：
+  # 检查的是 profile.release 与 release-only cfg，与打包目标的平台差异无关。
+  release-check:
+    name: release check
     needs: release-please
-    # release-please 在 tag push 时被跳过，outputs 为空，故先 always 兜住再按事件判定。
+    # 与 bundle 同一套判定：普通 master push（只更新 release PR）不跑。
     if: |
       always() && !cancelled()
+      && (needs.release-please.outputs.released == 'true' || github.ref_type == 'tag')
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: windows-release
+          cache-on-failure: true
+
+      - name: Check workspace in release mode
+        run: cargo check --workspace --release
+        env:
+          CARGO_INCREMENTAL: 0
+
+  bundle:
+    name: bundle (${{ matrix.target }})
+    needs: [release-please, release-check]
+    # release-please 在 tag push 时被跳过，outputs 为空，故先 always 兜住再按事件判定；
+    # release check 未通过时不打包。
+    if: |
+      always() && !cancelled()
+      && needs.release-check.result == 'success'
       && (needs.release-please.outputs.released == 'true' || github.ref_type == 'tag')
     strategy:
       fail-fast: false
