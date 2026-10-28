@@ -8,6 +8,10 @@ node_modules/
 dist/
 apps/desktop/src-tauri/gen/
 
+# pnpm / corepack 本地缓存
+.pnpm-store/
+.corepack/
+
 # Python 字节码缓存
 __pycache__/
 *.pyc
