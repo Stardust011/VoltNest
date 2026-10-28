@@ -28,7 +28,11 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
+      # 与 CI 共用同一条缓存，只读不写：每周跑一次，自建缓存必然活不过 7 天淘汰线。
       - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: linux-test
+          save-if: "false"
       - name: Install Linux build dependencies
         run: |
           sudo apt-get update
