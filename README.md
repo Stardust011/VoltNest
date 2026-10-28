@@ -36,9 +36,9 @@ crates/voltnest-hid/
 
 ## 开发
 
-需要 Rust 稳定版（见 `rust-toolchain.toml`）与 Node 22+（前端用 npm，仓库带 `package-lock.json`）。
+需要 Rust 稳定版（见 `rust-toolchain.toml`）与 Node 22+（包管理用 pnpm，版本锁在根 `package.json` 的 `packageManager`）。
 仓库根还有一份 `package.json`：装开发工具（husky / commitlint），同时是所有脚本的统一入口。
-克隆后 `npm install` 挂上提交钩子，`npm --prefix apps/desktop ci` 装前端依赖，之后各命令都在根目录执行。
+克隆后先 `corepack enable pnpm` 让 pnpm 可用（或 `npm i -g pnpm@12`），再 `pnpm install` 一次装齐钩子与前端依赖。
 两个平台共用的门禁：
 
 ```bash
@@ -52,33 +52,32 @@ cargo fmt --all -- --check
 
 ### 提交钩子
 
-仓库根 `package.json` 装了 husky 与 commitlint，`npm install` 时 `prepare` 会自动挂上钩子
+仓库根 `package.json` 装了 husky 与 commitlint，`pnpm install` 时 `prepare` 会自动挂上钩子
 （`core.hooksPath` 指向 `.husky/_`），无需手动安装：
 
 - `commit-msg`：`commitlint` 校验首行是否为 `type(scope): subject`，类型与长度见 `commitlint.config.mjs`。
-- `pre-commit`：`npm run format:check`，即 rustfmt / prettier（前端 + 仓库根目录）/ ruff 三套检查，口径同 CI。
+- `pre-commit`：`pnpm run format:check`，即 rustfmt / prettier（前端 + 仓库根目录）/ ruff 三套检查，口径同 CI。
 
-被拦下时执行 `npm run format` 修好再提交。
+被拦下时执行 `pnpm run format` 修好再提交。
 
 ### Windows
 
 另需 WebView2（Windows 11 自带）。
 
 ```bash
-npm install                     # 仓库根：钩子工具（husky / commitlint）
-npm --prefix apps/desktop ci    # 前端依赖
+pnpm install                    # 钩子工具 + 前端依赖（workspace 一起装）
 
-npm run test                    # Vitest，只测纯函数
-npm run build                   # vue-tsc + vite build
-npm run format                  # 全仓格式化：Rust + 仓库根目录文本 + 前端
-npm run format:check            # 同上的只检查模式，CI 用
-npm run dev                     # 只起 Vite
-npm run tauri dev               # 开发调试（会先起 Vite）
-npm run tauri build             # 出 NSIS 安装包
+pnpm run test                   # Vitest，只测纯函数
+pnpm run build                  # vue-tsc + vite build
+pnpm run format                 # 全仓格式化：Rust + 仓库根目录文本 + 前端
+pnpm run format:check           # 同上的只检查模式，CI 用
+pnpm run dev                    # 只起 Vite
+pnpm run tauri dev              # 开发调试（会先起 Vite）
+pnpm run tauri build            # 出 NSIS 安装包
 ```
 
-以上都在仓库根目录执行，根 `package.json` 会把带参数的脚本（`dev` / `build` / `test` / `tauri`）
-连同参数一起转给 `apps/desktop`，不必 `cd` 进去。
+以上都在仓库根目录执行。根 `package.json` 把 `dev` / `build` / `preview` / `test` 转给 `apps/desktop`，
+`tauri` 走 `pnpm exec` 直调 CLI；pnpm 的参数不需要 `--`，直接跟在脚本名后（`pnpm run tauri dev`）。
 
 ### Linux
 
@@ -96,18 +95,18 @@ sudo apt install libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev \
 - `libayatana-appindicator3-dev`：托盘（StatusNotifierItem）。
 - `libdbus-1-dev`：bluez（BLE）与系统通知的 D-Bus 绑定。
 
-命令与 Windows 完全相同，同样在仓库根目录执行（`npm run test` → `npm run build` → `npm run tauri dev|build`）。
+命令与 Windows 完全相同，同样在仓库根目录执行（`pnpm run test` → `pnpm run build` → `pnpm run tauri dev|build`）。
 
-格式化也从仓库根发起：`npm run format` 先跑 `cargo fmt --all`（借用 `--manifest-path ../../Cargo.toml`
+格式化也从仓库根发起：`pnpm run format` 先跑 `cargo fmt --all`（借用 `--manifest-path ../../Cargo.toml`
 覆盖整个 workspace，含 `src-tauri`），再跑两轮 `prettier --write`（仓库根目录文本 + 前端）；
-`npm run format:check` 是同一套的只检查模式。
+`pnpm run format:check` 是同一套的只检查模式。
 
 ### 打包
 
-| 平台    | 命令                  | 产物                                                                                           |
-| ------- | --------------------- | ---------------------------------------------------------------------------------------------- |
-| Windows | `npm run tauri build` | NSIS 安装包（`bundle.targets: ["nsis"]`，`currentUser` 安装模式）                              |
-| Linux   | `npm run tauri build` | `deb` + `AppImage`（`tauri.linux.conf.json` 把 `bundle.targets` 覆盖为 `["deb", "appimage"]`） |
+| 平台    | 命令                   | 产物                                                                                           |
+| ------- | ---------------------- | ---------------------------------------------------------------------------------------------- |
+| Windows | `pnpm run tauri build` | NSIS 安装包（`bundle.targets: ["nsis"]`，`currentUser` 安装模式）                              |
+| Linux   | `pnpm run tauri build` | `deb` + `AppImage`（`tauri.linux.conf.json` 把 `bundle.targets` 覆盖为 `["deb", "appimage"]`） |
 
 Tauri 2 会自动把同目录的 `tauri.linux.conf.json` 合并进 `tauri.conf.json`（对象递归合并、数组整体替换），
 所以 Linux 侧不动基础配置、Windows 侧仍是 NSIS。deb / AppImage 的运行期依赖由 Tauri 依据链接到的库
@@ -122,7 +121,7 @@ CI 侧：`release.yml` 在 master 上跑 release-please，它按 Conventional Co
 `cargo-deny` 与工具链漂移扫描每周一跑（`.github/workflows/security.yml`）；
 型号表每月 1 日抓取厂商网页驱动并开 PR
 （`.github/workflows/mappings.yml`，脚本在 `mappings/scripts/`，只在 `devices` 内容有差异时才开 PR；
-落盘前用 prettier 统一表格式，本地手工抓取后同样要跑 `npm run format:repo`）。
+落盘前用 prettier 统一表格式，本地手工抓取后同样要跑 `pnpm run format:repo`）。
 
 ## Linux 运行期前提
 
