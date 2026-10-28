@@ -79,6 +79,16 @@ jobs:
           echo "changed=$changed" >> "$GITHUB_OUTPUT"
           cat "$report" >> "$GITHUB_STEP_SUMMARY"
 
+      # 抓取脚本产出的是 json.dumps 原始排版，落盘前统一成仓库 prettier 口径。
+      - uses: actions/setup-node@v7
+        if: steps.fetch.outputs.changed == '1'
+        with:
+          node-version: 22
+
+      - name: Format tables
+        if: steps.fetch.outputs.changed == '1'
+        run: npx --yes prettier@3.9.10 --write crates/voltnest-hid/data/mappings
+
       # 型号表格式由 crate 的测试守，不靠抓取脚本自证。
       - name: Verify tables parse
         id: verify

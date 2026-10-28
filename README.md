@@ -96,10 +96,16 @@ Tauri 2 会自动把同目录的 `tauri.linux.conf.json` 合并进 `tauri.conf.j
 所以 Linux 侧不动基础配置、Windows 侧仍是 NSIS。deb / AppImage 的运行期依赖由 Tauri 依据链接到的库
 自动生成，因此不在配置里手写 `depends`（手写会在 Ubuntu 24.04 这类 `t64` 重命名的发行版上写错）。
 
-CI 侧：`git tag v0.1.0 && git push origin v0.1.0` 会双平台打包并挂到 Draft Release
-（`.github/workflows/release.yml`，v1 不签名，需手动发布）；`cargo-deny` 与工具链漂移扫描每周一跑
-（`.github/workflows/security.yml`）；型号表每月 1 日抓取厂商网页驱动并开 PR
-（`.github/workflows/mappings.yml`，脚本在 `mappings/scripts/`，只在 `devices` 内容有差异时才开 PR）。
+CI 侧：`release.yml` 在 master 上跑 release-please，它按 Conventional Commits 维护一个 release PR
+（改 `CHANGELOG.md` 与 `Cargo.toml` / `tauri.conf.json` / `package.json` 里的版本号）；合并该 PR 即出
+`vX.Y.Z` tag 与 Draft Release，同一次 run 接着双平台打包并把安装包挂上去（v1 不签名，需手动发布）。
+发布说明用中文小标题（新功能 / 修复 / …）由 `release-please-config.json` 的 `changelog-sections` 定义；
+`.release-please-manifest.json` 初始记 `0.0.0`（仓库还没有任何 tag），首个 release PR 会出 `v0.1.0`；
+`Cargo.lock` 里 workspace 成员的版本不在 PR 内，下一次 cargo 构建会自动跟上。
+`cargo-deny` 与工具链漂移扫描每周一跑（`.github/workflows/security.yml`）；
+型号表每月 1 日抓取厂商网页驱动并开 PR
+（`.github/workflows/mappings.yml`，脚本在 `mappings/scripts/`，只在 `devices` 内容有差异时才开 PR；
+落盘前用 prettier 统一表格式，本地手工抓取后同样要跑 `npm run format:repo`）。
 
 ## Linux 运行期前提
 
