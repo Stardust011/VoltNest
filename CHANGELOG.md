@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.1.1](https://github.com/Stardust011/VoltNest/compare/v0.1.0...v0.1.1) (2026-10-28)
+
+
+### 修复
+
+* **release:** 更新文件路径以完成构建输出 ([24a7fc3](https://github.com/Stardust011/VoltNest/commit/24a7fc30345cf13dc28e3c3980f765ec4060d88e))
+
+
+### 持续集成
+
+* **workflows:** skip release PRs and remove release check ([1926e04](https://github.com/Stardust011/VoltNest/commit/1926e041634ed1f85d335176a24ff4976fb8ca69))
+
 ## 0.1.0 (2026-10-28)
 
 
