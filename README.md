@@ -174,22 +174,21 @@ CI 侧：`release.yml` 在 master 上跑 release-please，它按 Conventional Co
    `Shell_NotifyIcon` 的气泡接口，v1 不为它引入自绘托盘窗口。提示挂在设备自己的
    图标上（没有则挂基础图标），6 秒后还原原 tooltip。选项仍是
    「系统通知 / 托盘气泡 / 关闭」三档，不自动降级。**这条实现是 Windows 语义**，
-   Linux 的托盘后端没有 tooltip，见第 10 条。
-8. 分支覆盖率（core ≥90%）暂由评审保证：`cargo llvm-cov` 的分支统计仍需 nightly。
-9. **系统通知的「应用名 + 图标」由 AUMID 决定**：启动时写
+   Linux 的托盘后端没有 tooltip，见第 9 条。
+8. **系统通知的「应用名 + 图标」由 AUMID 决定**：启动时写
    `HKCU\Software\Classes\AppUserModelId\VoltNest.Desktop`（`DisplayName` + `IconUri`，
    图标落在 `%APPDATA%\VoltNest\toast-icon.png`）。这两项缺一，Windows 会回落成
    `powershell.exe` 的蓝色图标和「Windows PowerShell」标题。Toast 由本程序直接走
    WinRT 发送（不经过 `tauri-plugin-notification`），开发运行同样显示 VoltNest。AUMID / Toast 是
    Windows 概念：Linux 上没有这一步，系统通知由 `tauri-plugin-notification`（libnotify →
    `org.freedesktop.Notifications`）发送，应用名与图标由打包生成的 `.desktop` 文件决定。
-10. **Linux 托盘不显示 tooltip，也不派发点击事件**：托盘走 libayatana-appindicator（StatusNotifierItem），
-    Tauri 在该后端把 `set_tooltip` 实现成空操作（`tray-icon` 直接返回 `Ok`）、`TrayIconEvent` 根本不发。
-    这个空实现同时废掉**设备 tooltip**（`型号 · 92%`）和**基础图标的汇总 tooltip**
-    （`VoltNest · N 台设备`），读数以面板为准；左键点图标也开不了面板，打开面板走每张图标菜单里的
-    「打开面板」。因此「托盘气泡」档在 Linux 上不可用，但**诊断页能分辨原因**：这条路径记
-    `unsupported_platform`（与「托盘里真没有落脚图标」的 `failed` 分开，不是「等价为 tooltip」——
-    那个后端没有 tooltip），日志另提示改用系统通知。
-11. **Linux 侧只做过启动验收**（WSLg + 可写数据目录）：进程能起来、托盘初始化成功、HID 打「枚举无
+9. **Linux 托盘不显示 tooltip，也不派发点击事件**：托盘走 libayatana-appindicator（StatusNotifierItem），
+   Tauri 在该后端把 `set_tooltip` 实现成空操作（`tray-icon` 直接返回 `Ok`）、`TrayIconEvent` 根本不发。
+   这个空实现同时废掉**设备 tooltip**（`型号 · 92%`）和**基础图标的汇总 tooltip**
+   （`VoltNest · N 台设备`），读数以面板为准；左键点图标也开不了面板，打开面板走每张图标菜单里的
+   「打开面板」。因此「托盘气泡」档在 Linux 上不可用，但**诊断页能分辨原因**：这条路径记
+   `unsupported_platform`（与「托盘里真没有落脚图标」的 `failed` 分开，不是「等价为 tooltip」——
+   那个后端没有 tooltip），日志另提示改用系统通知。
+10. **Linux 侧只做过启动验收**（WSLg + 可写数据目录）：进程能起来、托盘初始化成功、HID 打「枚举无
     HID 设备」、BLE 按退避重启并保留 provider 的结构化原因（`需 bluetoothd…`）。仍**没有**在带
     蓝牙适配器的真机上跑过真实采集，也没有在真桌面会话里确认托盘的视觉呈现与通知投递。

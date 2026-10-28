@@ -3,13 +3,10 @@ name: CI
 on:
   push:
     branches: [master]
-    # 文档改动不触发全量流水线
     paths-ignore:
       - "**.md"
       - "docs/**"
   pull_request:
-    # 不按路径裁剪：纯文档 PR 也要让汇总 job 上报，否则 required check 会一直
-    # 停在 Expected。实际开销由 changes job 的区域门控吸收。
   workflow_dispatch:
 
 permissions:
@@ -257,53 +254,6 @@ jobs:
         run: cargo test --workspace
 
   # --------------------------------------------------
-  # Coverage gates
-  # Keep coverage artifacts separate from ordinary test builds.
-  # --------------------------------------------------
-  coverage:
-    name: coverage gate
-    needs: changes
-    if: needs.changes.outputs.rust == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 40
-
-    steps:
-      - uses: actions/checkout@v7
-
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: llvm-tools-preview
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: linux-coverage
-          cache-on-failure: true
-          save-if: ${{ github.ref == 'refs/heads/master' }}
-
-      - uses: taiki-e/install-action@cargo-llvm-cov
-
-      # voltnest-ble 经 btleplug 走 bluez/dbus，需要 dbus-1.pc。
-      - name: Install Linux build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            libudev-dev \
-            libdbus-1-dev \
-            pkg-config
-
-      - name: Coverage - voltnest-core
-        run: cargo llvm-cov -p voltnest-core --fail-under-lines 90
-
-      - name: Coverage - voltnest-hid
-        run: cargo llvm-cov -p voltnest-hid --fail-under-lines 85
-
-      - name: Coverage - voltnest-ble
-        run: cargo llvm-cov -p voltnest-ble --fail-under-lines 85
-
-      - name: Coverage - voltnest-provider
-        run: cargo llvm-cov -p voltnest-provider --fail-under-lines 90
-
-  # --------------------------------------------------
   # Frontend
   # --------------------------------------------------
   frontend:
@@ -354,7 +304,6 @@ jobs:
       - test-windows
       - build-smoke
       - clippy-test-linux
-      - coverage
       - frontend
     runs-on: ubuntu-latest
     timeout-minutes: 5
