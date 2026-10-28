@@ -36,6 +36,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
+      changelog: ${{ steps.filter.outputs.changelog }}
       rust: ${{ steps.filter.outputs.rust }}
       web: ${{ steps.filter.outputs.web }}
       python: ${{ steps.filter.outputs.python }}
@@ -46,6 +47,8 @@ jobs:
         id: filter
         with:
           filters: |
+            changelog:
+              - "CHANGELOG.md"
             rust:
               - "crates/**"
               - "apps/desktop/src-tauri/**"
@@ -79,7 +82,7 @@ jobs:
   clippy-windows:
     name: clippy (windows)
     needs: changes
-    if: needs.changes.outputs.rust == 'true'
+    if: needs.changes.outputs.changelog != 'true' && needs.changes.outputs.rust == 'true'
     runs-on: windows-latest
     timeout-minutes: 40
     steps:
@@ -109,7 +112,7 @@ jobs:
   test-windows:
     name: cargo test (windows)
     needs: changes
-    if: needs.changes.outputs.rust == 'true'
+    if: needs.changes.outputs.changelog != 'true' && needs.changes.outputs.rust == 'true'
     runs-on: windows-latest
     timeout-minutes: 40
 
@@ -140,7 +143,7 @@ jobs:
   clippy-test-linux:
     name: lint + test (linux)
     needs: changes
-    if: needs.changes.outputs.rust == 'true' || needs.changes.outputs.python == 'true'
+    if: needs.changes.outputs.changelog != 'true' && (needs.changes.outputs.rust == 'true' || needs.changes.outputs.python == 'true')
     runs-on: ubuntu-latest
     timeout-minutes: 40
 
@@ -218,7 +221,7 @@ jobs:
   frontend:
     name: frontend
     needs: changes
-    if: needs.changes.outputs.web == 'true'
+    if: needs.changes.outputs.changelog != 'true' && needs.changes.outputs.web == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -257,7 +260,7 @@ jobs:
   # --------------------------------------------------
   ci-status:
     name: ci
-    if: always()
+    if: always() && needs.changes.outputs.changelog != 'true'
     needs:
       - changes
       - clippy-windows
