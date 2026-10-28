@@ -18,9 +18,9 @@ voltnest-ble = { path = "crates/voltnest-ble" }
 voltnest-platform = { path = "crates/voltnest-platform" }
 voltnest-storage = { path = "crates/voltnest-storage" }
 
-serde = { version = "1.0", features = ["derive"] }
-serde_json = { version = "1.0", features = ["preserve_order"] }
-log = "0.4"
+serde = { version = ">=1.0.229", features = ["derive"] }
+serde_json = { version = ">=1.0.154", features = ["preserve_order"] }
+log = ">=0.4.34"
 
 [profile.release]
 codegen-units = 1
