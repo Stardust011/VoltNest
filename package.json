@@ -1,0 +1,16 @@
+{
+  "name": "voltnest",
+  "private": true,
+  "description": "VoltNest 仓库级开发工具（提交钩子与提交信息校验）",
+  "scripts": {
+    "prepare": "husky",
+    "format": "npm --prefix apps/desktop run format",
+    "format:check": "npm --prefix apps/desktop run format:check",
+    "hooks:install": "husky"
+  },
+  "devDependencies": {
+    "@commitlint/cli": "^19.8.1",
+    "@commitlint/config-conventional": "^19.8.1",
+    "husky": "^9.1.7"
+  }
+}

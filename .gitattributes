@@ -2,4 +2,4 @@
 crates/voltnest-hid/data/mappings/*.json text eol=lf
 
 # Git 钩子在各平台都交给 sh 执行，同样必须 LF。
-.githooks/** text eol=lf
+.husky/* text eol=lf
