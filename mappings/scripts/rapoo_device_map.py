@@ -47,8 +47,16 @@ RAPOO_VENDOR_IDS = [0x24AE, 0x2E3C]
 
 # manifest 中 type 的已知取值（用于兜底识别，排除 filters 里的 type:"default"）
 KNOWN_DEVICE_TYPES = {
-    "mouse", "keyboard", "base", "dock", "headset", "gamepad",
-    "joystick", "mousepad", "receiver", "keyboard_base",
+    "mouse",
+    "keyboard",
+    "base",
+    "dock",
+    "headset",
+    "gamepad",
+    "joystick",
+    "mousepad",
+    "receiver",
+    "keyboard_base",
 }
 
 
@@ -148,8 +156,10 @@ def extract_manifests(js: str) -> list[dict]:
         if not name:
             continue
 
-        window_end = matches[idx + 1].start() if idx + 1 < len(matches) else min(len(js), m.end() + 1200)
-        window = js[m.end():window_end]
+        window_end = (
+            matches[idx + 1].start() if idx + 1 < len(matches) else min(len(js), m.end() + 1200)
+        )
+        window = js[m.end() : window_end]
 
         # 必须紧跟 hardware:{vendorId:...}，以此过滤掉国际化文案里的 model 字段
         if "hardware:{" not in window or "vendorId:" not in window:
@@ -168,7 +178,11 @@ def extract_manifests(js: str) -> list[dict]:
         if type_m:
             device_type = type_m.group(1)
         else:
-            cand = [t for t in re.findall(r'\btype\s*:\s*"([^"]+)"', window) if t not in ("default", "update")]
+            cand = [
+                t
+                for t in re.findall(r'\btype\s*:\s*"([^"]+)"', window)
+                if t not in ("default", "update")
+            ]
             device_type = cand[0] if cand else "unknown"
 
         ver_m = re.search(r'\bversion\s*:\s*"([^"]+)"', pre)
@@ -179,22 +193,24 @@ def extract_manifests(js: str) -> list[dict]:
         driver_m = re.search(r'\bdriver\s*:\s*"([^"]+)"', window)
 
         # channel 位于 model 之前
-        head = js[max(0, m.start() - 300):m.start()]
-        ch_m = re.search(r'\bchannel\s*:\s*\[([^\]]*)\]', head)
+        head = js[max(0, m.start() - 300) : m.start()]
+        ch_m = re.search(r"\bchannel\s*:\s*\[([^\]]*)\]", head)
         channels = re.findall(r'"([^"]+)"', ch_m.group(1)) if ch_m else []
 
-        rows.append({
-            "name": name,
-            "deviceType": device_type,
-            "driver": driver_m.group(1) if driver_m else None,
-            "version": ver_m.group(1) if ver_m else None,
-            "vendorId": vid,
-            "productIds": pids,
-            "transport": (transport_m.group(1) if transport_m else "").upper() or None,
-            "dongleModel": dongle_m.group(1) if dongle_m else None,
-            "mainControl": main_m.group(1) if main_m else None,
-            "channels": channels,
-        })
+        rows.append(
+            {
+                "name": name,
+                "deviceType": device_type,
+                "driver": driver_m.group(1) if driver_m else None,
+                "version": ver_m.group(1) if ver_m else None,
+                "vendorId": vid,
+                "productIds": pids,
+                "transport": (transport_m.group(1) if transport_m else "").upper() or None,
+                "dongleModel": dongle_m.group(1) if dongle_m else None,
+                "mainControl": main_m.group(1) if main_m else None,
+                "channels": channels,
+            }
+        )
 
     return rows
 
@@ -248,8 +264,11 @@ def build_output(rows: Iterable[dict], *, key_format: str, source: dict) -> dict
 
     if collisions:
         uniq = sorted(set(collisions))
-        print(f"[warn] 发现 {len(uniq)} 个重复设备标识，已合并: {', '.join(uniq[:5])}"
-              + (" ..." if len(uniq) > 5 else ""), file=sys.stderr)
+        print(
+            f"[warn] 发现 {len(uniq)} 个重复设备标识，已合并: {', '.join(uniq[:5])}"
+            + (" ..." if len(uniq) > 5 else ""),
+            file=sys.stderr,
+        )
 
     config_version = fetch_stamp()
 
@@ -292,8 +311,11 @@ def run(args: argparse.Namespace) -> dict:
     rows = [r for r in rows if r["vendorId"] in RAPOO_VENDOR_IDS]
     if not args.quiet and len(rows) != total:
         allow = ", ".join(f"{v:04X}" for v in RAPOO_VENDOR_IDS)
-        print(f"[info] vendorId 过滤：丢弃 {total - len(rows)} 个非 {allow} 设备，"
-              f"保留 {len(rows)} 个", file=sys.stderr)
+        print(
+            f"[info] vendorId 过滤：丢弃 {total - len(rows)} 个非 {allow} 设备，"
+            f"保留 {len(rows)} 个",
+            file=sys.stderr,
+        )
     if args.channel:
         rows = [r for r in rows if args.channel in (r.get("channels") or [])]
     if not rows:
@@ -311,8 +333,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--url", default=DEFAULT_INDEX_URL, help=f"首页地址（默认 {DEFAULT_INDEX_URL}）")
     p.add_argument("--file", help="离线解析本地打包 JS（如 index-xxx.js），与 --url 二选一")
     p.add_argument("-o", "--output", help="输出 JSON 文件路径（默认打印到 stdout）")
-    p.add_argument("--key-format", choices=["hex", "dec"], default="hex",
-                   help="设备标识键格式：hex 如 24AE:4814（默认），dec 如 9390:18452")
+    p.add_argument(
+        "--key-format",
+        choices=["hex", "dec"],
+        default="hex",
+        help="设备标识键格式：hex 如 24AE:4814（默认），dec 如 9390:18452",
+    )
     p.add_argument("--channel", help="仅保留包含指定 channel 的设备，如 china_game")
     p.add_argument("--timeout", type=float, default=30.0, help="请求超时秒数（默认 30）")
     p.add_argument("--compact", action="store_true", help="压缩输出（默认缩进美化）")
@@ -328,15 +354,21 @@ def main(argv: list[str] | None = None) -> int:
         print(f"[error] {exc}", file=sys.stderr)
         return 1
 
-    text = json.dumps(result, ensure_ascii=False,
-                      indent=None if args.compact else 2,
-                      separators=(",", ":") if args.compact else None)
+    text = json.dumps(
+        result,
+        ensure_ascii=False,
+        indent=None if args.compact else 2,
+        separators=(",", ":") if args.compact else None,
+    )
     if args.output:
         with open(args.output, "w", encoding="utf-8", newline="\n") as fh:
             fh.write(text)
             fh.write("\n")
         if not args.quiet:
-            print(f"[info] 已写入 {args.output}（{len(result['devices'])} 个设备标识）", file=sys.stderr)
+            print(
+                f"[info] 已写入 {args.output}（{len(result['devices'])} 个设备标识）",
+                file=sys.stderr,
+            )
     else:
         print(text)
     return 0

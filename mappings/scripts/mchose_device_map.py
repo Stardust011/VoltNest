@@ -86,9 +86,7 @@ NAME_TYPE_HINTS = [
     ("DOCK", "dock"),
 ]
 
-KEYBOARD_NAME_RE = re.compile(
-    r"^(Ace|Jet|Mix|God|ZERO|K\d|G\d{2,3}|GX|Z75|UT98|X75)", re.I
-)
+KEYBOARD_NAME_RE = re.compile(r"^(Ace|Jet|Mix|God|ZERO|K\d|G\d{2,3}|GX|Z75|UT98|X75)", re.I)
 
 DONGLE_PIDS = {4106, 4107, 4128, 4129, 8219, 16401, 0x1015, 0x1017}
 
@@ -187,16 +185,20 @@ def discover_related_chunks(js: str, bundle_url: str) -> list[str]:
     names = set()
     names.update(re.findall(r'from"\.{1,2}/([A-Za-z0-9_\-.]+\.js)"', js))
     names.update(re.findall(r'import\("\.{1,2}/([A-Za-z0-9_\-.]+\.js)"\)', js))
-    names.update(re.findall(r'assets/([A-Za-z0-9_\-.]+\.js)', js))
+    names.update(re.findall(r"assets/([A-Za-z0-9_\-.]+\.js)", js))
     return [urllib.parse.urljoin(bundle_url, n) for n in sorted(names)]
 
 
 def discover_cz_bundle(site_url: str, timeout: float) -> str | None:
     try:
-        manifest = json.loads(http_get(urllib.parse.urljoin(site_url, CZ_MANIFEST_PATH), timeout=timeout))
+        manifest = json.loads(
+            http_get(urllib.parse.urljoin(site_url, CZ_MANIFEST_PATH), timeout=timeout)
+        )
         entry = manifest.get("main.js")
         if entry:
-            return urllib.parse.urljoin(urllib.parse.urljoin(site_url, "/cizhou/CZ_SHARED_DATA/"), entry)
+            return urllib.parse.urljoin(
+                urllib.parse.urljoin(site_url, "/cizhou/CZ_SHARED_DATA/"), entry
+            )
     except Exception:
         return None
     return None
@@ -273,16 +275,18 @@ def parse_product_keys(js: str) -> list[dict]:
     for m in re.finditer(r'"([^"$]{2,64})\$\$\$(\d{1,6})\$\$\$(\d{1,6})"', js):
         vid, pid = int(m.group(2)), int(m.group(3))
         name, wireless = _normalize_product_name(m.group(1))
-        window = js[m.end():m.end() + 160]
-        enum = re.match(r',deviceType:\w+\.([A-Z_]+)', window)
-        rows.append({
-            "name": name,
-            "deviceType": ENUM_TYPE_MAP.get(enum.group(1)) if enum else None,
-            "identities": [(vid, pid)],
-            "identity_names": {},
-            "isWireless": True if wireless else None,
-            "source": "bundle",
-        })
+        window = js[m.end() : m.end() + 160]
+        enum = re.match(r",deviceType:\w+\.([A-Z_]+)", window)
+        rows.append(
+            {
+                "name": name,
+                "deviceType": ENUM_TYPE_MAP.get(enum.group(1)) if enum else None,
+                "identities": [(vid, pid)],
+                "identity_names": {},
+                "isWireless": True if wireless else None,
+                "source": "bundle",
+            }
+        )
     return rows
 
 
@@ -300,8 +304,8 @@ def parse_identity_devices(js: str) -> list[dict]:
         vid, pid = int(m.group(1)), int(m.group(2))
         raw_name = m.group(3)
         receiver_name = raw_name.strip('"') if raw_name and raw_name != "null" else None
-        window = js[m.end():m.end() + 1500]
-        head = js[max(0, m.start() - 40):m.start()]
+        window = js[m.end() : m.end() + 1500]
+        head = js[max(0, m.start() - 40) : m.start()]
         in_spread = "spread:[" in head
 
         name_m = re.search(r'name:"([^"]{1,64})"', window)
@@ -349,15 +353,17 @@ def parse_mouse_table(js: str) -> list[dict]:
                 pids.append(value)
         if not pids:
             continue
-        rows.append({
-            "name": _clean_name(name),
-            "deviceType": "mouse",
-            "identities": [(0, pid) for pid in pids],
-            "identity_names": {},
-            "pids": pids,
-            "isWireless": None,
-            "source": "mouse-table",
-        })
+        rows.append(
+            {
+                "name": _clean_name(name),
+                "deviceType": "mouse",
+                "identities": [(0, pid) for pid in pids],
+                "identity_names": {},
+                "pids": pids,
+                "isWireless": None,
+                "source": "mouse-table",
+            }
+        )
     return rows
 
 
@@ -382,15 +388,17 @@ def parse_card_list(data) -> list[dict]:
         if not identities:
             continue
         device_type = "keyboard" if enum.get("deviceType") == 1 else "keyboard"
-        rows.append({
-            "name": _desc_to_name(desc),
-            "deviceType": device_type,
-            "identities": identities,
-            "identity_names": identity_names,
-            "isWireless": None,
-            "desc": desc,
-            "source": "cardList",
-        })
+        rows.append(
+            {
+                "name": _desc_to_name(desc),
+                "deviceType": device_type,
+                "identities": identities,
+                "identity_names": identity_names,
+                "isWireless": None,
+                "desc": desc,
+                "source": "cardList",
+            }
+        )
     return rows
 
 
@@ -492,7 +500,9 @@ def merge_records(records: Iterable[dict]) -> tuple[list[dict], list[str]]:
 def _ambiguous_entry(vid: int, pid: int, items: list[dict]) -> dict:
     """多个型号共用同一 VID:PID 时的条目：不猜型号，把候选与官方规则一起交出去。"""
     rule = SHARED_RECEIVER_RULES.get((vid, pid))
-    order = {n: i for i, n in enumerate(rule["order"])} if rule and rule["match"] == "contains" else {}
+    order = (
+        {n: i for i, n in enumerate(rule["order"])} if rule and rule["match"] == "contains" else {}
+    )
 
     def sort_key(item: dict) -> tuple[int, str]:
         return (order.get(item["receiverProductName"] or "", len(order)), item["name"])
@@ -526,8 +536,14 @@ def _ambiguous_entry(vid: int, pid: int, items: list[dict]) -> dict:
     return entry
 
 
-def build_output(models: list[dict], *, key_format: str, source: dict, mouse_vid: int,
-                 mode_overrides: dict[tuple[int, int], str] | None = None) -> dict:
+def build_output(
+    models: list[dict],
+    *,
+    key_format: str,
+    source: dict,
+    mouse_vid: int,
+    mode_overrides: dict[tuple[int, int], str] | None = None,
+) -> dict:
     overrides = mode_overrides or {}
     grouped: dict[str, list[dict]] = {}
 
@@ -542,18 +558,20 @@ def build_output(models: list[dict], *, key_format: str, source: dict, mouse_vid
             entry_mode = overrides.get((vid, pid), mode)
             if (vid, pid) in SHARED_RECEIVER_RULES:
                 entry_mode = "2.4G"  # 规则命中的 PID 都是接收器侧接口
-            grouped.setdefault(key, []).append({
-                "vid": vid,
-                "pid": pid,
-                "name": model["name"],
-                "deviceType": device_type,
-                "typeConfidence": type_confidence(model),
-                "mode": entry_mode,
-                "rank": rank,
-                "receiverProductName": names.get((vid, pid))
-                or names.get((raw_vid, pid))
-                or _rule_canonical_name(vid, pid, model["name"]),
-            })
+            grouped.setdefault(key, []).append(
+                {
+                    "vid": vid,
+                    "pid": pid,
+                    "name": model["name"],
+                    "deviceType": device_type,
+                    "typeConfidence": type_confidence(model),
+                    "mode": entry_mode,
+                    "rank": rank,
+                    "receiverProductName": names.get((vid, pid))
+                    or names.get((raw_vid, pid))
+                    or _rule_canonical_name(vid, pid, model["name"]),
+                }
+            )
 
     devices: dict[str, dict] = {}
     ambiguous_keys: list[str] = []
@@ -600,12 +618,18 @@ def build_output(models: list[dict], *, key_format: str, source: dict, mouse_vid
         conflicted_keys.append(key)
 
     if ambiguous_keys:
-        print(f"[warn] {len(ambiguous_keys)} 个共享接收器 PID 存在型号歧义，"
-              f"已输出 candidates: {', '.join(ambiguous_keys)}", file=sys.stderr)
+        print(
+            f"[warn] {len(ambiguous_keys)} 个共享接收器 PID 存在型号歧义，"
+            f"已输出 candidates: {', '.join(ambiguous_keys)}",
+            file=sys.stderr,
+        )
     if conflicted_keys:
-        print(f"[warn] {len(conflicted_keys)} 个设备标识被多个型号登记，"
-              f"已保留可信度最高者并标注 conflicts: {', '.join(conflicted_keys[:5])}"
-              + (" ..." if len(conflicted_keys) > 5 else ""), file=sys.stderr)
+        print(
+            f"[warn] {len(conflicted_keys)} 个设备标识被多个型号登记，"
+            f"已保留可信度最高者并标注 conflicts: {', '.join(conflicted_keys[:5])}"
+            + (" ..." if len(conflicted_keys) > 5 else ""),
+            file=sys.stderr,
+        )
 
     return {
         "config_version": fetch_stamp(),
@@ -622,8 +646,9 @@ def fetch_stamp() -> str:
 # --------------------------------------------------------------------------
 # 主流程
 # --------------------------------------------------------------------------
-def collect(site_url: str, timeout: float, max_chunks: int,
-            quiet: bool) -> tuple[list[dict], str, dict[tuple[int, int], str]]:
+def collect(
+    site_url: str, timeout: float, max_chunks: int, quiet: bool
+) -> tuple[list[dict], str, dict[tuple[int, int], str]]:
     html = http_get(site_url, timeout=timeout)
     bundles = discover_entry_bundles(html, site_url)
 
@@ -692,23 +717,40 @@ def run(args: argparse.Namespace) -> dict:
         print(f"[info] 型号 {len(models)} 个，类型分布: {dict(types)}", file=sys.stderr)
 
     source = {"file": "", "url": args.url, "web_version": web_version}
-    return build_output(models, key_format=args.key_format, source=source,
-                        mouse_vid=args.mouse_vid, mode_overrides=overrides)
+    return build_output(
+        models,
+        key_format=args.key_format,
+        source=source,
+        mouse_vid=args.mouse_vid,
+        mode_overrides=overrides,
+    )
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(description="抓取并转换 MCHOSE 设备映射表")
     p.add_argument("--url", default=DEFAULT_SITE_URL, help=f"站点地址（默认 {DEFAULT_SITE_URL}）")
     p.add_argument("-o", "--output", help="输出 JSON 文件路径（默认打印到 stdout）")
-    p.add_argument("--key-format", choices=["hex", "dec"], default="hex",
-                   help="设备标识键格式：hex 如 3837:300C（默认），dec 如 14391:12300")
-    p.add_argument("--mouse-vid", type=lambda v: int(v, 0), default=14391,
-                   help="鼠标型号表未带 vendorId 时使用的默认值（默认 14391 / 0x3837）")
+    p.add_argument(
+        "--key-format",
+        choices=["hex", "dec"],
+        default="hex",
+        help="设备标识键格式：hex 如 3837:300C（默认），dec 如 14391:12300",
+    )
+    p.add_argument(
+        "--mouse-vid",
+        type=lambda v: int(v, 0),
+        default=14391,
+        help="鼠标型号表未带 vendorId 时使用的默认值（默认 14391 / 0x3837）",
+    )
     p.add_argument("--max-chunks", type=int, default=40, help="最多加载的打包文件数（默认 40）")
     p.add_argument("--timeout", type=float, default=30.0, help="请求超时秒数（默认 30）")
     p.add_argument("--compact", action="store_true", help="压缩输出（默认缩进美化）")
-    p.add_argument("--pick-name", nargs=2, metavar=("KEY", "PRODUCT_NAME"),
-                   help="调试：按官方规则把 HID productName 解析成型号名，KEY 形如 3837:3033")
+    p.add_argument(
+        "--pick-name",
+        nargs=2,
+        metavar=("KEY", "PRODUCT_NAME"),
+        help="调试：按官方规则把 HID productName 解析成型号名，KEY 形如 3837:3033",
+    )
     p.add_argument("-q", "--quiet", action="store_true", help="不输出进度信息")
     return p.parse_args(argv)
 
@@ -733,14 +775,20 @@ def main(argv: list[str] | None = None) -> int:
         print(f"[error] {exc}", file=sys.stderr)
         return 1
 
-    text = json.dumps(result, ensure_ascii=False,
-                      indent=None if args.compact else 2,
-                      separators=(",", ":") if args.compact else None)
+    text = json.dumps(
+        result,
+        ensure_ascii=False,
+        indent=None if args.compact else 2,
+        separators=(",", ":") if args.compact else None,
+    )
     if args.output:
         with open(args.output, "w", encoding="utf-8", newline="\n") as fh:
             fh.write(text + "\n")
         if not args.quiet:
-            print(f"[info] 已写入 {args.output}（{len(result['devices'])} 个设备标识）", file=sys.stderr)
+            print(
+                f"[info] 已写入 {args.output}（{len(result['devices'])} 个设备标识）",
+                file=sys.stderr,
+            )
     else:
         print(text)
     return 0
