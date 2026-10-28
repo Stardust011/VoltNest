@@ -125,7 +125,9 @@ pub struct ProviderProfile {
     pub thresholds: [DegradationThresholds; 3],
     /// 充电状态可获得性。
     pub charging: ChargingSupport,
-    /// 出现检测间隔；`None` = 复用轮询周期。仅允许 HID。
+    /// 出现检测间隔（枚举周期）；`None` = 复用轮询周期。
+    ///
+    /// 与采集节奏解耦：枚举只决定「设备什么时候出现/消失」，读数节奏仍由 `cadence` 决定。
     pub presence_poll_ms: Option<u64>,
 }
 
@@ -229,15 +231,9 @@ impl ProviderProfile {
             }
         }
 
-        // 出现检测间隔只允许出现在 HID。
-        match (self.presence_poll_ms, self.transport) {
-            (Some(0), _) => return Err(ProfileError::PresencePollZero),
-            (Some(_), Transport::Ble) => {
-                return Err(ProfileError::PresencePollNotAllowed {
-                    transport: self.transport,
-                });
-            }
-            _ => {}
+        // 出现检测间隔必须为正；非法值在构建期已拦，这里守住运行期构造的常量。
+        if self.presence_poll_ms == Some(0) {
+            return Err(ProfileError::PresencePollZero);
         }
 
         Ok(())
@@ -294,11 +290,6 @@ pub enum ProfileError {
     FamilyIdWithoutProtocol {
         /// 家族 ID。
         family_id: &'static str,
-    },
-    /// `presence_poll_ms` 出现在 BLE 上。
-    PresencePollNotAllowed {
-        /// 声明了出现检测的 transport。
-        transport: Transport,
     },
     /// 出现检测间隔为 0。
     PresencePollZero,
@@ -367,11 +358,6 @@ impl core::fmt::Display for ProfileError {
             Self::FamilyIdWithoutProtocol { family_id } => {
                 write!(f, "家族 ID {family_id} 缺少协议段")
             }
-            Self::PresencePollNotAllowed { transport } => write!(
-                f,
-                "presence_poll_ms 仅允许 HID，实际 transport={}",
-                transport.as_str()
-            ),
             Self::PresencePollZero => write!(f, "presence_poll_ms 不得为 0"),
             Self::PollRangeInvalid {
                 min_ms,
@@ -423,7 +409,8 @@ pub static BLE_BAS: ProviderProfile = ProviderProfile {
     thresholds: BLE_BAS_THRESHOLDS,
     // 0x2BF0 / 0x2BEA 未实现，0x2BED 失真（BLE 充电状态不可用）。
     charging: ChargingSupport::Unavailable,
-    // 出现由兜底轮询天然覆盖。
+    // 出现检测独立于兜底轮询：Windows 的已连接选择器只在枚举时才有结果，
+    // 复用 60s 轮询意味着「连上蓝牙后最多等一分钟才看见设备」。
     presence_poll_ms: BLE_BAS_PRESENCE_POLL_MS,
 };
 
@@ -635,18 +622,17 @@ mod tests {
     // ---------- 出现检测间隔 ----------
 
     #[test]
-    fn pc6_presence_poll_only_for_hid() {
+    fn pc6_presence_poll_is_declared_per_family() {
+        // 两个家族都要有独立的枚举周期，否则「连上设备」只能等到下一轮读数轮询。
         assert_eq!(base_hid().presence_poll_ms, Some(5_000));
         assert!(base_hid().validate().is_ok());
-        assert_eq!(base_ble().presence_poll_ms, None);
+        assert_eq!(base_ble().presence_poll_ms, Some(5_000));
         assert!(base_ble().validate().is_ok());
 
+        // 未声明 = 复用轮询周期，仍然合法。
         let mut p = base_ble();
-        p.presence_poll_ms = Some(5_000);
-        assert!(matches!(
-            p.validate(),
-            Err(ProfileError::PresencePollNotAllowed { .. })
-        ));
+        p.presence_poll_ms = None;
+        assert!(p.validate().is_ok());
     }
 
     #[test]

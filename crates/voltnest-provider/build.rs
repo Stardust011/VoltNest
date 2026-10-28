@@ -12,9 +12,6 @@ const SUPPORTED_SCHEMA_VERSION: u32 = 2;
 /// 宿主必须能拿到的家族，缺一即构建失败。
 const REQUIRED_FAMILIES: [&str; 2] = ["hid-vbas", "ble-bas"];
 
-/// 出现检测间隔只允许出现在 HID：`validate` 会在运行期拒绝，这里提前拦。
-const BLE_PREFIX: &str = "ble-";
-
 #[derive(Deserialize)]
 struct Profiles {
     #[serde(rename = "schemaVersion")]
@@ -129,12 +126,6 @@ fn generate(profiles: &Profiles) -> Result<String, String> {
         {
             return Err(format!(
                 "家族 {id} 的 staleSeconds 必须随档位放宽（快 ≤ 标准 ≤ 慢）"
-            ));
-        }
-
-        if family.presence_poll_seconds.is_some() && id.starts_with(BLE_PREFIX) {
-            return Err(format!(
-                "家族 {id} 不允许 presencePollSeconds（仅 HID 支持出现检测）"
             ));
         }
 

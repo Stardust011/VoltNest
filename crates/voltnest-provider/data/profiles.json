@@ -18,7 +18,7 @@
         "maxSeconds": 300,
         "defaultSeconds": 60
       },
-      "presencePollSeconds": null,
+      "presencePollSeconds": 5,
       "thresholds": {
         "sensitive": { "staleSeconds": 45, "unavailableSeconds": 60, "offlineSeconds": 180 },
         "standard": { "staleSeconds": 90, "unavailableSeconds": 120, "offlineSeconds": 360 },
