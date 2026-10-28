@@ -50,13 +50,12 @@ jobs:
         with:
           key: release-${{ matrix.target }}
 
-      - uses: pnpm/action-setup@v4
-
-      - uses: actions/setup-node@v7
+      - uses: pnpm/setup@v1
         with:
-          node-version: 22
-          cache: pnpm
+          runtime: node@24
+          cache: true
           cache-dependency-path: pnpm-lock.yaml
+          install: false
 
       # Tauri 打包期依赖：webkit2gtk / gtk3 / libsoup3、托盘、bluez、libudev。
       - name: Install Linux bundling dependencies
