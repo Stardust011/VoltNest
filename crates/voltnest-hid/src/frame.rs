@@ -984,4 +984,96 @@ mod tests {
             err.detail()
         );
     }
+
+    // ---------- 命令字前置过滤 ----------
+
+    /// 未声明命令字的协议放行一切帧；声明了就只认命令字对上的帧，短帧不得 panic。
+    #[test]
+    fn matches_cmd_filters_frames_by_declared_command() {
+        let mut spec = SYNTHETIC;
+        spec.battery.cmd = None;
+        assert!(matches_cmd(&spec, &[]), "无命令字声明的协议一律放行");
+
+        assert!(matches_cmd(&SYNTHETIC, &[0x11, 0x22, 0x00]));
+        assert!(!matches_cmd(&SYNTHETIC, &[0x11, 0x23, 0x00]));
+        assert!(
+            !matches_cmd(&SYNTHETIC, &[0x11]),
+            "命令字下标越过缓冲属于「不是电量帧」，不是错误"
+        );
+    }
+
+    /// 成因文本是对外契约（日志按它 grep）：稳定词 + 同一行的参数。
+    #[test]
+    fn rejection_text_is_stable_for_logs() {
+        let cases = [
+            (
+                RejectReason::ReportTooShort { min: 7 },
+                "report_too_short(min=7)",
+            ),
+            (
+                RejectReason::ReportIdMismatch {
+                    want: 0x06,
+                    got: Some(0x07),
+                },
+                "report_id_mismatch(want=0x06 got=0x07)",
+            ),
+            (
+                RejectReason::CmdMismatch {
+                    want: 0x22,
+                    got: None,
+                },
+                "cmd_mismatch(want=0x22 got=none)",
+            ),
+            (
+                RejectReason::AckMismatch {
+                    want: 0x02,
+                    got: Some(0x20),
+                },
+                "ack_mismatch(want=0x02 got=0x20)",
+            ),
+            (
+                RejectReason::StatusError { raw: 0x03 },
+                "status_error(status=0x03)",
+            ),
+            (
+                RejectReason::LengthFieldMissing { index: 2 },
+                "length_field_missing(index=2)",
+            ),
+            (
+                RejectReason::DeclaredPayloadTooShort {
+                    declared: 0,
+                    min: 2,
+                },
+                "declared_payload_too_short(declared=0 min=2)",
+            ),
+            (
+                RejectReason::DeclaredPayloadPastEnd {
+                    declared: 9,
+                    end: 14,
+                    len: 6,
+                },
+                "declared_payload_past_end(declared=9 end=14 len=6)",
+            ),
+            (
+                RejectReason::SubtagsMismatch {
+                    want: 0x03,
+                    got: None,
+                },
+                "subtag_mismatch(want=0x03 got=none)",
+            ),
+            (
+                RejectReason::PercentMissing { index: 1 },
+                "percent_missing(index=1)",
+            ),
+            (RejectReason::EmptyPayload, "empty_payload"),
+            (
+                RejectReason::PercentOutOfRange { raw: 0x65 },
+                "percent_out_of_range(raw=101)",
+            ),
+        ];
+        for (reason, want) in cases {
+            assert_eq!(reason.to_string(), want);
+            assert_eq!(reason.as_str(), want.split('(').next().unwrap());
+        }
+    }
 }
