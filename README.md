@@ -48,6 +48,17 @@ cargo fmt --all -- --check
 `cargo clippy` 是**门禁**而不只是建议：`clippy.toml` 把 `std::time::SystemTime`
 列为禁用类型，全仓只有 `voltnest_provider::clock::now_utc_ms()` 能读时钟。
 
+### 提交钩子
+
+`.githooks/` 下有两支钩子，克隆后执行一次 `npm --prefix apps/desktop run hooks:install`
+（即写入 `core.hooksPath`）：
+
+- `commit-msg`：首行须为 `type(scope): subject`，首行与正文之间留空行。
+- `pre-commit`：跑 `cargo fmt --check`、`ruff format --check` 与两轮 prettier，口径同 CI；
+  缺 cargo / ruff / `node_modules` 时该项降级为跳过。
+
+被拦下时执行 `npm --prefix apps/desktop run format` 修好再提交。
+
 ### Windows
 
 另需 WebView2（Windows 11 自带）。
@@ -57,7 +68,7 @@ cd apps/desktop
 npm ci
 npm run test                    # Vitest，只测纯函数
 npm run build                   # vue-tsc + vite build
-npm run format                  # 全仓格式化：cargo fmt --all + prettier
+npm run format                  # 全仓格式化：Rust + 仓库根目录文本 + 前端
 npm run format:check            # 同上的只检查模式，CI 用
 npm run tauri dev               # 开发调试（会先起 Vite）
 npm run tauri build             # 出 NSIS 安装包
