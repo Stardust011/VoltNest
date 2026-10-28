@@ -1158,4 +1158,145 @@ mod tests {
         // 声明长度不足时只填能填的部分，不越界 panic（模板本身会被 validate 拒绝）。
         assert_eq!(req.build(Some(0x06)).len(), 6);
     }
+
+    /// 诊断文本是对外契约：每个变体都要渲染出一条点名品牌的完整信息。
+    #[test]
+    fn spec_error_display_covers_every_variant() {
+        const B: &str = "diag-brand";
+        let cases = vec![
+            SpecError::EmptyLabel { brand: B },
+            SpecError::HeaderOverlap {
+                brand: B,
+                cmd_index: 1,
+                payload_offset: 2,
+            },
+            SpecError::PayloadStartsAtReportId { brand: B },
+            SpecError::LengthFieldOutsideHeader {
+                brand: B,
+                len_index: 1,
+                cmd_index: 2,
+                payload_offset: 3,
+            },
+            SpecError::FixedPayloadTooShort {
+                brand: B,
+                fixed_payload_len: 1,
+                need: 2,
+            },
+            SpecError::SubtagOverlapsPercent { brand: B },
+            SpecError::ChargingOverlapsPercent { brand: B },
+            SpecError::ListenLayoutInvalid { brand: B },
+            SpecError::RequestWithoutWritePage { brand: B },
+            SpecError::RequestLayoutInvalid { brand: B },
+            SpecError::RequestPageDiffersFromRead { brand: B },
+            SpecError::ZeroInterval { brand: B },
+            SpecError::CadenceExceedsProfile {
+                brand: B,
+                expected_interval_ms: 1000,
+                stale_ms: 500,
+            },
+            SpecError::FeatureLayoutInvalid { brand: B },
+            SpecError::FeaturePollHasRequest { brand: B },
+            SpecError::FeatureQueryWithoutRequest { brand: B },
+            SpecError::ReassemblyWithoutQuery { brand: B },
+            SpecError::ReassemblyLayoutInvalid { brand: B },
+            SpecError::AltUsagePageInvalid { brand: B },
+            SpecError::AckOutsideReport {
+                brand: B,
+                index: 9,
+                min_report_len: 4,
+            },
+            SpecError::FallbackReportIdInvalid { brand: B },
+            SpecError::ProfileTransportMismatch { brand: B },
+            SpecError::ProfileChargingMismatch { brand: B },
+            SpecError::DuplicateBrandId { brand: B },
+            SpecError::DeviceTable {
+                brand: B,
+                detail: "坏的 JSON".to_string(),
+            },
+        ];
+        for err in &cases {
+            let text = err.to_string();
+            // 少点名品牌，日志里就分不清是哪个品牌配错了。
+            assert!(text.contains(B), "{err:?} 的诊断文本未点名品牌：{text}");
+        }
+        assert_eq!(SpecError::EmptyBrandId.to_string(), "品牌标识不得为空");
+        assert_eq!(
+            SpecError::DuplicateDeviceKey {
+                vid: 0x260D,
+                pid: 0x0030,
+                first: "dareu",
+                second: "rapoo",
+            }
+            .to_string(),
+            "VID:PID 260D:0030 被品牌 dareu 与 rapoo 同时登记（精确匹配必须唯一）"
+        );
+        // std::error::Error 走同一条文本，宿主按它打印诊断。
+        let boxed: Box<dyn std::error::Error> = Box::new(SpecError::ZeroInterval { brand: B });
+        assert!(boxed.to_string().contains(B));
+    }
+
+    /// 充电标志先按 mask 取位再比取值集合；错误态起点未声明时恒不报错。
+    #[test]
+    fn charging_field_masks_before_comparing() {
+        // 整字节比较（既有品牌）：只有 0x01 算充电。
+        let whole = ChargingField {
+            index: 0,
+            mask: 0xFF,
+            true_values: &[0x01],
+            error_from: None,
+        };
+        assert!(whole.is_charging(0x01));
+        assert!(!whole.is_charging(0x11), "整字节比较不认半字节");
+        // 低半字节承载充电状态（迈从键盘 0x11 = 满电 + 充电）。
+        let nibble = ChargingField {
+            index: 0,
+            mask: 0x0F,
+            true_values: &[0x01],
+            error_from: Some(0x03),
+        };
+        assert!(nibble.is_charging(0x11), "取位后应判为充电");
+        assert!(!nibble.is_charging(0x12));
+
+        // 错误态：达到起点即异常，未声明则永不异常。
+        assert!(!whole.is_error(0xFF), "未声明错误态时不得报错");
+        assert!(!nibble.is_error(0x02));
+        assert!(nibble.is_error(0x03));
+        assert!(nibble.is_error(0xFF), "超过起点同样算错误态");
+    }
+
+    /// 声明了 route 的品牌由品牌自己分派；没声明的直接返回自己。
+    #[test]
+    fn for_device_returns_self_when_no_route_declared() {
+        static SPEC: BrandSpec = ajazz::SPEC;
+        let entry = crate::table::Entry {
+            name: None,
+            vendor_device_id: None,
+            device_type: String::new(),
+            mode: String::new(),
+            extra: Default::default(),
+        };
+        let resolved = SPEC.for_device(&entry).expect("无 route 的品牌必须回自己");
+        assert_eq!(resolved.id, SPEC.id);
+
+        // 单帧监听的最小长度 = 三个下标的较大者 + 1。
+        let listen = ListenSpec {
+            cmd: 0xFA,
+            subtag_index: 5,
+            subtag_value: 0x03,
+            percent_index: 2,
+            status_index: 7,
+            charging_low_nibble: 0,
+        };
+        assert_eq!(listen.min_len(), 8);
+        // 多包重组的包长 = 头部两个下标的较大者 + 1。
+        let reasm = Reassembly {
+            cmd: 0x55,
+            total_index: 3,
+            seq_index: 1,
+            payload_offset: 4,
+            trailer_len: 1,
+            timeout_ms: 200,
+        };
+        assert_eq!(reasm.min_packet_len(), 4);
+    }
 }

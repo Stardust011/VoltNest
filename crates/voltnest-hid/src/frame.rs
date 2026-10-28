@@ -646,6 +646,41 @@ mod tests {
         p
     }
 
+    /// 组装进度必须可查、可清：诊断页看 is_complete，新一轮查询前 reset。
+    #[test]
+    fn reassembler_reports_and_clears_progress() {
+        let t0 = Instant::now();
+        let mut r = Reassembler::new();
+        assert!(!r.is_complete(), "空拼接器不算完成");
+
+        assert!(
+            r.feed(&REASSEMBLED, &packet(2, 0, &[0x3C, 0x01], true), t0)
+                .is_none()
+        );
+        assert!(!r.is_complete(), "只收到一半不得算完成");
+
+        // 主动丢弃半包后，紧接着的后续包不得接着拼。
+        r.reset();
+        assert!(!r.is_complete());
+        assert!(
+            r.feed(&REASSEMBLED, &packet(2, 1, &[0x00, 0x00], true), t0)
+                .is_none(),
+            "半包已丢弃，孤立的尾包拼不出结果"
+        );
+
+        // 设备从 seq 0 重新开始才恢复。
+        assert!(
+            r.feed(&REASSEMBLED, &packet(2, 0, &[0x3C, 0x01], true), t0)
+                .is_none()
+        );
+        assert!(
+            r.feed(&REASSEMBLED, &packet(2, 1, &[0x00, 0x00], true), t0)
+                .is_some()
+        );
+        // 完成后自动复位，下一轮从头开始。
+        assert!(!r.is_complete());
+    }
+
     #[test]
     fn assembles_multi_packet_answer() {
         let mut r = Reassembler::new();
@@ -782,6 +817,60 @@ mod tests {
             decode_battery(&SYNTHETIC, &[0x11, 0x22, 0x00, 0x00, 0x65, 0x02]),
             Err(ErrorCode::PercentOutOfRange)
         );
+    }
+
+    /// 应答确认位不足时整帧不可用：设备「还没准备好」的应答不是 0% 电量。
+    #[test]
+    fn missing_ack_marks_frame_malformed() {
+        let mut spec = SYNTHETIC;
+        spec.ack = Some(crate::spec::AckField {
+            index: 1,
+            mask: 0x0F,
+            value: 0x02,
+        });
+        let report = [0x11, 0x20, 0x00, 0x00, 0x50, 0x02];
+        match decode_battery_detailed(&spec, &report) {
+            Err(reje) => assert_eq!(
+                reje.reason,
+                RejectReason::AckMismatch {
+                    want: 0x02,
+                    got: Some(0x20),
+                }
+            ),
+            Ok(reading) => panic!("确认位不匹配却被当成有效读数：{reading:?}"),
+        }
+        // 确认位对上则照常出读数。
+        let ok = [0x11, 0x22, 0x00, 0x00, 0x50, 0x02];
+        assert!(decode_battery_detailed(&spec, &ok).is_ok());
+    }
+
+    /// 状态字节达到错误态起点时整帧作废，不得降级成「未充电 + 某个电量」。
+    #[test]
+    fn status_error_discards_whole_frame() {
+        let mut spec = SYNTHETIC;
+        spec.battery.charging = Some(ChargingField {
+            index: 1,
+            mask: 0xFF,
+            true_values: &[0x02],
+            error_from: Some(0x03),
+        });
+        match decode_battery_detailed(&spec, &[0x11, 0x22, 0x00, 0x00, 0x50, 0x03]) {
+            Err(reje) => assert_eq!(reje.reason, RejectReason::StatusError { raw: 0x03 }),
+            Ok(reading) => panic!("错误态下不得给出读数：{reading:?}"),
+        }
+    }
+
+    /// 布局自相矛盾（长度字段落在缓冲之外）时报诊断而不是 panic。
+    #[test]
+    fn length_field_outside_report_is_rejected() {
+        let mut spec = SYNTHETIC;
+        spec.frame.len_index = Some(5);
+        spec.frame.payload_offset = 2;
+        let report = [0x11, 0x22, 0x50, 0x02, 0x00];
+        match decode_battery_detailed(&spec, &report) {
+            Err(reje) => assert_eq!(reje.reason, RejectReason::LengthFieldMissing { index: 5 }),
+            Ok(reading) => panic!("缺长度字段却解析成功：{reading:?}"),
+        }
     }
 
     // ---------- 诊断：成因与原始字节 ----------
