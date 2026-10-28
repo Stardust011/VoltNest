@@ -17,8 +17,6 @@
     "format:check:web": "prettier --check .",
     "format:repo": "cd ../.. && prettier --write .",
     "format:check:repo": "cd ../.. && prettier --check .",
-    "hooks:install": "cd ../.. && git config core.hooksPath .githooks",
-    "hooks:uninstall": "cd ../.. && git config --unset core.hooksPath",
     "tauri": "tauri"
   },
   "dependencies": {

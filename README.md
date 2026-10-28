@@ -37,6 +37,7 @@ crates/voltnest-hid/
 ## 开发
 
 需要 Rust 稳定版（见 `rust-toolchain.toml`）与 Node 22+（前端用 npm，仓库带 `package-lock.json`）。
+仓库根还有一份 `package.json` 只装开发工具（husky / commitlint），克隆后先 `npm install` 才有提交钩子。
 两个平台共用的门禁：
 
 ```bash
@@ -50,14 +51,13 @@ cargo fmt --all -- --check
 
 ### 提交钩子
 
-`.githooks/` 下有两支钩子，克隆后执行一次 `npm --prefix apps/desktop run hooks:install`
-（即写入 `core.hooksPath`）：
+仓库根 `package.json` 装了 husky 与 commitlint，`npm install` 时 `prepare` 会自动挂上钩子
+（`core.hooksPath` 指向 `.husky/_`），无需手动安装：
 
-- `commit-msg`：首行须为 `type(scope): subject`，首行与正文之间留空行。
-- `pre-commit`：跑 `cargo fmt --check`、`ruff format --check` 与两轮 prettier，口径同 CI；
-  缺 cargo / ruff / `node_modules` 时该项降级为跳过。
+- `commit-msg`：`commitlint` 校验首行是否为 `type(scope): subject`，类型与长度见 `commitlint.config.mjs`。
+- `pre-commit`：`npm run format:check`，即 rustfmt / prettier（前端 + 仓库根目录）/ ruff 三套检查，口径同 CI。
 
-被拦下时执行 `npm --prefix apps/desktop run format` 修好再提交。
+被拦下时执行 `npm run format` 修好再提交。
 
 ### Windows
 
