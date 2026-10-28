@@ -1,0 +1,28 @@
+{
+  "name": "voltnest",
+  "private": true,
+  "description": "VoltNest 仓库级工具与统一入口（提交钩子、格式化、前端构建）",
+  "packageManager": "pnpm@12.15.0",
+  "scripts": {
+    "prepare": "husky",
+    "dev": "pnpm --dir apps/desktop run dev",
+    "build": "pnpm --dir apps/desktop run build",
+    "preview": "pnpm --dir apps/desktop run preview",
+    "test": "pnpm --dir apps/desktop run test",
+    "tauri": "pnpm --dir apps/desktop exec tauri",
+    "format": "pnpm --dir apps/desktop run format",
+    "format:check": "pnpm --dir apps/desktop run format:check",
+    "format:rust": "pnpm --dir apps/desktop run format:rust",
+    "format:web": "pnpm --dir apps/desktop run format:web",
+    "format:repo": "pnpm --dir apps/desktop run format:repo",
+    "format:check:rust": "pnpm --dir apps/desktop run format:check:rust",
+    "format:check:web": "pnpm --dir apps/desktop run format:check:web",
+    "format:check:repo": "pnpm --dir apps/desktop run format:check:repo",
+    "hooks:install": "husky"
+  },
+  "devDependencies": {
+    "@commitlint/cli": "^21.2.4",
+    "@commitlint/config-conventional": "^21.2.4",
+    "husky": "^9.1.7"
+  }
+}

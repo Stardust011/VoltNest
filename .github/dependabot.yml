@@ -7,15 +7,14 @@ updates:
     groups:
       rust:
         patterns: ["*"]
-    ignore:
-      # 0.11 的 WinRT 后端缺 retrieve_peripherals，不允许自动跳到 0.14。
-      - dependency-name: btleplug
-        update-types: ["version-update:semver-major", "version-update:semver-minor"]
 
   - package-ecosystem: npm
-    directory: "/apps/desktop"
+    directory: "/"
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 3
+      semver-major-days: 7
     groups:
       web:
         patterns: ["*"]
