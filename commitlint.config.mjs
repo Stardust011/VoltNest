@@ -25,7 +25,7 @@ export default {
       ],
     ],
     "header-max-length": [2, "always", 100],
-    "scope-case": [2, "always", ["lower-case", "kebab-case", "snake_case"]],
+    "scope-case": [2, "always", ["lower-case", "kebab-case", "snake-case"]],
     // 中文标题不需要首字母大写与句号
     "subject-case": [0],
     "subject-full-stop": [0],
