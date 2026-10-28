@@ -1,17 +1,21 @@
 name: Release
 
-# v1 不做签名与自动更新（见 README 已知限制 5），故只出安装包并挂到 Draft Release。
+# release-please 按 Conventional Commits 在 master 上维护 release PR（CHANGELOG + 版本号）；
+# PR 合并后建 tag 与 Draft Release，同一次 run 里矩阵打包把安装包挂上去。
 on:
   push:
-    tags: ["v*"]
+    branches: [master]
   workflow_dispatch:
     inputs:
-      tag:
-        description: 手动打包时使用的 tag 名（如 v0.1.0）
-        required: true
+      release-as:
+        description: 强制按指定版本发布（如 0.2.0），留空则由提交推导
+        required: false
 
 permissions:
   contents: write
+  pull-requests: write
+  # release-please 会给 release PR 打标签，走的是 issues 接口。
+  issues: write
 
 env:
   CARGO_TERM_COLOR: always
@@ -21,8 +25,28 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  release-please:
+    name: release-please
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      released: ${{ steps.release.outputs.release_created }}
+      tag: ${{ steps.release.outputs.tag_name }}
+    steps:
+      - uses: googleapis/release-please-action@v5
+        id: release
+        with:
+          # 用 GITHUB_TOKEN 开的 PR 不会触发 CI；配了 RELEASE_PLEASE_TOKEN（PAT）才会。
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+          # 输入名带连字符，只能用下标访问。
+          release-as: ${{ inputs['release-as'] }}
+
   bundle:
     name: bundle (${{ matrix.target }})
+    needs: release-please
+    if: needs.release-please.outputs.released == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -30,8 +54,7 @@ jobs:
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             platform: windows
-          # 固定 22.04：24.04 的 t64 库重命名会让 deb 运行期依赖名变化。
-          - os: ubuntu-22.04
+          - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             platform: linux
     runs-on: ${{ matrix.os }}
@@ -40,6 +63,8 @@ jobs:
       run:
         working-directory: apps/desktop
     steps:
+      # 不 checkout tag：draft release 发布前 GitHub 还没建这个 tag。
+      # 这里的 HEAD 就是刚合并的 release PR，与 tag 指向同一提交。
       - uses: actions/checkout@v7
 
       - uses: dtolnay/rust-toolchain@stable
@@ -69,19 +94,18 @@ jobs:
       - run: npm ci
 
       # beforeBuildCommand（npm run build）由 tauri-action 负责执行。
-      # v1 起 releaseDraft 为 true 时，若同名 tag 的 release 已发布（非 draft）会直接失败。
       - uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           projectPath: apps/desktop
           args: --target ${{ matrix.target }}
-          tagName: ${{ inputs.tag || github.ref_name }}
-          releaseName: VoltNest ${{ inputs.tag || github.ref_name }}
-          releaseBody: |
-            安装包见下方 Assets。Windows 为 NSIS（当前用户安装），Linux 为 deb + AppImage。
+          # 只按 tag 找 release-please 建好的 draft 上传安装包。
+          # 不传 releaseName / releaseBody：正文来自 CHANGELOG，v1 的 updateRelease 会用空串覆盖。
+          tagName: ${{ needs.release-please.outputs.tag }}
           releaseDraft: true
-          prerelease: false
+          # v1 不做签名与自动更新，latest.json 没有可用的签名，不上传。
+          uploadUpdaterJson: false
 
       - name: Upload bundles as run artifact
         uses: actions/upload-artifact@v7
