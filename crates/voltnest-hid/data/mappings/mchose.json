@@ -11,9 +11,7 @@
       "deviceType": "speaker",
       "mode": "USB",
       "ambiguous": true,
-      "conflicts": [
-        "G20 PRO"
-      ]
+      "conflicts": ["G20 PRO"]
     },
     "19F5:FC30": {
       "name": "Ace 60",
@@ -40,11 +38,7 @@
       "deviceType": "headset",
       "mode": "USB",
       "ambiguous": true,
-      "conflicts": [
-        "S9 PRO",
-        "V9",
-        "V9 PRO"
-      ]
+      "conflicts": ["S9 PRO", "V9", "V9 PRO"]
     },
     "3837:0010": {
       "name": "A7 Pro",
@@ -61,9 +55,7 @@
       "deviceType": "mouse",
       "mode": "2.4G",
       "ambiguous": true,
-      "conflicts": [
-        "M7 1K"
-      ]
+      "conflicts": ["M7 1K"]
     },
     "3837:0030": {
       "name": "M7 Pro",
@@ -115,29 +107,21 @@
       "deviceType": "mouse",
       "mode": "2.4G",
       "ambiguous": true,
-      "conflicts": [
-        "A7 V2 Ultra+",
-        "A7X Ultra"
-      ]
+      "conflicts": ["A7 V2 Ultra+", "A7X Ultra"]
     },
     "3837:100B": {
       "name": "A7 V2 Pro+",
       "deviceType": "mouse",
       "mode": "2.4G",
       "ambiguous": true,
-      "conflicts": [
-        "A7 V2 Ultra+"
-      ]
+      "conflicts": ["A7 V2 Ultra+"]
     },
     "3837:100C": {
       "name": "A5 V2 Ultra",
       "deviceType": "mouse",
       "mode": "2.4G",
       "ambiguous": true,
-      "conflicts": [
-        "A5 ultra",
-        "G3 Ultra 4K"
-      ]
+      "conflicts": ["A5 ultra", "G3 Ultra 4K"]
     },
     "3837:1012": {
       "name": "MagDock",
@@ -233,10 +217,7 @@
       "deviceType": "mouse",
       "mode": "2.4G",
       "ambiguous": true,
-      "conflicts": [
-        "G3 V3",
-        "V7 Pro"
-      ]
+      "conflicts": ["G3 V3", "V7 Pro"]
     },
     "3837:1020": {
       "name": "A7 V2 Pro+",
@@ -406,9 +387,7 @@
       "deviceType": "keyboard",
       "mode": "USB",
       "ambiguous": true,
-      "conflicts": [
-        "Ace 68"
-      ]
+      "conflicts": ["Ace 68"]
     },
     "3837:3007": {
       "name": "Ace 68 GT",
@@ -440,9 +419,7 @@
       "deviceType": "keyboard",
       "mode": "USB",
       "ambiguous": true,
-      "conflicts": [
-        "Mix 87"
-      ]
+      "conflicts": ["Mix 87"]
     },
     "3837:301A": {
       "name": "God 60",
@@ -469,9 +446,7 @@
       "deviceType": "keyboard",
       "mode": "USB",
       "ambiguous": true,
-      "conflicts": [
-        "Ace 68 V2"
-      ]
+      "conflicts": ["Ace 68 V2"]
     },
     "3837:3025": {
       "name": "Ace 68 V2 III",
@@ -483,9 +458,7 @@
       "deviceType": "keyboard",
       "mode": "USB",
       "ambiguous": true,
-      "conflicts": [
-        "Ace 68 Turbo"
-      ]
+      "conflicts": ["Ace 68 Turbo"]
     },
     "3837:3027": {
       "name": "Ace 68 Turbo 16K",
@@ -497,9 +470,7 @@
       "deviceType": "keyboard",
       "mode": "USB",
       "ambiguous": true,
-      "conflicts": [
-        "Ace 68 Turbo"
-      ]
+      "conflicts": ["Ace 68 Turbo"]
     },
     "3837:3029": {
       "name": "Ace 68 Turbo 8K",
@@ -547,9 +518,7 @@
       "deviceType": "keyboard",
       "mode": "USB",
       "ambiguous": true,
-      "conflicts": [
-        "Ace 75"
-      ]
+      "conflicts": ["Ace 75"]
     },
     "3837:303D": {
       "name": "Ace 75 8K",
@@ -726,13 +695,7 @@
       "deviceType": "mouse",
       "mode": "2.4G",
       "ambiguous": true,
-      "conflicts": [
-        "G3 Mouse",
-        "G3 Mouse 4K",
-        "G3 Mouse 8K",
-        "G3 Ultra 4K",
-        "G3 Ultra 8K"
-      ]
+      "conflicts": ["G3 Mouse", "G3 Mouse 4K", "G3 Mouse 8K", "G3 Ultra 4K", "G3 Ultra 8K"]
     },
     "3837:6001": {
       "name": "K9 ULTRA HEADSET",
@@ -744,9 +707,7 @@
       "deviceType": "keyboard",
       "mode": "USB",
       "ambiguous": true,
-      "conflicts": [
-        "K9 ULTRA"
-      ]
+      "conflicts": ["K9 ULTRA"]
     },
     "3837:6003": {
       "name": "K20 PRO",
@@ -778,9 +739,7 @@
       "deviceType": "headset",
       "mode": "USB",
       "ambiguous": true,
-      "conflicts": [
-        "G9 V2-II"
-      ]
+      "conflicts": ["G9 V2-II"]
     },
     "3837:6013": {
       "name": "R9",
@@ -842,9 +801,7 @@
       "deviceType": "keyboard",
       "mode": "USB",
       "ambiguous": true,
-      "conflicts": [
-        "Ace 60X"
-      ]
+      "conflicts": ["Ace 60X"]
     },
     "41E4:2113": {
       "name": "Ace 60X II",
@@ -856,9 +813,7 @@
       "deviceType": "keyboard",
       "mode": "USB",
       "ambiguous": true,
-      "conflicts": [
-        "Ace 68"
-      ]
+      "conflicts": ["Ace 68"]
     },
     "41E4:2115": {
       "name": "Ace 68 I",
@@ -870,9 +825,7 @@
       "deviceType": "keyboard",
       "mode": "USB",
       "ambiguous": true,
-      "conflicts": [
-        "Ace 68"
-      ]
+      "conflicts": ["Ace 68"]
     },
     "41E4:2117": {
       "name": "Ace 68 Pro",
@@ -884,9 +837,7 @@
       "deviceType": "keyboard",
       "mode": "USB",
       "ambiguous": true,
-      "conflicts": [
-        "Jet 75"
-      ]
+      "conflicts": ["Jet 75"]
     },
     "41E4:2119": {
       "name": "Jet 75 I",
@@ -898,9 +849,7 @@
       "deviceType": "keyboard",
       "mode": "USB",
       "ambiguous": true,
-      "conflicts": [
-        "Jet 75"
-      ]
+      "conflicts": ["Jet 75"]
     },
     "41E4:211B": {
       "name": "Jet 75 II",
@@ -922,9 +871,7 @@
       "deviceType": "keyboard",
       "mode": "USB",
       "ambiguous": true,
-      "conflicts": [
-        "Ace 68 Air"
-      ]
+      "conflicts": ["Ace 68 Air"]
     },
     "41E4:2121": {
       "name": "Ace 68 Air II",
@@ -936,9 +883,7 @@
       "deviceType": "keyboard",
       "mode": "USB",
       "ambiguous": true,
-      "conflicts": [
-        "Mix 87"
-      ]
+      "conflicts": ["Mix 87"]
     },
     "41E4:2123": {
       "name": "Mix 87 I",
@@ -950,9 +895,7 @@
       "deviceType": "keyboard",
       "mode": "USB",
       "ambiguous": true,
-      "conflicts": [
-        "Ace 60X"
-      ]
+      "conflicts": ["Ace 60X"]
     },
     "41E4:2127": {
       "name": "Ace 60X I",
@@ -964,9 +907,7 @@
       "deviceType": "keyboard",
       "mode": "USB",
       "ambiguous": true,
-      "conflicts": [
-        "Ace 68 Air"
-      ]
+      "conflicts": ["Ace 68 Air"]
     },
     "41E4:2133": {
       "name": "Ace 68 Air III",
@@ -998,10 +939,7 @@
       "deviceType": "mouse",
       "mode": "2.4G",
       "ambiguous": true,
-      "conflicts": [
-        "A7 V2 Ultra+",
-        "K7 Ultra"
-      ]
+      "conflicts": ["A7 V2 Ultra+", "K7 Ultra"]
     },
     "5253:1021": {
       "name": "K7 Ultra",
