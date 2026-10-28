@@ -1,0 +1,20 @@
+# 依赖与构建产物
+node_modules/
+target/
+dist/
+apps/desktop/src-tauri/gen/
+
+# 锁文件由工具链生成
+Cargo.lock
+package-lock.json
+
+# 前端由 apps/desktop/prettier.config.mjs 单独负责（需 Tailwind 插件）
+apps/
+
+# 抓取脚本产物：格式由 json.dumps 固定，交给 prettier 会与下次抓取冲突
+crates/voltnest-hid/data/mappings/
+
+# 非源码目录
+.idea/
+.workbuddy/
+__pycache__/
