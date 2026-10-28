@@ -9,7 +9,7 @@ repository.workspace = true
 description = "VoltNest 桌面应用：组合 Provider 线程组、核心状态机与 Tauri 外壳"
 
 [build-dependencies]
-tauri-build = { version = "2", features = [] }
+tauri-build = { version = ">=2.7.4", features = [] }
 
 [dependencies]
 voltnest-provider = { workspace = true }
@@ -23,13 +23,13 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 log = { workspace = true, features = ["std"] }
 
-tauri = { version = "2", features = ["tray-icon", "image-png"] }
-tauri-plugin-notification = "2"
+tauri = { version = ">=2.12.5", features = ["tray-icon", "image-png"] }
+tauri-plugin-notification = ">=2.7.0"
 
 # Windows Toast 直接走 WinRT：插件在 `target\debug` / `target\release` 下不给
 # AUMID，通知会被系统记成 powershell.exe 发的（见 notification.rs 顶部说明）。
 [target.'cfg(windows)'.dependencies]
-tauri-winrt-notification = "0.8"
+tauri-winrt-notification = ">=0.8.1"
 
 [lints.rust]
 # MSVC 的 link.exe 每轮都会把「正在创建库 …lib / …exp」写进 stdout，
