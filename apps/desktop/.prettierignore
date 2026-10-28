@@ -9,3 +9,5 @@ package-lock.json
 src-tauri/target/
 src-tauri/gen/
 src-tauri/**/*.rs
+src-tauri/tauri.conf.json
+src-tauri/tauri.linux.conf.json

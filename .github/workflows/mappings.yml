@@ -34,7 +34,11 @@ jobs:
           python-version: "3.12"
 
       - uses: dtolnay/rust-toolchain@stable
+      # 与 CI 共用同一条缓存，只读不写：每月跑一次，自建缓存必然活不过 7 天淘汰线。
       - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: linux-test
+          save-if: "false"
 
       # hidapi 的 hidraw 后端构建期需要 libudev 开发文件。
       - name: Install libudev
@@ -80,10 +84,12 @@ jobs:
           cat "$report" >> "$GITHUB_STEP_SUMMARY"
 
       # 抓取脚本产出的是 json.dumps 原始排版，落盘前统一成仓库 prettier 口径。
-      - uses: pnpm/setup@v1
+      - uses: pnpm/setup@v3
         if: steps.fetch.outputs.changed == '1'
         with:
           runtime: node@24
+          # 只跑 pnpm dlx，不装工作区依赖。
+          install: false
 
       - name: Format tables
         if: steps.fetch.outputs.changed == '1'
