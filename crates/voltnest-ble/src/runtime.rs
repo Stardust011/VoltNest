@@ -160,7 +160,9 @@ impl BleProvider {
 
     /// 出现检测（枚举）周期；未声明时退化为复用读数轮询周期。
     fn presence_interval_ms(&self) -> u64 {
-        self.profile.presence_poll_ms.unwrap_or_else(|| self.poll_interval_ms())
+        self.profile
+            .presence_poll_ms
+            .unwrap_or_else(|| self.poll_interval_ms())
     }
 }
 
@@ -560,8 +562,8 @@ async fn coordinator(
         // 2) 周期性重新枚举：出现检测独立于读数轮询（Windows 下枚举是「设备在不在」
         // 的唯一来源，跟 60s 走会变成「连上蓝牙后最多等一分钟才看见设备」）；
         // bluez 收到未跟踪设备的 LinkUp 时额外插一次即时枚举。
-        let scan_due =
-            rescan_pending || last_presence.is_none_or(|t| t.elapsed() >= Duration::from_millis(presence_ms));
+        let scan_due = rescan_pending
+            || last_presence.is_none_or(|t| t.elapsed() >= Duration::from_millis(presence_ms));
         if scan_due {
             rescan_pending = false;
             last_presence = Some(Instant::now());
@@ -600,8 +602,9 @@ async fn coordinator(
                         "ble-bas 巡检失败（第 {enum_failures}/{ENUM_FAILURES_BEFORE_DOWN} 轮）：{}",
                         failure.detail
                     );
-                    let window_elapsed = enum_failing_since
-                        .is_some_and(|t| t.elapsed() >= Duration::from_millis(ENUM_FAILURES_MIN_WINDOW_MS));
+                    let window_elapsed = enum_failing_since.is_some_and(|t| {
+                        t.elapsed() >= Duration::from_millis(ENUM_FAILURES_MIN_WINDOW_MS)
+                    });
                     if enum_failures >= ENUM_FAILURES_BEFORE_DOWN && window_elapsed {
                         return Err(failure);
                     }
