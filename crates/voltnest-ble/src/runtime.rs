@@ -66,8 +66,9 @@
 use crate::bas;
 use crate::policy::{Admission, BlePolicy, PolicyBook};
 use crate::{
-    ENUM_FAILURES_BEFORE_DOWN, EVENT_RESUBSCRIBE_DELAY_MS, INIT_TIMEOUT_MS, IO_WORKERS,
-    LINK_CONFIRM_TIMEOUT_MS, LINK_LOSS_DEBOUNCE_MS,
+    ENUM_FAILURES_BEFORE_DOWN, ENUM_FAILURES_MIN_WINDOW_MS, EVENT_RESUBSCRIBE_DELAY_MS,
+    INIT_TIMEOUT_MS, IO_WORKERS, LINK_CONFIRM_TIMEOUT_MS, LINK_LOSS_DEBOUNCE_MS,
+    PRESENCE_MISSES_BEFORE_REMOVED,
 };
 use btleplug::api::{
     Central, CentralEvent, CentralState, CharPropFlags, Manager as _, Peripheral as _,
@@ -156,6 +157,11 @@ impl BleProvider {
             Cadence::ListenOnly { .. } | Cadence::Polled { .. } => 60_000,
         }
     }
+
+    /// 出现检测（枚举）周期；未声明时退化为复用读数轮询周期。
+    fn presence_interval_ms(&self) -> u64 {
+        self.profile.presence_poll_ms.unwrap_or_else(|| self.poll_interval_ms())
+    }
 }
 
 impl Default for BleProvider {
@@ -186,7 +192,8 @@ impl Provider for BleProvider {
             }
         };
         let poll_ms = self.poll_interval_ms();
-        if let Err(failure) = rt.block_on(coordinator(tx.clone(), stop, poll_ms)) {
+        let presence_ms = self.presence_interval_ms();
+        if let Err(failure) = rt.block_on(coordinator(tx.clone(), stop, poll_ms, presence_ms)) {
             log::warn!("ble-bas 不可用（{}）：{}", failure.code, failure.detail);
             let _ = tx.send(ProviderEvent::TransportDown {
                 code: failure.code,
@@ -315,10 +322,15 @@ fn keep_link(reconnected: Option<bool>) -> bool {
 }
 
 /// 协调线程：枚举、策略裁决、事件映射。独占全部 per-device 状态。
+///
+/// `poll_ms` 只决定**读数**节奏（会话内的兜底轮询），`presence_ms` 决定**枚举**节奏。
+/// 两者必须分开：枚举是「设备在不在」的唯一来源（Windows 下连系统级连接事件都收不到），
+/// 若跟着 60s 走，用户连上蓝牙后要等一分钟才看得见设备。
 async fn coordinator(
     tx: Sender<ProviderEvent>,
     stop: Arc<AtomicBool>,
     poll_ms: u64,
+    presence_ms: u64,
 ) -> Result<(), TransportFailure> {
     // 初始化带总超时：dbus 上的方法调用可能停在「按需拉起 bluetoothd」上，采集线程不能被它吊死。
     let manager = timeout(Duration::from_millis(INIT_TIMEOUT_MS), Manager::new())
@@ -352,7 +364,7 @@ async fn coordinator(
             format!("系统没有可用的 BLE 适配器{PLATFORM_HINT}"),
         )
     })?;
-    log::info!("ble-bas 启动：poll={poll_ms}ms");
+    log::info!("ble-bas 启动：poll={poll_ms}ms presence={presence_ms}ms");
 
     let policy_cfg = BlePolicy::default();
     let mut book = PolicyBook::new(policy_cfg);
@@ -371,10 +383,17 @@ async fn coordinator(
     let mut sessions: HashMap<[u8; 6], SessionHandle> = HashMap::new();
     let mut announced: HashSet<[u8; 6]> = HashSet::new();
     let mut known: HashSet<[u8; 6]> = HashSet::new();
+    // 连续枚举不到的轮数：单轮漏报不算消失，见 `PRESENCE_MISSES_BEFORE_REMOVED`。
+    let mut misses: HashMap<[u8; 6], u32> = HashMap::new();
     let start = Instant::now();
-    let mut last_scan: Option<Instant> = None;
+    let mut last_presence: Option<Instant> = None;
+    // bluez 会为「任何进程」的连接上报 `DeviceConnected`；未跟踪的地址因此可以立刻触发一次枚举，
+    // 把出现延迟从「等下个枚举周期」压到「链路刚建立」。Windows 收不到这类事件，靠周期兜底。
+    let mut rescan_pending = false;
     // 连续巡检失败轮数：单轮失败只跳过本轮，连续失败才判定后端整体不可用。
     let mut enum_failures: u32 = 0;
+    // 连续失败从什么时候开始：只数轮数会在 5s 枚举下把「15s 抖动」当成后端不可用。
+    let mut enum_failing_since: Option<Instant> = None;
 
     loop {
         if stop.load(Ordering::Relaxed) {
@@ -477,13 +496,15 @@ async fn coordinator(
                         "ble-bas {addr:?} 断链事件到达，进入 {LINK_LOSS_DEBOUNCE_MS}ms 去抖"
                     );
                 }
-                BleSessionEvent::LinkUp { id } => {
-                    if let Some(addr) = addr_of(&sessions, &id)
-                        && pending.remove(&addr).is_some()
-                    {
-                        log::info!("ble-bas {addr:?} 在去抖窗口内重连，吞掉本次断链");
+                BleSessionEvent::LinkUp { id } => match addr_of(&sessions, &id) {
+                    Some(addr) => {
+                        if pending.remove(&addr).is_some() {
+                            log::info!("ble-bas {addr:?} 在去抖窗口内重连，吞掉本次断链");
+                        }
                     }
-                }
+                    // 未跟踪的地址刚连上（bluez 系统级事件）→ 本轮立刻枚举一次。
+                    None => rescan_pending = true,
+                },
                 BleSessionEvent::AdapterOff => {
                     log::warn!("ble-bas 适配器掉电：{} 个会话立即断链", sessions.len());
                     pending.clear();
@@ -536,10 +557,14 @@ async fn coordinator(
             });
         }
 
-        // 2) 周期性重新枚举（保底轮询同时承担「出现检测」，60–300s 由 Provider 声明）
-        let scan_due = last_scan.is_none_or(|t| t.elapsed() >= Duration::from_millis(poll_ms));
+        // 2) 周期性重新枚举：出现检测独立于读数轮询（Windows 下枚举是「设备在不在」
+        // 的唯一来源，跟 60s 走会变成「连上蓝牙后最多等一分钟才看见设备」）；
+        // bluez 收到未跟踪设备的 LinkUp 时额外插一次即时枚举。
+        let scan_due =
+            rescan_pending || last_presence.is_none_or(|t| t.elapsed() >= Duration::from_millis(presence_ms));
         if scan_due {
-            last_scan = Some(Instant::now());
+            rescan_pending = false;
+            last_presence = Some(Instant::now());
             match scan_and_spawn(
                 &adapter,
                 &mut book,
@@ -551,6 +576,7 @@ async fn coordinator(
                 &tx,
                 now,
                 poll_ms,
+                &mut misses,
             )
             .await
             {
@@ -558,19 +584,25 @@ async fn coordinator(
                     if enum_failures > 0 {
                         log::info!("ble-bas 巡检恢复：此前连续失败 {enum_failures} 轮");
                         enum_failures = 0;
+                        enum_failing_since = None;
                     }
                 }
                 Err(e) => {
                     // 单轮失败很常见（设备刚好消失、dbus 抖一下）：不能因此把「枚举不到」
                     // 当成「设备都没了」去发 Removed——那会让所有图标闪断。跳过本轮，
-                    // 连续失败才判定后端整体不可用，交给 supervisor 退避重启。
+                    // 连续失败且持续超过时间窗才判定后端整体不可用，交给 supervisor 退避重启。
+                    if enum_failing_since.is_none() {
+                        enum_failing_since = Some(Instant::now());
+                    }
                     enum_failures = enum_failures.saturating_add(1);
                     let failure = TransportFailure::from_btleplug("巡检失败", &e);
                     log::warn!(
                         "ble-bas 巡检失败（第 {enum_failures}/{ENUM_FAILURES_BEFORE_DOWN} 轮）：{}",
                         failure.detail
                     );
-                    if enum_failures >= ENUM_FAILURES_BEFORE_DOWN {
+                    let window_elapsed = enum_failing_since
+                        .is_some_and(|t| t.elapsed() >= Duration::from_millis(ENUM_FAILURES_MIN_WINDOW_MS));
+                    if enum_failures >= ENUM_FAILURES_BEFORE_DOWN && window_elapsed {
                         return Err(failure);
                     }
                 }
@@ -654,6 +686,7 @@ async fn scan_and_spawn(
     tx: &Sender<ProviderEvent>,
     now_ms: u64,
     poll_ms: u64,
+    misses: &mut HashMap<[u8; 6], u32>,
 ) -> Result<(), btleplug::Error> {
     let peripherals = candidate_peripherals(adapter).await?;
     log::debug!("ble-bas 巡检：候选设备 {} 台", peripherals.len());
@@ -679,6 +712,7 @@ async fn scan_and_spawn(
         }
 
         book.track(addr);
+        misses.remove(&addr);
         let task = tokio::spawn(session_task(
             p.clone(),
             addr,
@@ -698,12 +732,21 @@ async fn scan_and_spawn(
     }
 
     // 消失的设备：retrieve 不再返回 → Removed（唯一的图标销毁路径）。
+    // Windows 侧查 GATT 服务超时的设备会从「已连接」选择器结果里消失，单轮漏报很常见，
+    // 因此连续 `PRESENCE_MISSES_BEFORE_REMOVED` 轮枚举不到才算真消失。
     let vanished: Vec<[u8; 6]> = known
         .iter()
         .filter(|addr| !seen.contains(*addr))
         .copied()
         .collect();
     for addr in vanished {
+        let count = misses.entry(addr).or_default();
+        *count = count.saturating_add(1);
+        if *count < PRESENCE_MISSES_BEFORE_REMOVED {
+            log::debug!("ble-bas {addr:?} 本轮枚举不到（第 {count} 轮），暂不判消失");
+            continue;
+        }
+        misses.remove(&addr);
         known.remove(&addr);
         sessions.remove(&addr);
         announced.remove(&addr);

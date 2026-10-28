@@ -72,6 +72,18 @@ pub const INIT_TIMEOUT_MS: u64 = 5_000;
 /// 连续失败说明后端真的不在了（bluetoothd 退出、适配器被拔出），此时才交给 supervisor 退避重启。
 pub const ENUM_FAILURES_BEFORE_DOWN: u32 = 3;
 
+/// 判定「后端整体不可用」前，连续失败必须至少持续这么久。
+///
+/// 出现检测周期是 5s，只数轮数等于「15s 抖动就拆 transport」；加上时间窗后与旧的
+/// 「3 轮 × 60s」等价，轮数只用来过滤掉零星失败。
+pub const ENUM_FAILURES_MIN_WINDOW_MS: u64 = 60_000;
+
+/// 连续多少轮枚举不到才判定设备消失。
+///
+/// WinRT 的「已连接」选择器里，查 GATT 服务超时的设备会被当成「无服务」而从结果里消失；
+/// 单轮漏报很常见，立即判 `Removed` 会让图标闪一下。3 轮 × 5s ≈ 15s 后才算真消失。
+pub const PRESENCE_MISSES_BEFORE_REMOVED: u32 = 3;
+
 /// 断链去抖窗口：事件到达后先等这么久再判定，等的是「系统自动重连」。
 ///
 /// HID 鼠标断电/休眠会被系统立刻重连，若立即上报 `LinkLost`，托盘图标会闪一下 Offline 又回 Online。
