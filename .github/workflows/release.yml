@@ -109,6 +109,34 @@ jobs:
       - run: pnpm install --frozen-lockfile
         working-directory: .
 
+      - name: Import Windows certificate (In-Memory)
+        if: matrix.platform == 'windows'
+        shell: powershell
+        env:
+          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+        run: |
+          $pfx_bytes = [System.Convert]::FromBase64String($env:WINDOWS_CERTIFICATE)
+          $password = ConvertTo-SecureString $env:WINDOWS_CERTIFICATE_PASSWORD -AsPlainText -Force
+
+          $cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2
+          $cert.Import($pfx_bytes, $password, [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::EphemeralKeySet)
+
+          $store = New-Object System.Security.Cryptography.X509Certificates.X509Store("My", "CurrentUser")
+          $store.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
+          $store.Add($cert)
+          $store.Close()
+
+          Write-Output "Certificate successfully imported."
+
+          $thumbprint = $cert.Thumbprint.ToUpper()
+          Write-Output "Certificate Thumbprint: $thumbprint"
+
+          $digestAlg = "sha256"
+
+          $customSignCmd = "signtool sign /sha1 $thumbprint /fd $digestAlg /td $digestAlg /tr http://timestamp.digicert.com %1"
+          Add-Content -Path $env:GITHUB_ENV -Value "TAURI_BUNDLE_WINDOWS_SIGN_COMMAND=$customSignCmd"
+
       # beforeBuildCommand（npm run build）由 tauri-action 负责执行。
       - uses: tauri-apps/tauri-action@v1
         env:
