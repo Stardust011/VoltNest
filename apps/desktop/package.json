@@ -1,7 +1,7 @@
 {
   "name": "voltnest-desktop",
   "private": true,
-  "version": "0.2.3",
+  "version": "0.2.4",
   "type": "module",
   "description": "VoltNest desktop shell (Vue 3 + Vite + Tauri 2)",
   "scripts": {
