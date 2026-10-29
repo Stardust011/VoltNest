@@ -676,6 +676,11 @@ impl BrandSpec {
             if self.frame.report_id.is_some() && req.report_len == 0 {
                 return Err(SpecError::RequestLayoutInvalid { brand: self.id });
             }
+            // 「不周期查询」只有在确有推送源时才成立：否则唯一读数来源就是探活本身，
+            // 那是**隐性轮询**（还带着 `expected_interval_ms` 的节奏），不如显式写 `Some`。
+            if req.interval_ms.is_none() && self.listen.is_none() && self.notify.is_none() {
+                return Err(SpecError::PassiveWithoutPushSource { brand: self.id });
+            }
             // 运行时只有一个读句柄：写页与读页不同时，查询会写到读集合上，表现为永远没应答。
             // 读页为 `0`（通配）时无从比较，跳过。
             if self.usage_page != 0 && req.usage_page != self.usage_page {
@@ -871,6 +876,13 @@ pub enum SpecError {
         /// 品牌标识。
         brand: &'static str,
     },
+    /// 查询模板不周期发送，但该协议没有任何推送源（`listen` / `notify` 全空）。
+    ///
+    /// 此时唯一的读数来源是探活查询本身，等于把轮询藏进了「推送为主」的写法里。
+    PassiveWithoutPushSource {
+        /// 品牌标识。
+        brand: &'static str,
+    },
     /// 查询模板的写通道与读通道不同页（运行时只有一个读句柄，无法兑现）。
     RequestPageDiffersFromRead {
         /// 品牌标识。
@@ -1027,6 +1039,10 @@ impl core::fmt::Display for SpecError {
             Self::NotifyCollidesWithReply { brand } => {
                 write!(f, "品牌 {brand} 的推送帧命令字与应答帧相同，两者无法区分")
             }
+            Self::PassiveWithoutPushSource { brand } => write!(
+                f,
+                "品牌 {brand} 声明了不周期查询，却没有 listen / notify 任何推送源"
+            ),
             Self::RequestWithoutWritePage { brand } => write!(
                 f,
                 "品牌 {brand} 声明了查询模板，必须同时给出 usage_page_write"
@@ -1403,6 +1419,7 @@ mod tests {
                 cmd_index: 1,
             },
             SpecError::CmdHighWithoutCmd { brand: B },
+            SpecError::PassiveWithoutPushSource { brand: B },
             SpecError::RequestWithoutWritePage { brand: B },
             SpecError::RequestLayoutInvalid { brand: B },
             SpecError::RequestPageDiffersFromRead { brand: B },
@@ -1742,6 +1759,20 @@ mod tests {
             },
             |e| matches!(e, SpecError::NotifyCollidesWithReply { .. }),
             "推送帧与应答命令字相同",
+        );
+        // 「不周期查询」必须有推送源：否则探活就是唯一来源，等于把轮询藏进被动写法。
+        rejects(
+            |s| {
+                *s = with_request(*s);
+                s.request = s.request.map(|mut req| {
+                    req.interval_ms = None;
+                    req
+                });
+                s.listen = None;
+                s.notify = None;
+            },
+            |e| matches!(e, SpecError::PassiveWithoutPushSource { .. }),
+            "不轮询又没有推送源",
         );
         // 推送帧的掩码为 0 同样是「充着电读成 0%」。
         rejects(

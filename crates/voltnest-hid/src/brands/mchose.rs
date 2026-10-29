@@ -5,7 +5,7 @@
 //!
 //! | 类别 | 官方通道 | 本模块 |
 //! |---|---|---|
-//! | 鼠标 | feature 查询 `11 06`（应答逐字节取反）+ 输入报告实时刷新 | [`MOUSE_WIRED`] / [`MOUSE_WIRELESS`]（仅监听帧布局不同） |
+//! | 鼠标 | 连接时一次 feature 查询 `11 06`（应答逐字节取反）+ 之后只靠实时帧刷新 | [`MOUSE_WIRED`] / [`MOUSE_WIRELESS`]（仅监听帧布局不同） |
 //! | 键盘 · CZ/GLW 族 | 标准页 `0x0001`：`55 05 …` 读 64 字节功能配置块，电量在 `payload[32]` | [`KEYBOARD_GLW`] |
 //! | 键盘 · `dJe` 老族 | 有线 feature `06 87`（520B）、2.4G output `13 4A` + 校验和 + 多包重组 | [`KEYBOARD_DJE_WIRED`] / [`KEYBOARD_DJE_WIRELESS`] |
 //! | 键盘 · CZ/QHW 族 | `0xFF80`：报告 `0x4D` + 7 字节头 + 2 字节命令（查询 `0x0904` / 推送 `0x0700`）+ 尾校验 | [`KEYBOARD_QHW`] |
@@ -86,6 +86,16 @@ const AUDIO_REQUEST_PAYLOAD: [u8; 62] = {
 };
 
 /// 鼠标（有线）：`0xFF01` feature 查询，应答取反，输入报告实时刷新。
+///
+/// # 节奏：连接时问一次，之后只订阅
+/// 官方鼠标页的初始化是「发一条 `0x11 0x06` 拿 `getBatteryMode deviceInfo`」，
+/// 随后 `ck.getNotifier(id).subscribe(..)` 订阅实时帧，只在 `command===10 && type===5`
+/// 时采用电量（`q3e` 解析，有线 `[0]=0x0A [1]=type [2]=电量 [3]=bit4 满电 + bit4 充电`）。
+/// **没有周期查询** —— 因此本 spec 的 `interval_ms` 为 `None`，不按节奏唤醒设备。
+///
+/// 与键盘的差别值得记一笔：这一族的页面 `0xFF01` / `0xFF0B` 与官方过滤器
+/// （`[65281, 65291].includes(usagePage)`）**一致**，所以鼠标从来没有键盘那种
+/// 「枚举不到」的问题；问题只在采集节奏上。
 pub const MOUSE_WIRED: BrandSpec = BrandSpec {
     id: "mchose-mouse-wired",
     label: "MCHOSE（鼠标 · 有线）",
@@ -137,7 +147,10 @@ pub const MOUSE_WIRED: BrandSpec = BrandSpec {
         cmd_index: 1,
         payload_offset: 2,
         payload: &MCHOSE_REQUEST_PAYLOAD,
-        interval_ms: Some(30_000),
+        // **不周期查询**：官方鼠标页只在连接时发一次这条命令，之后只订阅实时帧
+        // （`q3e` 解析 `command===10 && type===5`，`getBatteryMode deviceInfo` 只打一次日志）。
+        // `None` = 会话建立时问一次，之后由运行时在「读数快过期」时探活（见 `runtime::Reader`）。
+        interval_ms: None,
         inverted: true,
         // 官方 `LG()` 在命令字回显不符时最多重读 6 次（600ms 窗口）。
         retry: 6,
@@ -1119,6 +1132,20 @@ mod tests {
             frame::decode_notify(&KEYBOARD_QHW, &reply).is_none(),
             "应答帧不得被当成推送"
         );
+    }
+
+    /// 鼠标同样不周期查询：官方只在连接时发一次 `0x11 0x06`，之后订阅实时帧。
+    ///
+    /// 有线和 2.4G 共用同一份 `request`（`MOUSE_WIRELESS` 用 `..MOUSE_WIRED` 展开），
+    /// 但两边的监听帧布局不同，两个都要检查。
+    #[test]
+    fn mouse_does_not_poll_periodically() {
+        for spec in [&MOUSE_WIRED, &MOUSE_WIRELESS] {
+            let req = spec.request.expect("鼠标必须声明连接时的查询");
+            assert_eq!(req.interval_ms, None, "{} 不应周期查询", spec.label);
+            assert!(spec.listen.is_some(), "{} 必须声明实时上报帧", spec.label);
+            assert_eq!(req.cmd, 0x06, "{} 的连接时查询仍是 11 06", spec.label);
+        }
     }
 
     /// 推送为主的协议不再按节奏轮询：常态下零查询，由设备自己推。
