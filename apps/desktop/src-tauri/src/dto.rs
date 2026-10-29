@@ -244,6 +244,335 @@ impl TransportHealth {
     }
 }
 
+// ---- 生成上报数据（HID 抓包）----
+//
+// 这一组 DTO 的边界与前面一致：只做「结构搬运 + 展示字符串组装」。十六进制串在这里就拼好，
+// 免得前端再实现一份格式化逻辑（两份实现迟早会漂移，而用户会拿界面上的字节去对 issue）。
+
+/// 一台设备（同一 VID:PID 的全部集合）。
+///
+/// 交互先按 VID:PID 收敛，再让用户挑集合：复合 HID 会把标准鼠标集合与厂商私有集合
+/// 一起列出来，直接铺平会让用户面对几十条 `0xFF00/0x0001` 无从下手。
+#[derive(Clone, PartialEq, Eq, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HidTargetDto {
+    /// 厂商 ID。
+    pub vid: u16,
+    /// 产品 ID。
+    pub pid: u16,
+    /// `0xVVVV:0xPPPP`。
+    pub vid_pid: String,
+    /// 列表显示名（产品名，缺失时为 VID:PID）。
+    pub display_name: String,
+    /// 厂商名。
+    pub manufacturer: Option<String>,
+    /// 序列号（多个用「、」连接，无则 `None`）。
+    pub serial_summary: Option<String>,
+    /// 私有集合（UsagePage `>= 0xFF00`）数量。
+    pub private_collections: usize,
+    /// 该设备的全部集合（顺序由宿主决定）。
+    pub collections: Vec<HidCollectionDto>,
+}
+
+impl From<voltnest_hid::probe::TargetGroup> for HidTargetDto {
+    fn from(group: voltnest_hid::probe::TargetGroup) -> Self {
+        let vid_pid = group.vid_pid();
+        let display_name = group.display_name();
+        let serial_summary = group.serial_summary();
+        let private_collections = group.private_collections();
+        let collections = group
+            .collections
+            .into_iter()
+            .map(HidCollectionDto::from)
+            .collect();
+        Self {
+            vid: group.vid,
+            pid: group.pid,
+            vid_pid,
+            display_name,
+            manufacturer: group.manufacturer,
+            serial_summary,
+            private_collections,
+            collections,
+        }
+    }
+}
+
+/// 一个 HID 集合（生成上报数据时的候选行）。
+#[derive(Clone, PartialEq, Eq, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HidCollectionDto {
+    /// 平台路径，回传给宿主用于打开。
+    pub path: String,
+    /// 厂商 ID。
+    pub vid: u16,
+    /// 产品 ID。
+    pub pid: u16,
+    /// `0xVVVV:0xPPPP`。
+    pub vid_pid: String,
+    /// 列表显示名（产品名，缺失时为 VID:PID）。
+    pub display_name: String,
+    /// 产品名原始值。
+    pub product: Option<String>,
+    /// 厂商名。
+    pub manufacturer: Option<String>,
+    /// 序列号。
+    pub serial: Option<String>,
+    /// 接口号（后端不提供时 `-1`）。
+    pub interface_number: i32,
+    /// 全部 Usage 的紧凑写法。
+    pub usage_summary: String,
+    /// 是否只有标准 Usage（鼠标/键盘），用于提示「这不是厂商私有通道」。
+    pub standard_only: bool,
+}
+
+impl From<voltnest_hid::probe::CollectionInfo> for HidCollectionDto {
+    fn from(info: voltnest_hid::probe::CollectionInfo) -> Self {
+        // 展示串先算好再搬字段：`path`/`serial` 一旦被移动就没法再借用 `info`。
+        let vid_pid = info.vid_pid();
+        let display_name = info.display_name();
+        let usage_summary = info.usage_summary();
+        let standard_only = info.only_standard_usages();
+        Self {
+            path: info.path,
+            vid: info.vid,
+            pid: info.pid,
+            vid_pid,
+            display_name,
+            product: info.product,
+            manufacturer: info.manufacturer,
+            serial: info.serial,
+            interface_number: info.interface_number,
+            usage_summary,
+            standard_only,
+        }
+    }
+}
+
+/// 开始抓取的请求。`writeFrames` 为空 = 纯监听。
+#[derive(Clone, PartialEq, Eq, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CaptureStartDto {
+    /// 选中的集合路径。
+    pub path: String,
+    /// 录制时长（毫秒），宿主会夹到合法区间。
+    pub duration_ms: u64,
+    /// 录制期间周期性发送的查询报文（十六进制文本，每条一帧）。
+    #[serde(default)]
+    pub write_frames: Vec<String>,
+    /// 查询报文发送间隔（毫秒）；缺省用宿主默认值。
+    #[serde(default)]
+    pub write_interval_ms: Option<u64>,
+}
+
+/// 开始抓取的回执：前端据此订阅进度并显示「正在录哪台」。
+#[derive(Clone, PartialEq, Eq, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CaptureStartResultDto {
+    /// 会话号（后续停止 / 报告 / 保存都用它）。
+    pub session_id: u64,
+    /// 实际打开的集合（宿主重新枚举过，不是前端传上来的那份）。
+    pub device: HidCollectionDto,
+    /// 实际生效的录制时长。
+    pub duration_ms: u64,
+    /// 实际生效的帧数上限。
+    pub max_frames: usize,
+}
+
+/// 一帧原始报告。
+#[derive(Clone, PartialEq, Eq, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CaptureFrameDto {
+    /// 相对录制开始的毫秒数。
+    pub at_ms: u64,
+    /// `IN` / `OUT`。
+    pub direction: &'static str,
+    /// 字节长度。
+    pub len: usize,
+    /// 空格分隔的大写十六进制。
+    pub hex: String,
+}
+
+impl From<&voltnest_hid::probe::CapturedFrame> for CaptureFrameDto {
+    fn from(frame: &voltnest_hid::probe::CapturedFrame) -> Self {
+        Self {
+            at_ms: frame.elapsed_ms,
+            direction: frame.direction.as_str(),
+            len: frame.data.len(),
+            hex: frame.hex(),
+        }
+    }
+}
+
+/// 抓取统计。
+#[derive(Clone, PartialEq, Eq, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CaptureSummaryDto {
+    /// 总帧数。
+    pub frames: usize,
+    /// 输入帧数。
+    pub input_frames: usize,
+    /// 主动发出的帧数。
+    pub output_frames: usize,
+    /// 实际录制时长（毫秒）。
+    pub elapsed_ms: u64,
+    /// 是否因帧数上限提前结束。
+    pub truncated: bool,
+    /// 主动发送失败次数。
+    pub write_failures: usize,
+    /// 首次发送失败原因。
+    pub write_error: Option<String>,
+}
+
+impl From<&voltnest_hid::probe::CaptureSummary> for CaptureSummaryDto {
+    fn from(summary: &voltnest_hid::probe::CaptureSummary) -> Self {
+        Self {
+            frames: summary.frames,
+            input_frames: summary.input_frames,
+            output_frames: summary.output_frames,
+            elapsed_ms: summary.elapsed_ms,
+            truncated: summary.truncated,
+            write_failures: summary.write_failures,
+            write_error: summary.write_error.clone(),
+        }
+    }
+}
+
+/// 抓取进度事件（事件名 `probe://capture`）。
+///
+/// 批量下发而不是一帧一个事件：鼠标 1kHz 上报时逐帧发事件会把 IPC 打满，
+/// 反而让界面卡住。
+#[derive(Clone, PartialEq, Eq, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CaptureEventDto {
+    /// 会话号：前端用它丢弃上一个会话的迟到事件。
+    pub session_id: u64,
+    /// 本批新增的帧。
+    pub frames: Vec<CaptureFrameDto>,
+    /// 该会话累计帧数。
+    pub total: usize,
+    /// `running` / `done` / `stopped` / `failed`。
+    pub status: &'static str,
+    /// 失败原因（`failed` 时有值）。
+    pub message: Option<String>,
+    /// 结束时的统计（`done` / `stopped` 时有值）。
+    pub summary: Option<CaptureSummaryDto>,
+}
+
+/// 一次采样：会话号 + 当时驱动显示的电量。
+///
+/// 电量与采样绑在一起（而不是设备级字段）：同一台设备在不同电量下各录一段，
+/// 两段的字节差异才是定位电量字段的依据。
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReportSampleDto {
+    /// 抓包会话号。
+    pub session_id: u64,
+    /// 驱动 / 系统界面当时显示的电量（`None` = 驱动没显示）。
+    #[serde(default)]
+    pub battery_percent: Option<u8>,
+}
+
+/// 生成报告 / 保存手动设备的表单。
+#[derive(Clone, PartialEq, Eq, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReportFormDto {
+    /// 采样（至少一条；顺序即报告里的样本编号）。
+    pub samples: Vec<ReportSampleDto>,
+    /// 设备名（用户可改，默认取 HID 产品名）。
+    pub name: String,
+    /// 操作步骤（用户填写，原样进报告）。
+    #[serde(default)]
+    pub steps: String,
+    /// 期望行为。
+    #[serde(default)]
+    pub expectation: String,
+    /// 补充说明。
+    #[serde(default)]
+    pub note: String,
+}
+
+/// 生成的报告：正文 + 落盘路径。
+#[derive(Clone, PartialEq, Eq, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReportDto {
+    /// 完整 Markdown（用户可直接复制进 issue）。
+    pub markdown: String,
+    /// 已写入磁盘的文件路径。
+    pub path: String,
+}
+
+/// 手动添加的设备（落盘记录的前端投影）。
+#[derive(Clone, PartialEq, Eq, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ManualDeviceDto {
+    /// 标识（`hid:xxxx:yyyy`）。
+    pub id: String,
+    /// 显示名。
+    pub name: String,
+    /// `0xVVVV:0xPPPP`。
+    pub vid_pid: String,
+    /// 抓包时的 UsagePage / Usage。
+    pub usage_summary: String,
+    /// 产品名。
+    pub product: Option<String>,
+    /// 序列号。
+    pub serial: Option<String>,
+    /// 补充说明。
+    pub note: String,
+    /// 添加时间（UTC 毫秒）。
+    pub added_at_ms: u64,
+    /// 最近一次抓包时间。
+    pub last_capture_at_ms: Option<u64>,
+    /// 全部采样的帧数之和。
+    pub captured_frames: usize,
+    /// 采样记录（含每次驱动显示的电量）。
+    pub samples: Vec<ManualSampleDto>,
+    /// 报告文件路径（可能为 `None`：用户只保存了设备，没生成报告）。
+    pub report_path: Option<String>,
+}
+
+/// 一次采样（列表里展示「80% → 75%」这种对照）。
+#[derive(Clone, PartialEq, Eq, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ManualSampleDto {
+    /// 驱动 / 系统显示的电量（`None` = 当时没填/没显示）。
+    pub battery_percent: Option<u8>,
+    /// 该次录到的帧数。
+    pub frames: usize,
+    /// 录制完成时间（UTC 毫秒）。
+    pub captured_at_ms: u64,
+}
+
+impl From<&voltnest_storage::ManualSample> for ManualSampleDto {
+    fn from(sample: &voltnest_storage::ManualSample) -> Self {
+        Self {
+            battery_percent: sample.battery_percent,
+            frames: sample.frames,
+            captured_at_ms: sample.captured_at_ms,
+        }
+    }
+}
+
+impl From<&voltnest_storage::ManualDevice> for ManualDeviceDto {
+    fn from(device: &voltnest_storage::ManualDevice) -> Self {
+        Self {
+            id: device.id.clone(),
+            name: device.name.clone(),
+            vid_pid: format!("0x{:04X}:0x{:04X}", device.vid, device.pid),
+            usage_summary: format!("0x{:04X}/0x{:04X}", device.usage_page, device.usage),
+            product: device.product.clone(),
+            serial: device.serial.clone(),
+            note: device.note.clone(),
+            added_at_ms: device.added_at_ms,
+            last_capture_at_ms: device.last_capture_at_ms,
+            captured_frames: device.captured_frames,
+            samples: device.samples.iter().map(ManualSampleDto::from).collect(),
+            report_path: device.report_path.clone(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

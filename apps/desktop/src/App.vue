@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch, type Component } from
 import { Activity, BatteryMedium, CircleAlert, Settings } from "@lucide/vue";
 import DeviceCard from "./components/DeviceCard.vue";
 import DiagnosticsPanel from "./components/DiagnosticsPanel.vue";
+import ManualAddPanel from "./components/ManualAddPanel.vue";
 import OnboardingFlow from "./components/OnboardingFlow.vue";
 import SettingsPanel from "./components/SettingsPanel.vue";
 import TitleBar from "./components/TitleBar.vue";
@@ -14,12 +15,20 @@ import {
   completeOnboarding,
   getDiagnostics,
   getSettings,
+  listManualDevices,
+  removeManualDevice,
   restartTransport,
   setAutostart,
   subscribeDiagnostics,
   updateSettings,
 } from "./lib/ipc";
-import type { CardDto, DiagnosticsDto, OnboardingChoice, SettingsDto } from "./lib/types";
+import type {
+  CardDto,
+  DiagnosticsDto,
+  ManualDeviceDto,
+  OnboardingChoice,
+  SettingsDto,
+} from "./lib/types";
 
 type View = "devices" | "settings" | "diagnostics";
 
@@ -28,6 +37,11 @@ const { snapshot, nowMs, connected } = useSnapshot();
 
 const settings = ref<SettingsDto | null>(null);
 const diagnostics = ref<DiagnosticsDto | null>(null);
+
+/** 手动上报的设备：独立于快照（不参与采集），故单独拉取与维护。 */
+const manualDevices = ref<ManualDeviceDto[]>([]);
+/** 生成上报数据面板是否打开。 */
+const addingDevice = ref(false);
 const busy = ref(false);
 const error = ref<string | null>(null);
 
@@ -114,6 +128,31 @@ function fail(e: unknown) {
 async function loadSettings() {
   try {
     settings.value = await getSettings();
+  } catch (e) {
+    fail(e);
+  }
+}
+
+async function loadManualDevices() {
+  try {
+    manualDevices.value = await listManualDevices();
+  } catch (e) {
+    fail(e);
+  }
+}
+
+/** 上报数据生成成功：刷新列表并保留面板（用户可能还要复制报告）。 */
+async function onManualSaved() {
+  await loadManualDevices();
+}
+
+/** 移除一条手动设备记录：报告文件保留，故只需一次确认。 */
+async function doRemoveManual(id: string) {
+  const device = manualDevices.value.find((item) => item.id === id);
+  if (!window.confirm(`移除「${device?.name ?? id}」？报告文件会保留在数据目录。`)) return;
+  try {
+    await removeManualDevice(id);
+    await loadManualDevices();
   } catch (e) {
     fail(e);
   }
@@ -245,6 +284,7 @@ watch(view, (next) => {
 onMounted(() => {
   void loadSettings();
   void startDiagnosticsFeed();
+  void loadManualDevices();
 });
 
 onBeforeUnmount(() => {
@@ -277,23 +317,29 @@ onBeforeUnmount(() => {
 
     <main class="mx-auto min-h-0 w-full max-w-[560px] flex-1 overflow-y-auto px-5 pt-4">
       <template v-if="view === 'devices'">
-        <div v-if="rows.length > 0" class="flex flex-col gap-2.5 pb-5">
-          <DeviceCard
-            v-for="row in rows"
-            :key="row.key"
-            :device="deviceById.get(row.deviceId)!"
-            :now-ms="nowMs"
-            :inactive-text="row.inactiveText"
-          />
-        </div>
-        <div
-          v-else-if="connected"
-          class="flex flex-col items-center justify-center gap-2 py-16 text-center"
-        >
-          <div class="size-3 rounded-full border-2 border-muted-foreground/40" />
-          <p class="text-sm font-medium">还没有发现设备</p>
-          <p class="max-w-[280px] text-xs leading-relaxed text-muted-foreground">
-            插上 2.4G 接收器，或在系统设置里把蓝牙耳机连接一次，设备会自己出现在这里。
+        <div v-if="connected" class="flex flex-col gap-2.5 pb-5">
+          <template v-if="rows.length > 0">
+            <DeviceCard
+              v-for="row in rows"
+              :key="row.key"
+              :device="deviceById.get(row.deviceId)!"
+              :now-ms="nowMs"
+              :inactive-text="row.inactiveText"
+            />
+          </template>
+
+          <!-- 空态只做说明：数据上报属于诊断页的职责，入口统一放在底部提示行。 -->
+          <div v-else class="flex flex-col items-center justify-center gap-2 py-10 text-center">
+            <div class="size-3 rounded-full border-2 border-muted-foreground/40" />
+            <p class="text-sm font-medium">还没有发现设备</p>
+            <p class="max-w-[280px] text-xs leading-relaxed text-muted-foreground">
+              插上 2.4G 接收器，或在系统设置里把蓝牙耳机连接一次，设备会自己出现在这里。
+            </p>
+          </div>
+
+          <!-- 兜底提示：纯文字，不占卡片，也不做按钮。 -->
+          <p class="text-center text-xs leading-relaxed text-muted-foreground">
+            若未自动识别，请切换为蓝牙模式或前往「诊断页」生成上报数据。
           </p>
         </div>
         <div v-else class="py-16 text-center text-sm text-muted-foreground">正在连接宿主进程…</div>
@@ -310,12 +356,18 @@ onBeforeUnmount(() => {
         v-else-if="view === 'diagnostics' && diagnostics"
         :diagnostics="diagnostics"
         :now-ms="nowMs"
+        :manual-devices="manualDevices"
         @restart="doRestart"
         @replay-onboarding="replayOnboarding = true"
+        @add-manual="addingDevice = true"
+        @remove-manual="doRemoveManual"
       />
 
       <div v-else class="py-16 text-center text-sm text-muted-foreground">正在读取…</div>
     </main>
+
+    <!-- 生成上报数据：遮罩自标题栏下方起，抓包期间标题栏仍可用。 -->
+    <ManualAddPanel v-if="addingDevice" @close="addingDevice = false" @saved="onManualSaved" />
 
     <OnboardingFlow
       v-if="settings && (!settings.onboardingCompleted || replayOnboarding)"

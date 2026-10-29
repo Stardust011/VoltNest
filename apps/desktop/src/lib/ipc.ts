@@ -2,13 +2,28 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import type { DiagnosticsDto, OnboardingChoice, SettingsDto, Snapshot } from "./types";
+import type {
+  CaptureEventDto,
+  CaptureStartRequest,
+  CaptureStartResult,
+  DiagnosticsDto,
+  HidTargetDto,
+  ManualDeviceDto,
+  OnboardingChoice,
+  ReportDto,
+  ReportForm,
+  SettingsDto,
+  Snapshot,
+} from "./types";
 
 // 快照事件名（W：`state://snapshot`）。
 export const SNAPSHOT_EVENT = "state://snapshot";
 
 // 诊断变更事件名（宿主侧 `host::DIAGNOSTICS_EVENT`）。
 export const DIAGNOSTICS_EVENT = "state://diagnostics";
+
+// 抓包进度事件名（宿主侧 `probe::CAPTURE_EVENT`）。
+export const CAPTURE_EVENT = "probe://capture";
 
 export function getSnapshot(): Promise<Snapshot> {
   return invoke<Snapshot>("get_snapshot");
@@ -59,4 +74,53 @@ export function subscribeSnapshot(handler: (snap: Snapshot) => void) {
 // 订阅「诊断已变」信号。事件无载荷——数据仍以 `get_diagnostics` 为准，宿主只通知「该重拉」，避免把 transports/环形缓冲塞进事件通道。
 export function subscribeDiagnostics(handler: () => void) {
   return listen(DIAGNOSTICS_EVENT, () => handler());
+}
+
+// ---- 生成上报数据 ----
+
+/** 枚举设备（按 VID:PID 聚合，含型号表里没有的设备）。 */
+export function listHidTargets(): Promise<HidTargetDto[]> {
+  return invoke<HidTargetDto[]>("list_hid_targets");
+}
+
+/** 开始抓包。返回会话号，数据经 `probe://capture` 分批推送。 */
+export function startHidCapture(request: CaptureStartRequest): Promise<CaptureStartResult> {
+  return invoke<CaptureStartResult>("start_hid_capture", { request });
+}
+
+/** 请求停止（已录到的数据保留）。 */
+export function stopHidCapture(sessionId: number): Promise<void> {
+  return invoke<void>("stop_hid_capture", { sessionId });
+}
+
+/** 丢弃会话并释放帧内存（关闭面板时调用）。 */
+export function discardHidCapture(sessionId: number): Promise<void> {
+  return invoke<void>("discard_hid_capture", { sessionId });
+}
+
+/** 生成 issue 报告：返回正文并落盘一份完整文件。 */
+export function generateIssueReport(form: ReportForm): Promise<ReportDto> {
+  return invoke<ReportDto>("generate_issue_report", { form });
+}
+
+/** 保存为一条上报记录（报告同时落盘）。 */
+export function saveManualDevice(form: ReportForm): Promise<ManualDeviceDto> {
+  return invoke<ManualDeviceDto>("save_manual_device", { form });
+}
+
+export function listManualDevices(): Promise<ManualDeviceDto[]> {
+  return invoke<ManualDeviceDto[]>("list_manual_devices");
+}
+
+export function removeManualDevice(id: string): Promise<void> {
+  return invoke<void>("remove_manual_device", { id });
+}
+
+/** 读取某条手动设备的报告正文（报告文件是唯一数据源）。 */
+export function getManualReport(id: string): Promise<string> {
+  return invoke<string>("get_manual_report", { id });
+}
+
+export function subscribeCapture(handler: (event: CaptureEventDto) => void) {
+  return listen<CaptureEventDto>(CAPTURE_EVENT, (event) => handler(event.payload));
 }
