@@ -7,6 +7,8 @@
 //! %APPDATA%\VoltNest\             $XDG_DATA_HOME/VoltNest/
 //! ├─ settings.json                ├─ settings.json
 //! ├─ state.json                   ├─ state.json
+//! ├─ manual_devices.json          ├─ manual_devices.json
+//! ├─ reports/                     ├─ reports/
 //! ├─ logs/                        ├─ logs/
 //! └─ toast-icon.png               └─ toast-icon.png
 //! ```
@@ -70,6 +72,16 @@ impl DataPaths {
     /// `state.json`。
     pub fn state_file(&self) -> PathBuf {
         self.root.join("state.json")
+    }
+
+    /// `manual_devices.json`（用户手动添加的设备）。
+    pub fn manual_devices_file(&self) -> PathBuf {
+        self.root.join("manual_devices.json")
+    }
+
+    /// `reports/`：生成上报数据时产出的 issue 报告。
+    pub fn reports_dir(&self) -> PathBuf {
+        self.root.join("reports")
     }
 
     /// `logs/`。
@@ -173,6 +185,8 @@ mod tests {
         let p = DataPaths::with_root("C:/tmp/voltnest");
         assert!(p.settings_file().ends_with("settings.json"));
         assert!(p.state_file().ends_with("state.json"));
+        assert!(p.manual_devices_file().ends_with("manual_devices.json"));
+        assert!(p.reports_dir().ends_with("reports"));
         assert!(p.logs_dir().ends_with("logs"));
         assert!(p.root().ends_with("voltnest"));
     }

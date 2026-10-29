@@ -4,16 +4,24 @@
 //! 一次同时毁掉阈值、隐藏列表和托盘顺序。
 //! 所有写入走原子替换：`.tmp` → `fsync` → `rename`。损坏恢复不阻塞启动：
 //! 备份 → 用默认值启动 → 诊断页告警。
+//!
+//! 第三个文件 `manual_devices.json`（见 [`manual`]）同样是用户资产：用户手动添加的设备与
+//! 它绑定的抓包报告，删了不会自己长回来，故不放进可丢弃的 `state.json`。
 
 #![forbid(unsafe_code)]
 #![deny(clippy::disallowed_types)]
 #![warn(missing_docs)]
 
 pub mod atomic;
+pub mod manual;
 pub mod paths;
 pub mod settings;
 pub mod state;
 
+pub use manual::{
+    LoadedManualDevices, MANUAL_SCHEMA_VERSION, MAX_MANUAL_DEVICES, ManualDevice, ManualDeviceFile,
+    ManualDeviceStore, ManualSample,
+};
 pub use paths::DataPaths;
 pub use settings::{
     LoadedSettings, NotificationMode, NotificationSettings, Settings, SettingsLoadWarning,

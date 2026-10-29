@@ -38,25 +38,25 @@ HERE = pathlib.Path(__file__).resolve().parent
 EMBED_ASSET = HERE.parent.parent / "src" / "assets" / "brand-mark.png"
 
 # ---------- 配色 ----------
-TILE = (0x14, 0x15, 0x18)        # 近黑底
-TILE_R = 0.232                   # 圆角半径（占边长）
-RING = (0x4B, 0x51, 0x5C)        # 圆环：比底色亮两档，不与标记抢焦点
+TILE = (0x14, 0x15, 0x18)  # 近黑底
+TILE_R = 0.232  # 圆角半径（占边长）
+RING = (0x4B, 0x51, 0x5C)  # 圆环：比底色亮两档，不与标记抢焦点
 
-GRAD_FROM = (0xC8, 0xF4, 0x6E)   # 上端：亮黄绿
-GRAD_TO = (0x22, 0xB2, 0xAC)     # 下端：青绿
-GRAD_Y0, GRAD_Y1 = 0.17, 0.74    # 渐变在竖直方向的作用区间
+GRAD_FROM = (0xC8, 0xF4, 0x6E)  # 上端：亮黄绿
+GRAD_TO = (0x22, 0xB2, 0xAC)  # 下端：青绿
+GRAD_Y0, GRAD_Y1 = 0.17, 0.74  # 渐变在竖直方向的作用区间
 
 # ---------- 圆环 ----------
-RING_R = 0.312                   # 环心半径
-RING_W = 0.036                   # 环宽
-RING_GAP_DEG = 22.0              # 开口半角，方向朝正下
+RING_R = 0.312  # 环心半径
+RING_W = 0.036  # 环宽
+RING_GAP_DEG = 22.0  # 开口半角，方向朝正下
 
 # ---------- 标记 ----------
 # V：两条粗折线，谷底圆角连接，顶端水平切平。
-V_APEX = (0.500, 0.688)          # 折线拐点（墨迹最低点还要再加半宽）
+V_APEX = (0.500, 0.688)  # 折线拐点（墨迹最低点还要再加半宽）
 V_LEFT = (0.296, 0.300)
 V_RIGHT = (0.704, 0.300)
-V_HALF_W = 0.056                 # 笔画半宽
+V_HALF_W = 0.056  # 笔画半宽
 # 两臂的顶端切口高度不同：左臂平切；右臂切在闪电折口带之内，切边被闪电盖住，
 # 于是「V 的右臂」与闪电在视觉上是同一笔，不会出现台阶。
 V_LEFT_CUT = 0.322
@@ -74,8 +74,8 @@ BOLT_LOCAL = (
     (0.443, 0.611),  # 中折口
     (0.031, 0.611),  # 左翼尖
 )
-BOLT_ORIGIN = (0.500, 0.150)     # 闪电左上角在图标中的位置
-BOLT_SIZE = (0.280, 0.360)       # 闪电宽、高占边长的比例
+BOLT_ORIGIN = (0.500, 0.150)  # 闪电左上角在图标中的位置
+BOLT_SIZE = (0.280, 0.360)  # 闪电宽、高占边长的比例
 
 
 def _rounded_rect_sdf(x: float, y: float, half: float, radius: float) -> float:
@@ -119,9 +119,7 @@ def _gradient(x: float, y: float):
     t = (y - GRAD_Y0) / (GRAD_Y1 - GRAD_Y0)
     t += (x - 0.5) * 0.18
     t = 0.0 if t < 0.0 else (1.0 if t > 1.0 else t)
-    return tuple(
-        int(a + (b - a) * t + 0.5) for a, b in zip(GRAD_FROM, GRAD_TO)
-    )
+    return tuple(int(a + (b - a) * t + 0.5) for a, b in zip(GRAD_FROM, GRAD_TO))
 
 
 def render(size: int) -> bytes:
@@ -199,7 +197,9 @@ def png(size: int, rgba: bytes) -> bytes:
 
     def chunk(tag: bytes, data: bytes) -> bytes:
         body = tag + data
-        return struct.pack(">I", len(data)) + body + struct.pack(">I", zlib.crc32(body) & 0xFFFFFFFF)
+        return (
+            struct.pack(">I", len(data)) + body + struct.pack(">I", zlib.crc32(body) & 0xFFFFFFFF)
+        )
 
     ihdr = struct.pack(">IIBBBBB", size, size, 8, 6, 0, 0, 0)
     return (
