@@ -7,6 +7,7 @@ mod dto;
 mod host;
 mod logger;
 mod notification;
+mod probe;
 mod supervisor;
 mod toast_icon;
 mod tray;
@@ -99,9 +100,13 @@ fn main() {
     let start_minimized = loaded.settings.start_minimized;
     let shared_for_exit = Arc::clone(&shared);
 
+    // 生成上报数据：独立的临时状态（抓包会话 + 手动设备清单），不参与采集生命周期。
+    let probe_state = Arc::new(probe::ProbeState::new(paths.clone(), clock::now_utc_ms()));
+
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
         .manage(Arc::clone(&shared))
+        .manage(probe_state)
         .invoke_handler(tauri::generate_handler![
             commands::get_snapshot,
             commands::get_settings,
@@ -114,6 +119,15 @@ fn main() {
             commands::show_panel,
             commands::hide_to_tray,
             commands::quit_app,
+            probe::list_hid_targets,
+            probe::start_hid_capture,
+            probe::stop_hid_capture,
+            probe::discard_hid_capture,
+            probe::generate_issue_report,
+            probe::save_manual_device,
+            probe::list_manual_devices,
+            probe::remove_manual_device,
+            probe::get_manual_report,
         ])
         .setup(move |app| {
             let handle = app.handle().clone();
