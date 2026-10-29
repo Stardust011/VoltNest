@@ -56,6 +56,13 @@ pub enum RejectReason {
         /// 实际值。
         got: Option<u8>,
     },
+    /// 双字节命令字的高字节不符。
+    CmdHighMismatch {
+        /// 期望值。
+        want: u8,
+        /// 实际值。
+        got: Option<u8>,
+    },
     /// 应答确认位不符（设备还没处理完该命令，或回的是别的命令）。
     AckMismatch {
         /// 期望值（已与掩码对齐）。
@@ -117,6 +124,7 @@ impl RejectReason {
             Self::ReportTooShort { .. } => "report_too_short",
             Self::ReportIdMismatch { .. } => "report_id_mismatch",
             Self::CmdMismatch { .. } => "cmd_mismatch",
+            Self::CmdHighMismatch { .. } => "cmd_high_mismatch",
             Self::AckMismatch { .. } => "ack_mismatch",
             Self::StatusError { .. } => "status_error",
             Self::LengthFieldMissing { .. } => "length_field_missing",
@@ -138,6 +146,7 @@ impl std::fmt::Display for RejectReason {
             Self::ReportTooShort { min } => write!(f, "(min={min})"),
             Self::ReportIdMismatch { want, got }
             | Self::CmdMismatch { want, got }
+            | Self::CmdHighMismatch { want, got }
             | Self::AckMismatch { want, got }
             | Self::SubtagsMismatch { want, got } => {
                 write!(f, "(want={want:#04X} got={})", hex_opt(*got))
@@ -301,13 +310,19 @@ fn decode_battery_at(
     }
 
     // 3) 命令字（协议回显时才有）。
-    if let Some(cmd) = spec.battery.cmd
-        && report.get(layout.cmd_index) != Some(&cmd)
-    {
-        return Err(reject(RejectReason::CmdMismatch {
-            want: cmd,
-            got: report.get(layout.cmd_index).copied(),
-        }));
+    if let Some(cmd) = spec.battery.cmd {
+        let got = report.get(layout.cmd_index).copied();
+        if got != Some(cmd) {
+            return Err(reject(RejectReason::CmdMismatch { want: cmd, got }));
+        }
+        // 双字节命令还要比高字节：CZ 的 `0x0904` 与 `0x0A04` 低字节相同，
+        // 只比低字节会把「读信息」的应答当成电量解析。
+        if let Some(high) = spec.battery.cmd_high {
+            let got = report.get(layout.cmd_index + 1).copied();
+            if got != Some(high) {
+                return Err(reject(RejectReason::CmdHighMismatch { want: high, got }));
+            }
+        }
     }
 
     // 4) payload 长度：字段声明 / 固定长度两种模式。
@@ -454,25 +469,29 @@ pub fn matches_cmd(spec: &BrandSpec, report: &[u8]) -> bool {
         return true;
     };
     let index = spec.frame.cmd_index;
-    if spec.frame.report_id.is_none() {
-        // 位移后的窗口里，`normalized_byte` 的取反规则不再适用（它是按绝对下标写的），
-        // 故取反协议只认未位移的形态。
-        return (0..=1usize).any(|base| {
-            let at = base + index;
-            report.get(at).copied().map(|byte| {
-                if base == 0 {
-                    normalized_byte(spec, at, byte)
-                } else {
-                    byte
-                }
-            }) == Some(cmd)
+    // 窗口 `base` 下的整条命令（低字节 + 可选高字节）是否对得上。
+    let hit = |base: usize| {
+        let at = base + index;
+        let low = report.get(at).copied().map(|byte| {
+            // 位移后的窗口里 `normalized_byte` 的取反规则不再适用（它按绝对下标写）。
+            if base == 0 {
+                normalized_byte(spec, at, byte)
+            } else {
+                byte
+            }
         });
+        if low != Some(cmd) {
+            return false;
+        }
+        match spec.battery.cmd_high {
+            Some(high) => report.get(at + 1).copied() == Some(high),
+            None => true,
+        }
+    };
+    if spec.frame.report_id.is_none() {
+        return (0..=1usize).any(hit);
     }
-    report
-        .get(index)
-        .copied()
-        .map(|byte| normalized_byte(spec, index, byte))
-        == Some(cmd)
+    hit(0)
 }
 
 /// 诊断用：报告尾部填充是否全零。
@@ -617,6 +636,7 @@ mod tests {
         },
         battery: BatteryFields {
             cmd: Some(0x22),
+            cmd_high: None,
             subtag: None,
             percent_index: 0,
             percent_mask: 0xFF,
@@ -669,6 +689,7 @@ mod tests {
         },
         battery: BatteryFields {
             cmd: None,
+            cmd_high: None,
             subtag: None,
             percent_index: 0,
             percent_mask: 0xFF,
@@ -682,6 +703,7 @@ mod tests {
         request: Some(crate::spec::RequestTemplate {
             usage_page: 0xFFC0,
             cmd: 0x4A,
+            cmd_high: None,
             prefix: &[],
             report_len: 6,
             cmd_index: 1,
@@ -1083,6 +1105,13 @@ mod tests {
                     got: None,
                 },
                 "cmd_mismatch(want=0x22 got=none)",
+            ),
+            (
+                RejectReason::CmdHighMismatch {
+                    want: 0x09,
+                    got: Some(0x08),
+                },
+                "cmd_high_mismatch(want=0x09 got=0x08)",
             ),
             (
                 RejectReason::AckMismatch {

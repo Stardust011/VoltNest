@@ -135,6 +135,12 @@ pub struct BatteryFields {
     /// `None` = 该协议**不在应答里回显命令字**，故不校验（官方驱动对这类固件只校验确认位）；
     /// 此时 `cmd_index` 不参与匹配，但仍需落在 payload 之前。
     pub cmd: Option<u8>,
+    /// 命令字的高字节：`Some` = 该协议的命令字是**双字节小端**，低字节在 `cmd_index`、
+    /// 高字节在 `cmd_index + 1`。
+    ///
+    /// 只有 CZ 的 `Ge` 帧这样定义命令（电量 = `0x0904`，线上写作 `04 09`）。必须连高字节一起比：
+    /// 只比低字节时，`0x0A04`、`0x1A04` 这些真·别的命令都会被当成电量应答解析。
+    pub cmd_high: Option<u8>,
     /// payload 内的子标签：`(下标, 期望值)`。`None` = 该协议没有子标签。
     pub subtag: Option<(usize, u8)>,
     /// 电量百分比在 payload 内的下标（`0..=100`，越界即 `PercentOutOfRange`）。
@@ -254,6 +260,12 @@ pub struct RequestTemplate {
     pub usage_page: u16,
     /// 报文中携带的命令字（查询命令，可与上报帧的命令字不同）。
     pub cmd: u8,
+    /// 命令字的高字节：`Some` = 双字节小端命令，写在 `cmd_index + 1`。
+    ///
+    /// CZ 的 `Ge` 帧用 `hJ(command)`（`[cmd & 0xFF, cmd >> 8]`）拼头，电量命令 `2308` 即
+    /// 线上 `04 09`。只写低字节会把命令变成 `0x0004`（读信息），设备照常应答别的数据 ——
+    /// 表现为「有帧、但电量永远是垃圾」。
+    pub cmd_high: Option<u8>,
     /// 命令字之前的固定报文内容。
     pub prefix: &'static [u8],
     /// 报文总长（HID 输出报告长度，不足补 0）。
@@ -300,6 +312,12 @@ impl RequestTemplate {
         }
         if let Some(slot) = buf.get_mut(self.cmd_index) {
             *slot = self.cmd;
+        }
+        // 双字节命令：高字节紧跟低字节（官方 `hJ(command) = [cmd & 0xFF, cmd >> 8]`）。
+        if let Some(high) = self.cmd_high
+            && let Some(slot) = buf.get_mut(self.cmd_index + 1)
+        {
+            *slot = high;
         }
         let end = self
             .payload_offset
@@ -489,14 +507,35 @@ impl BrandSpec {
             });
         }
 
+        // 双字节命令字连高字节也要落在 payload 之前：`cmd_index + 1 == payload_offset` 时
+        // 高字节会被当成 payload 的第一个字节，两边各读一次。
+        if self.battery.cmd_high.is_some() && self.frame.cmd_index + 1 >= self.frame.payload_offset
+        {
+            return Err(SpecError::CmdHighOutsideHeader {
+                brand: self.id,
+                cmd_index: self.frame.cmd_index,
+            });
+        }
+
+        // 高字节只能附在低字节上：`cmd: None` 表示「本协议不校验命令字」，
+        // 这时再给一个高字节无从比对，等于写了条永不生效的规则。
+        if self.battery.cmd_high.is_some() && self.battery.cmd.is_none() {
+            return Err(SpecError::CmdHighWithoutCmd { brand: self.id });
+        }
+
         // 报告 ID 占首字节，此时 payload 不能从 0 开始。
         if self.frame.report_id.is_some() && self.frame.payload_offset == 0 {
             return Err(SpecError::PayloadStartsAtReportId { brand: self.id });
         }
 
-        // 长度字段必须在头部。
+        // 长度字段必须在头部，且不得与命令字抢字节 —— 同一字节被当成两种语义，
+        // 两边至少有一个读到垃圾。头部的字节顺序不固定（CZ 的 `Ge` 帧是
+        // `version · flags · length · cmdLo · cmdHi`，长度在命令**之前**），故只校验
+        // 「在 payload 之前」与「不压命令字」，不假设谁先谁后。
         if let Some(index) = self.frame.len_index
-            && (index < self.frame.cmd_index || index >= self.frame.payload_offset)
+            && (index >= self.frame.payload_offset
+                || index == self.frame.cmd_index
+                || (self.battery.cmd_high.is_some() && index == self.frame.cmd_index + 1))
         {
             return Err(SpecError::LengthFieldOutsideHeader {
                 brand: self.id,
@@ -556,6 +595,8 @@ impl BrandSpec {
             }
             if req.data_end() > req.report_len
                 || req.cmd_index >= req.payload_offset
+                // 双字节命令的高字节同样不能压到 payload 上。
+                || (req.cmd_high.is_some() && req.cmd_index + 1 >= req.payload_offset)
                 || req.report_len < self.frame.payload_offset
                 || req.prefix.len() > req.cmd_index
             {
@@ -686,6 +727,18 @@ pub enum SpecError {
     },
     /// 带报告 ID，但 payload 从 0 开始。
     PayloadStartsAtReportId {
+        /// 品牌标识。
+        brand: &'static str,
+    },
+    /// 双字节命令字的高字节越过 payload 起点。
+    CmdHighOutsideHeader {
+        /// 品牌标识。
+        brand: &'static str,
+        /// 命令字低字节下标。
+        cmd_index: usize,
+    },
+    /// 声明了命令字高字节，却没有声明命令字低字节。
+    CmdHighWithoutCmd {
         /// 品牌标识。
         brand: &'static str,
     },
@@ -856,6 +909,13 @@ impl core::fmt::Display for SpecError {
             Self::PayloadStartsAtReportId { brand } => {
                 write!(f, "品牌 {brand} 带报告 ID，payload 不得从 0 开始")
             }
+            Self::CmdHighOutsideHeader { brand, cmd_index } => write!(
+                f,
+                "品牌 {brand} 的双字节命令字（低字节 @{cmd_index}）越过了 payload 起点"
+            ),
+            Self::CmdHighWithoutCmd { brand } => {
+                write!(f, "品牌 {brand} 声明了命令字高字节，却没有命令字低字节")
+            }
             Self::LengthFieldOutsideHeader {
                 brand,
                 len_index,
@@ -863,7 +923,7 @@ impl core::fmt::Display for SpecError {
                 payload_offset,
             } => write!(
                 f,
-                "品牌 {brand} 的长度字段下标 {len_index} 不在头部 [{cmd_index}, {payload_offset})"
+                "品牌 {brand} 的长度字段下标 {len_index} 不在头部（须 < payload_offset={payload_offset} 且不等于命令字下标 {cmd_index}）"
             ),
             Self::FixedPayloadTooShort {
                 brand,
@@ -987,6 +1047,7 @@ mod tests {
         RequestTemplate {
             usage_page: 0xFFB2,
             cmd: 0xFB,
+            cmd_high: None,
             prefix: &[],
             report_len: 8,
             cmd_index: 1,
@@ -1086,6 +1147,7 @@ mod tests {
         spec.request = Some(RequestTemplate {
             usage_page: 0xFFB1,
             cmd: 0xFB,
+            cmd_high: None,
             prefix: &[],
             report_len: 8,
             cmd_index: 1,
@@ -1107,6 +1169,7 @@ mod tests {
         spec.request = Some(RequestTemplate {
             usage_page: 0xFFB1,
             cmd: 0xFB,
+            cmd_high: None,
             prefix: &[],
             report_len: 6,
             cmd_index: 1,
@@ -1164,6 +1227,7 @@ mod tests {
         let req = RequestTemplate {
             usage_page: 0xFFB1,
             cmd: 0xFB,
+            cmd_high: None,
             prefix: &[],
             report_len: 8,
             cmd_index: 1,
@@ -1190,6 +1254,7 @@ mod tests {
         let mut req = RequestTemplate {
             usage_page: 0xFFB1,
             cmd: 0xFB,
+            cmd_high: None,
             prefix: &[],
             report_len: 8,
             cmd_index: 1,
@@ -1209,6 +1274,7 @@ mod tests {
         let req = RequestTemplate {
             usage_page: 0xFFB1,
             cmd: 0xFB,
+            cmd_high: None,
             prefix: &[],
             report_len: 6,
             cmd_index: 1,
@@ -1537,6 +1603,43 @@ mod tests {
             |s| s.battery.percent_mask = 0,
             |e| matches!(e, SpecError::ZeroPercentMask { .. }),
             "电量掩码为 0",
+        );
+        // 高字节只能附在低字节上：`cmd: None` 时无从比对，写了也是永不生效的规则。
+        rejects(
+            |s| {
+                s.battery.cmd = None;
+                s.battery.cmd_high = Some(0x09);
+            },
+            |e| matches!(e, SpecError::CmdHighWithoutCmd { .. }),
+            "只有命令字高字节",
+        );
+        // 双字节命令的高字节不能压到 payload 上。
+        rejects(
+            |s| {
+                s.frame.cmd_index = 1;
+                s.frame.payload_offset = 2;
+                s.battery.cmd_high = Some(0x09);
+            },
+            |e| matches!(e, SpecError::CmdHighOutsideHeader { .. }),
+            "命令字高字节越过 payload",
+        );
+        // 长度字段在头部任意位置都合法（CZ 的 `Ge` 帧把它放在命令**之前**），
+        // 但压到 payload 上或与命令字抢字节必须拒绝。
+        rejects(
+            |s| {
+                s.frame.len_index = Some(2);
+                s.frame.payload_offset = 2;
+            },
+            |e| matches!(e, SpecError::LengthFieldOutsideHeader { .. }),
+            "长度字段落在 payload 里",
+        );
+        rejects(
+            |s| {
+                s.frame.len_index = Some(1);
+                s.frame.cmd_index = 1;
+            },
+            |e| matches!(e, SpecError::LengthFieldOutsideHeader { .. }),
+            "长度字段与命令字抢同一字节",
         );
     }
 
