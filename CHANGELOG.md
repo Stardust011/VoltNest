@@ -1,5 +1,34 @@
 # Changelog
 
+## [0.2.0](https://github.com/Stardust011/VoltNest/compare/v0.1.1...v0.2.0) (2026-10-29)
+
+
+### 新功能
+
+* **mchose:** qhw 族改走设备主动推送，查询只在读数过期前探活 ([7f1d6c4](https://github.com/Stardust011/VoltNest/commit/7f1d6c48e80c04554ba0dd6aa308c7fe47cb3c69))
+* **mchose:** 接入 CZ/QHW 族键盘（G98 V3 / K87 V3） ([318c4fd](https://github.com/Stardust011/VoltNest/commit/318c4fd5347e695d39febc7199623ed6bb4192e6))
+* **probe:** 新增「生成上报数据」，未识别设备可抓包产出 issue 报告 ([a79ef17](https://github.com/Stardust011/VoltNest/commit/a79ef170185b271a83e1b8aee05c903389261bdc))
+* **probe:** 移除确认改用 AlertDialog，删记录一并删报告文件，预览不再落盘 ([9030c71](https://github.com/Stardust011/VoltNest/commit/9030c71de8b89d05f81cde979523210e233ffad7))
+
+
+### 修复
+
+* **ci:** 更新 CI 配置以排除 changelog 变更时的构建步骤 ([5e71e98](https://github.com/Stardust011/VoltNest/commit/5e71e98fc7f715b25d7565f5e830677c3033f948))
+* **mchose:** 按官方驱动族分派键盘电量，修复键盘全部枚举不到 ([defd561](https://github.com/Stardust011/VoltNest/commit/defd561f37dd8af535003ec44fb008d70b1d32b2))
+* **mchose:** 鼠标不再周期查询，改为连接时读一次 + 靠实时帧刷新 ([3e3741f](https://github.com/Stardust011/VoltNest/commit/3e3741f81466326e53f40f917c5cb3b21c54fb87))
+* **release:** 补回 0.1.1 升级时漏掉的 Cargo.lock ([91e1a32](https://github.com/Stardust011/VoltNest/commit/91e1a3226d23cfaca01505e8d0e47d60146b352b))
+
+
+### 持续集成
+
+* **release:** 添加代码签名流程 ([27395d0](https://github.com/Stardust011/VoltNest/commit/27395d0a5a6b23f0180cbcfddc3d78e56379cfd7))
+
+
+### 维护
+
+* **bundle:** 卸载器勾选「删除应用数据」时清理 %APPDATA%\VoltNest ([fa3a392](https://github.com/Stardust011/VoltNest/commit/fa3a392946f70cb57ff3c8c2660652cf03e38203))
+* **format:** 格式化脚本纳入 Python（ruff） ([66a1c22](https://github.com/Stardust011/VoltNest/commit/66a1c22f1e2ef6934e744b34b310f1b69da47d91))
+
 ## [0.1.1](https://github.com/Stardust011/VoltNest/compare/v0.1.0...v0.1.1) (2026-10-28)
 
 
