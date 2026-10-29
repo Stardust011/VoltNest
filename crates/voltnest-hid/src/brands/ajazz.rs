@@ -52,6 +52,7 @@ pub const SPEC: BrandSpec = BrandSpec {
     },
     // 纯监听：不向设备发任何报文。
     listen: None,
+    notify: None,
     request: None,
     // 该固件无应答确认位约定。
     ack: None,

@@ -446,6 +446,33 @@ enum Exit {
 /// 一条通道的执行结果：`Ok(())` = 跑完；`Err(_)` = 该线程应当结束。
 type Flow = Result<(), Exit>;
 
+/// 推送为主的协议：多久没拿到有效读数，就值得主动问一次。
+///
+/// 锚点取「上次有效读数」与「上次探活」里较晚的那个：设备持续推送时永远不到这里；
+/// 一旦静默超过 `expected_interval_ms` 就探一次，探完再静默同样的时长才探下一次 ——
+/// 否则读数一直不来时会变成每轮都发报文，又回到了轮询。
+///
+/// **探活失败不自行判死**：读数不更新，老化照常推进，`stale` / `unavailable` 由引擎按阈值链
+/// 判定。本端只负责「再问一次」，不负责「猜设备还活着」。
+fn lazy_probe_due(
+    expected_interval_ms: u64,
+    last_reading: Option<Instant>,
+    last_probe: Option<Instant>,
+    now: Instant,
+) -> bool {
+    let anchor = match (last_reading, last_probe) {
+        (Some(reading), Some(probe)) => Some(reading.max(probe)),
+        (reading, probe) => reading.or(probe),
+    };
+    match anchor {
+        // 还没拿到任何读数：连上就探（首帧查询）。
+        None => true,
+        Some(at) => {
+            now.saturating_duration_since(at) >= Duration::from_millis(expected_interval_ms)
+        }
+    }
+}
+
 /// 一台设备的读取会话：句柄 + 身份 + 事件出口 + 停止标志。
 ///
 /// 四种 [`ReplyTransport`] 各对应一个 `run_*` 方法，分派只在 [`Reader::run`] 一处；
@@ -460,6 +487,10 @@ struct Reader {
     buf: [u8; READ_BUFFER_LEN],
     /// 多包应答拼接器：只有声明了 `reassembly` 的品牌会用到。
     reassembler: frame::Reassembler,
+    /// 最近一次**有效读数**的时刻：推送型协议据此判断「要不要主动问一次」。
+    last_reading: Option<Instant>,
+    /// 最近一次主动探活的时刻：读数一直不来时避免每轮都发报文。
+    last_probe: Option<Instant>,
 }
 
 impl Reader {
@@ -478,6 +509,8 @@ impl Reader {
             stop,
             buf: [0u8; READ_BUFFER_LEN],
             reassembler: frame::Reassembler::new(),
+            last_reading: None,
+            last_probe: None,
         }
     }
 
@@ -501,25 +534,46 @@ impl Reader {
         Ok(())
     }
 
-    /// `InterruptQuery`：按 `interval_ms` 发 output 查询；`None` = 只在会话建立时问一次。
+    /// `InterruptQuery`：会话建立时先问一次，之后按协议声明的节奏补问。
+    ///
+    /// 两种节奏：
+    /// - `interval_ms: Some(..)` —— 周期轮询，节奏由宿主决定（老族键鼠都是这种）。
+    /// - `interval_ms: None` —— **推送为主**：不按固定节奏打扰设备，只在「读数快过期」时
+    ///   探活问一次（[`Self::probe_due`]）。键盘处理一条电量命令要唤醒固件，而推送由设备
+    ///   自己决定何时发 —— 常态下零查询，故障时才多发几条，这是省电的关键。
     fn run_interrupt_query(&mut self) -> Flow {
-        let mut next = Some(Instant::now());
+        let mut next = Instant::now();
         while !self.halted() {
-            if let Some(req) = self.brand.request
-                && next.is_some_and(|at| Instant::now() >= at)
-            {
-                // 新一次查询前先丢半包：半包拼出来的电量不可信。
-                self.reassembler.reset();
-                let _ = self.dev.write(&req.build(self.brand.frame.report_id));
-                next = req
-                    .interval_ms
-                    .map(|ms| Instant::now() + Duration::from_millis(ms));
+            if let Some(req) = self.brand.request {
+                let now = Instant::now();
+                let due = match req.interval_ms {
+                    Some(_) => now >= next,
+                    None => self.probe_due(now),
+                };
+                if due {
+                    // 新一次查询前先丢半包：半包拼出来的电量不可信。
+                    self.reassembler.reset();
+                    let _ = self.dev.write(&req.build(self.brand.frame.report_id));
+                    self.last_probe = Some(now);
+                    let gap = req.interval_ms.unwrap_or(self.brand.expected_interval_ms);
+                    next = now + Duration::from_millis(gap);
+                }
             }
             if let Some(n) = self.read_input(READ_TIMEOUT_MS)? {
                 self.on_input(n)?;
             }
         }
         Ok(())
+    }
+
+    /// 推送为主的协议：读数是不是快过期了，该主动问一次。
+    fn probe_due(&self, now: Instant) -> bool {
+        lazy_probe_due(
+            self.brand.expected_interval_ms,
+            self.last_reading,
+            self.last_probe,
+            now,
+        )
     }
 
     /// `FeatureQuery`：周期发 feature 查询并读应答；声明了实时上报通道时，两次查询之间先听设备自发上报。
@@ -603,20 +657,27 @@ impl Reader {
         Ok(())
     }
 
-    /// 一帧输入报告 → 最多一条事件。三条通道按声明优先级互斥：
-    /// 实时上报（只认电量帧）→ 多包重组（命令字过滤 + 拼包）→ 单帧应答（查询通道再看命令字）。
+    /// 一帧输入报告 → 最多一条事件。四条通道按声明优先级互斥：
+    /// 无头上报 → 推送帧 → 多包重组（命令字过滤 + 拼包）→ 单帧应答（查询通道再看命令字）。
     fn on_input(&mut self, n: usize) -> Flow {
         let report = &self.buf[..n];
         if self.brand.listen.is_some()
             && let Some(reading) = frame::decode_listen(self.brand, report)
         {
-            return self.send(reading_event_of(&self.stable_id, reading));
+            return self.emit_reading(reading);
+        }
+        // 推送帧与应答共用帧头，靠命令字区分（[`crate::spec::NotifySpec`]）；
+        // 认不出来就继续往下走，不吞掉可能是应答的那一帧。
+        if self.brand.notify.is_some()
+            && let Some(reading) = frame::decode_notify(self.brand, report)
+        {
+            return self.emit_reading(reading);
         }
         if self.brand.reassembly.is_some() {
             if let Some(assembled) = self.reassembler.feed(self.brand, report, Instant::now())
                 && let Some(reading) = frame::decode_assembled(self.brand, &assembled)
             {
-                return self.send(reading_event_of(&self.stable_id, reading));
+                return self.emit_reading(reading);
             }
             return Ok(());
         }
@@ -628,12 +689,18 @@ impl Reader {
         self.send(reading_event(&self.stable_id, self.brand, report))
     }
 
+    /// 上报一条**有效读数**，并记下时刻 —— 推送型协议据此判断「要不要探活」。
+    fn emit_reading(&mut self, reading: frame::BatteryReading) -> Flow {
+        self.last_reading = Some(Instant::now());
+        self.send(reading_event_of(&self.stable_id, reading))
+    }
+
     /// 听一帧设备自发上报；认不出是电量帧就丢。
     fn listen_once(&mut self, timeout_ms: i32) -> Flow {
         if let Some(n) = self.read_input(timeout_ms)?
             && let Some(reading) = frame::decode_listen(self.brand, &self.buf[..n])
         {
-            return self.send(reading_event_of(&self.stable_id, reading));
+            return self.emit_reading(reading);
         }
         Ok(())
     }
@@ -1043,5 +1110,59 @@ mod tests {
                 .any(|e| matches!(e, ProviderEvent::TransportDown { .. })),
             "无设备不是传输层故障：{events:?}"
         );
+    }
+
+    // ---- 推送型协议：惰性探活 ----
+
+    /// 连上先探一次，之后**只有在读数静默超过期望间隔时才再探**。
+    ///
+    /// qhw 族的查询不按节奏发：键盘处理一条电量命令要唤醒固件，常态下应当零查询，
+    /// 由设备自己推送。这条判据是「省电」与「别让读数烂在那里」之间的唯一开关。
+    #[test]
+    fn lazy_probe_waits_for_silence_before_asking_again() {
+        let t0 = Instant::now();
+        let expected = 30_000u64;
+
+        // 还没拿到任何读数：连上就问。
+        assert!(lazy_probe_due(expected, None, None, t0));
+
+        // 刚拿到读数：安静等着，不打扰设备。
+        assert!(!lazy_probe_due(
+            expected,
+            Some(t0),
+            None,
+            t0 + Duration::from_secs(10)
+        ));
+        // 静默到期望间隔：问一次。
+        assert!(lazy_probe_due(
+            expected,
+            Some(t0),
+            None,
+            t0 + Duration::from_secs(30)
+        ));
+
+        // 探过但没回：不能每轮都问（那就退回轮询了），再等一个间隔。
+        let probe = t0 + Duration::from_secs(30);
+        assert!(!lazy_probe_due(
+            expected,
+            Some(t0),
+            Some(probe),
+            probe + Duration::from_secs(10)
+        ));
+        assert!(lazy_probe_due(
+            expected,
+            Some(t0),
+            Some(probe),
+            probe + Duration::from_secs(30)
+        ));
+
+        // 探活之后设备又开始推：以「读数」为准，重新计时。
+        let reading = probe + Duration::from_secs(5);
+        assert!(!lazy_probe_due(
+            expected,
+            Some(reading),
+            Some(probe),
+            reading + Duration::from_secs(20)
+        ));
     }
 }

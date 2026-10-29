@@ -71,6 +71,7 @@ pub const NRF54L: BrandSpec = BrandSpec {
         }),
     },
     listen: None,
+    notify: None,
     request: None,
     ack: None,
     fallback_report_id: None,
@@ -164,6 +165,7 @@ pub const AP: BrandSpec = BrandSpec {
         }),
     },
     listen: None,
+    notify: None,
     request: Some(RequestTemplate {
         usage_page: 0xFF1C,
         cmd: 0xAD,

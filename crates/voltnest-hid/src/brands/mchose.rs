@@ -8,7 +8,7 @@
 //! | 鼠标 | feature 查询 `11 06`（应答逐字节取反）+ 输入报告实时刷新 | [`MOUSE_WIRED`] / [`MOUSE_WIRELESS`]（仅监听帧布局不同） |
 //! | 键盘 · CZ/GLW 族 | 标准页 `0x0001`：`55 05 …` 读 64 字节功能配置块，电量在 `payload[32]` | [`KEYBOARD_GLW`] |
 //! | 键盘 · `dJe` 老族 | 有线 feature `06 87`（520B）、2.4G output `13 4A` + 校验和 + 多包重组 | [`KEYBOARD_DJE_WIRED`] / [`KEYBOARD_DJE_WIRELESS`] |
-//! | 键盘 · CZ/QHW 族 | `0xFF80`：报告 `0x4D` + 7 字节头 + 2 字节命令 `0x0904` + 尾校验 | [`KEYBOARD_QHW`] |
+//! | 键盘 · CZ/QHW 族 | `0xFF80`：报告 `0x4D` + 7 字节头 + 2 字节命令（查询 `0x0904` / 推送 `0x0700`）+ 尾校验 | [`KEYBOARD_QHW`] |
 //! | 耳机 / 音箱 | 输出报告 `0x55` + 命令 `0x65`，应答是输入报告 | [`AUDIO`] |
 //! | G 系列鼠标 | 客户端注入 iframe `#gSeries`，官方在 `LG()` / `isG3Mouse()` 里直接跳过 WebHID | 仍按键鼠通道读（官方不走这条，是否应答 `0x06` 待实测；不按名称猜排除） |
 //! | 扩展坞 / 未知 | 无电量上报 | 不采集 |
@@ -51,8 +51,8 @@
 
 use crate::brands::checksum;
 use crate::spec::{
-    BatteryFields, BrandSpec, ChargingField, FrameLayout, ListenSpec, Reassembly, ReplyTransport,
-    RequestTemplate,
+    BatteryFields, BrandSpec, ChargingField, FrameLayout, ListenSpec, NotifySpec, Reassembly,
+    ReplyTransport, RequestTemplate,
 };
 use crate::table::Entry;
 
@@ -127,6 +127,7 @@ pub const MOUSE_WIRED: BrandSpec = BrandSpec {
         status_index: 3,
         charging_low_nibble: 0x01,
     }),
+    notify: None,
     request: Some(RequestTemplate {
         usage_page: 0xFF01,
         cmd: 0x06,
@@ -202,6 +203,7 @@ pub const AUDIO: BrandSpec = BrandSpec {
         }),
     },
     listen: None,
+    notify: None,
     request: Some(RequestTemplate {
         usage_page: 0,
         cmd: 0x65,
@@ -300,6 +302,7 @@ pub const KEYBOARD_GLW: BrandSpec = BrandSpec {
         }),
     },
     listen: None,
+    notify: None,
     request: Some(RequestTemplate {
         usage_page: 0x0001,
         cmd: 0x05,
@@ -370,10 +373,23 @@ const KEYBOARD_GLW_PAYLOAD: [u8; 6] = {
 /// （`Ge._isMatch`）只比 `length`、`_parseData` 也不校验序号，设备侧无从证明会拒绝序号 0。
 /// 本项目一次会话只发同一条查询，固定 0 即可；要接多命令时再引入计数。
 ///
-/// # 未接入：主动上报
-/// `featSupport.AllowUpdateBattery` 对 qhw 族缺省 `true`，设备会推 `FA FB 07 …` 通知帧。
-/// 未接入的理由与 GLW 族一致：这条旁路的帧格式另有证据来源，先不拿它当读数来源；
-/// 查询通道已经能拿到完整读数（电量 + 充电三态）。
+/// # 主动上报（本族的常态读数来源）
+/// `featSupport.AllowUpdateBattery` / `Has1PercentPrecisionBattery` 对 qhw 族**缺省为 `true`**
+/// （GLW 族缺省 `false`），所以官方在 qhw 上确实消费 "`updateBattery`" 事件。
+///
+/// 但这一族**没有** GLW 那种 `FA FB 07 <电量> <充电>` 的纯电量通知帧：电量随配置块一起推，
+/// 命令 `0x0700`（`MANUAL_REPORT`），官方 `parseManualReportBytes` 拆 23 字节后取
+/// `n[2]`（走 `toChargingStatus`）与 `n[3]`（`batteryLevel`），再与缓存 diff 才发事件。
+/// 所以本 spec 的 `notify` 是 `0x0700` + `data[2]/data[3]`，与 `getBattery`(0x0904) 的
+/// `data[0]/data[1]` **不是同一套下标** —— 混用会读出一个稳定但无关的数字。
+///
+/// 有了推送就不必按节奏轮询：`RequestTemplate::interval_ms` 置 `None`，只在会话建立时问一次；
+/// 之后由运行时在「读数静默超过 `expected_interval_ms`」时探活（`runtime::lazy_probe_due`），
+/// 探活也没回应就让读数自然老化，由引擎按阈值链判 `stale` / `unavailable`。
+///
+/// # 设备完全不推送时会怎样（静态分析无法排除）
+/// 那时探活成为唯一的读数来源，表现为「每 `expected_interval_ms` 问一次」，即退化成轮询 ——
+/// 功能仍正确，只是省电收益没有兑现。有实机后应先确认：静置不动时是否收到 `0x0700` 帧。
 ///
 /// # 静态分析到此为止（需实机确认）
 /// 报文按 `Ge.NORMAL_MAX_PACKET_LENGTH = 31` 补满 32 字节发出，而官方 WebHID 只发实际长度
@@ -421,6 +437,20 @@ pub const KEYBOARD_QHW: BrandSpec = BrandSpec {
         }),
     },
     listen: None,
+    // 设备主动推 `MANUAL_REPORT`（命令 0x0700）时更新电量：整块配置里 `data[2]` 三态充电、
+    // `data[3]` 电量（官方 `parseManualReportBytes` 拆 23 字节，`toChargingStatus(n[2])` + `n[3]`）。
+    notify: Some(NotifySpec {
+        cmd: 0x00,
+        cmd_high: Some(0x07),
+        percent_index: 3,
+        percent_mask: 0xFF,
+        charging: Some(ChargingField {
+            mask: 0xFF,
+            index: 2,
+            true_values: &[0x01],
+            error_from: None,
+        }),
+    }),
     request: Some(RequestTemplate {
         usage_page: 0xFF80,
         cmd: 0x04,
@@ -434,7 +464,9 @@ pub const KEYBOARD_QHW: BrandSpec = BrandSpec {
         // 故从 `[6]` 起一律算 payload（与应答侧 `payload_offset = 8` 不同：那边 `[8]` 起才是 data）。
         payload_offset: 6,
         payload: &KEYBOARD_QHW_PAYLOAD,
-        interval_ms: Some(30_000),
+        // **不周期查询**：键盘处理一条电量命令要唤醒固件，而推送是设备自己决定何时发。
+        // `None` = 会话建立时问一次，之后由运行时在「读数快过期」时探活（见 `runtime::Reader`）。
+        interval_ms: None,
         inverted: false,
         // 官方 `_simpleGet` 由队列重发，不按「一问一答」重问；重发会插进设备正在处理的队列。
         retry: 0,
@@ -509,6 +541,7 @@ pub const KEYBOARD_DJE_WIRED: BrandSpec = BrandSpec {
         status_index: 3,
         charging_low_nibble: 0x01,
     }),
+    notify: None,
     request: Some(RequestTemplate {
         usage_page: 0xFF01,
         cmd: 0x87,
@@ -591,6 +624,7 @@ pub const KEYBOARD_DJE_WIRELESS: BrandSpec = BrandSpec {
         status_index: 6,
         charging_low_nibble: 0x01,
     }),
+    notify: None,
     request: Some(RequestTemplate {
         usage_page: 0xFF01,
         cmd: 0x4A,
@@ -1030,6 +1064,72 @@ mod tests {
         // 校验和取 flags 起算（官方 `d.slice(1)` 跳过 version），不是整帧异或：
         // 3 ^ 4 ^ 9 = 0x0E，整帧（含 version）异或会得到 0x0F。
         assert_eq!(KEYBOARD_QHW_PAYLOAD[2], 0x0E, "校验和按官方算法实算");
+    }
+
+    /// qhw 的电量推送：`MANUAL_REPORT`（命令 `0x0700`）整块配置里 `data[2]` 充电、`data[3]` 电量。
+    ///
+    /// 官方 `parseManualReportBytes` 把 23 字节拆成配置字段：`n[2]` 走 `toChargingStatus`、
+    /// `n[3]` 就是 `batteryLevel`。这与 `getBattery`(0x0904) 的 `data[0]/data[1]` 是**两套下标**。
+    fn qhw_notify(charge: u8, percent: u8) -> Vec<u8> {
+        let mut report = vec![0x4D, 0x01, 0x03, 23, 0x00, 0x07, 0x00, 0x00];
+        let mut data = [0u8; 23];
+        // `n[0..2]` 是官方 `Uh([a,i])` 拼出的双字节字段，取非零值以证明它不参与电量。
+        data[0] = 0x37;
+        data[1] = 0x38;
+        data[2] = charge;
+        data[3] = percent;
+        report.extend_from_slice(&data);
+        let checksum = report[2..].iter().fold(0u8, |acc, b| acc ^ b);
+        report.push(checksum);
+        report
+    }
+
+    #[test]
+    fn qhw_notify_reads_charge_and_percent_from_manual_report() {
+        for (raw, charging) in [(0u8, false), (1, true), (2, false)] {
+            let reading = frame::decode_notify(&KEYBOARD_QHW, &qhw_notify(raw, 47))
+                .unwrap_or_else(|| panic!("状态 {raw} 的推送帧必须能解析"));
+            assert_eq!(reading.percent.get(), 47, "电量在 data[3]");
+            assert_eq!(reading.charging, Some(charging), "状态 {raw} 的充电判定");
+        }
+    }
+
+    /// 推送帧与应答帧的命令字不同，两条通道不得互相串味。
+    ///
+    /// 串味的后果不是坏帧而是**看起来正常的错值**：`0x0700` 的 `data[0]` 是配置块首字节，
+    /// 当成电量会读出一个稳定但无关的数字。
+    #[test]
+    fn qhw_notify_and_reply_do_not_cross_decode() {
+        let pushed = qhw_notify(1, 47);
+        assert!(
+            frame::decode_notify(&KEYBOARD_QHW, &pushed).is_some(),
+            "推送帧必须由推送通道解析"
+        );
+        assert!(
+            decode_battery(&KEYBOARD_QHW, &pushed).is_err(),
+            "推送帧不得被当成查询应答"
+        );
+        assert!(
+            !frame::matches_cmd(&KEYBOARD_QHW, &pushed),
+            "查询通道的前置过滤必须拒掉推送帧"
+        );
+
+        let reply = qhw_reply(1, 63);
+        assert!(
+            frame::decode_notify(&KEYBOARD_QHW, &reply).is_none(),
+            "应答帧不得被当成推送"
+        );
+    }
+
+    /// 推送为主的协议不再按节奏轮询：常态下零查询，由设备自己推。
+    #[test]
+    fn qhw_does_not_poll_periodically() {
+        let req = KEYBOARD_QHW.request.expect("QHW 族仍需要首帧查询");
+        assert_eq!(
+            req.interval_ms, None,
+            "周期查询会唤醒固件耗电，qhw 改为「连接时问一次 + 越界时探活」"
+        );
+        assert!(KEYBOARD_QHW.notify.is_some(), "纯监听必须声明推送帧");
     }
 
     #[test]

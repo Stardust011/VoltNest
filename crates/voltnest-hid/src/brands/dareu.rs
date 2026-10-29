@@ -71,6 +71,7 @@ pub const JM: BrandSpec = BrandSpec {
         }),
     },
     listen: None,
+    notify: None,
     request: Some(RequestTemplate {
         usage_page: 0xFF02,
         cmd: 0x04,
@@ -136,6 +137,7 @@ pub const TG: BrandSpec = BrandSpec {
         }),
     },
     listen: None,
+    notify: None,
     request: Some(RequestTemplate {
         usage_page: 0x000C,
         cmd: 0x80,
