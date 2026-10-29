@@ -137,6 +137,33 @@ jobs:
       - run: pnpm install --frozen-lockfile
         working-directory: .
 
+      - name: Locate signtool and add to PATH
+        if: matrix.platform == 'windows'
+        shell: powershell
+        run: |
+          if (Get-Command signtool.exe -ErrorAction SilentlyContinue) {
+            exit 0
+          }
+
+          $sdkBin = Join-Path ${env:ProgramFiles(x86)} 'Windows Kits\10\bin'
+          if (-not (Test-Path $sdkBin)) {
+            throw "Windows SDK bin 目录不存在: $sdkBin"
+          }
+
+          $signtoolDir = Get-ChildItem $sdkBin -Directory |
+            Where-Object { $_.Name -match '^\d+\.\d+\.\d+\.\d+$' } |
+            Sort-Object { [version]$_.Name } -Descending |
+            ForEach-Object { Join-Path $_.FullName 'x64' } |
+            Where-Object { Test-Path (Join-Path $_ 'signtool.exe') } |
+            Select-Object -First 1
+
+          if (-not $signtoolDir) {
+            throw "未在 $sdkBin 下找到 signtool.exe"
+          }
+
+          Write-Output "使用 signtool 目录: $signtoolDir"
+          $signtoolDir | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
       - name: Import Windows certificate
         if: matrix.platform == 'windows'
         shell: powershell
