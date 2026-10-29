@@ -44,31 +44,27 @@ jobs:
       - uses: googleapis/release-please-action@v5
         id: release-note
         with:
-          # 用 GITHUB_TOKEN 开的 PR 不会触发 CI；配了 RELEASE_PLEASE_TOKEN（PAT）才会。
-          token: ${{ secrets.RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN }}
+          # GITHUB_TOKEN 的身份是 github-actions[bot]；它产生的事件不会触发 CI。
+          token: ${{ secrets.GITHUB_TOKEN }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
           # 输入名带连字符，只能用下标访问。
           release-as: ${{ inputs['release-as'] }}
 
       # release-please 的 extra-files 处理不了 Cargo.lock（带 [@] 的 jsonpath 会被拆坏），
-      # 改为在 release PR 分支上对齐锁文件，再 amend 回 release-please 的提交，
-      # 使 PR 里只有 chore(master): release X.Y.Z 这一个提交。
+      # 改为在 release PR 分支上对齐锁文件，再走 Git Data API 重写成单提交：
+      # 提交由 GitHub 服务端签名（Verified），作者是 github-actions[bot]。
       - uses: actions/checkout@v4
         if: steps.release-note.outputs.released != 'true'
         with:
           fetch-depth: 0
 
-      - name: 检出 release PR 分支并同步 Cargo.lock
-        id: lock
+      - name: 对齐 Cargo.lock 并 amend 到 release 提交
         if: steps.release-note.outputs.released != 'true'
         env:
-          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
-          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
-          GPG_EMAIL: ${{ secrets.GPG_EMAIL }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          echo "skip=true" >> "$GITHUB_OUTPUT"
           branch="release-please--branches--master"
           if ! git ls-remote --exit-code --heads origin "$branch" >/dev/null; then
             echo "没有待处理的 release 分支，跳过"
@@ -77,14 +73,11 @@ jobs:
           git fetch origin "$branch"
           git checkout -B "$branch" "origin/$branch"
           python3 scripts/sync-cargo-lock-version.py
-          git add Cargo.lock
-          echo "skip=false" >> "$GITHUB_OUTPUT"
-
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          ORIGINAL_MSG=$(git log -1 --format=%B | grep -v -i "co-authored-by" | grep -v -i "signed-off-by" || true)
-          git commit --amend --reset-author --no-edit -m "$ORIGINAL_MSG"
-          git push origin "$branch" --force-with-lease
+          if git diff --quiet -- Cargo.lock; then
+            echo "Cargo.lock 已对齐，跳过"
+            exit 0
+          fi
+          python3 scripts/amend-release-commit.py "$branch" Cargo.lock
 
   bundle:
     name: bundle (${{ matrix.target }})
@@ -170,10 +163,11 @@ jobs:
           $digestAlg = "sha256"
 
           $customSignCmd = "signtool sign /sha1 $thumbprint /fd $digestAlg /td $digestAlg /tr http://timestamp.digicert.com %1"
-          $configPath = "apps/desktop/src-tauri/tauri.conf.json"
+          $configPath = "src-tauri/tauri.conf.json"
           $config = Get-Content $configPath -Raw | ConvertFrom-Json
-          $config.bundle.windows.signCommand = $signCommand
-          $config | ConvertTo-Json -Depth 10 | Set-Content $configPath -Encoding utf8
+          $config.bundle.windows.signCommand = $customSignCmd
+          $json = $config | ConvertTo-Json -Depth 10
+          [System.IO.File]::WriteAllText((Resolve-Path $configPath), $json, (New-Object System.Text.UTF8Encoding($false)))
 
       # beforeBuildCommand（npm run build）由 tauri-action 负责执行。
       - uses: tauri-apps/tauri-action@v1
