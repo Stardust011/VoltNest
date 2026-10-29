@@ -587,18 +587,27 @@ impl Reader {
         let mut report_id = primary;
         let mut next_query = Instant::now();
         while !self.halted() {
-            // 连上时查询一次拿权威值，之后靠输入报告实时刷新，不打扰设备。
-            if self.brand.listen.is_some() && Instant::now() < next_query {
+            let now = Instant::now();
+            // `interval_ms: Some` = 周期查询；`None` = 推送为主，只在读数快过期时探活。
+            //
+            // 不能把 `None` 当成「保持 next_query 不变」——那样条件恒假，会每轮都发一条查询，
+            // 等于把设备当靶子打。两种节奏必须显式分支。
+            let due = match req.interval_ms {
+                Some(_) => now >= next_query,
+                None => self.probe_due(now),
+            };
+            // 连上时查询一次拿权威值，之后靠输入报告实时刷新，不到点不打扰设备。
+            if self.brand.listen.is_some() && !due {
                 self.listen_once(LISTEN_READ_TIMEOUT_MS)?;
                 continue;
             }
+            self.last_probe = Some(now);
             self.query_round(&req, &mut reply, &mut report_id)?;
-            if let Some(ms) = req.interval_ms {
-                next_query = Instant::now() + Duration::from_millis(ms);
-            }
+            let gap = req.interval_ms.unwrap_or(self.brand.expected_interval_ms);
+            next_query = now + Duration::from_millis(gap);
             // 纯查询通道在这里等间隔；有实时上报的通道由上面的读分支自然阻塞。
             if self.brand.listen.is_none() {
-                self.pause(req.interval_ms.unwrap_or(self.brand.expected_interval_ms))?;
+                self.pause(gap)?;
             }
         }
         Ok(())
