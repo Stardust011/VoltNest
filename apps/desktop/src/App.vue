@@ -3,23 +3,42 @@ import { computed, onBeforeUnmount, onMounted, ref, watch, type Component } from
 import { Activity, BatteryMedium, CircleAlert, Settings } from "@lucide/vue";
 import DeviceCard from "./components/DeviceCard.vue";
 import DiagnosticsPanel from "./components/DiagnosticsPanel.vue";
+import ManualAddPanel from "./components/ManualAddPanel.vue";
 import OnboardingFlow from "./components/OnboardingFlow.vue";
 import SettingsPanel from "./components/SettingsPanel.vue";
 import TitleBar from "./components/TitleBar.vue";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { useSnapshot } from "./composables/useSnapshot";
 import {
   completeOnboarding,
   getDiagnostics,
   getSettings,
+  listManualDevices,
+  removeManualDevice,
   restartTransport,
   setAutostart,
   subscribeDiagnostics,
   updateSettings,
 } from "./lib/ipc";
-import type { CardDto, DiagnosticsDto, OnboardingChoice, SettingsDto } from "./lib/types";
+import type {
+  CardDto,
+  DiagnosticsDto,
+  ManualDeviceDto,
+  OnboardingChoice,
+  SettingsDto,
+} from "./lib/types";
 
 type View = "devices" | "settings" | "diagnostics";
 
@@ -28,6 +47,20 @@ const { snapshot, nowMs, connected } = useSnapshot();
 
 const settings = ref<SettingsDto | null>(null);
 const diagnostics = ref<DiagnosticsDto | null>(null);
+
+/** 手动上报的设备：独立于快照（不参与采集），故单独拉取与维护。 */
+const manualDevices = ref<ManualDeviceDto[]>([]);
+/** 生成上报数据面板是否打开。 */
+const addingDevice = ref(false);
+/** 等待确认移除的记录（只留确认框要用的字段）。 */
+const removeTarget = ref<{ id: string; name: string } | null>(null);
+/**
+ * 确认框开关，与 `removeTarget` 分开存。
+ *
+ * `AlertDialogAction` 点击时会先触发 reka 的关闭（`update:open false`），
+ * 若开关与目标同一个变量，确认逻辑拿到的就是 `null` —— 表现就是「点了移除什么都没发生」。
+ */
+const removeOpen = ref(false);
 const busy = ref(false);
 const error = ref<string | null>(null);
 
@@ -114,6 +147,45 @@ function fail(e: unknown) {
 async function loadSettings() {
   try {
     settings.value = await getSettings();
+  } catch (e) {
+    fail(e);
+  }
+}
+
+async function loadManualDevices() {
+  try {
+    manualDevices.value = await listManualDevices();
+  } catch (e) {
+    fail(e);
+  }
+}
+
+/** 上报数据生成成功：刷新列表并保留面板（用户可能还要复制报告）。 */
+async function onManualSaved() {
+  await loadManualDevices();
+}
+
+/** 移除一条手动设备记录：先弹确认框（记录与报告文件一起删）。 */
+function doRemoveManual(id: string) {
+  const device = manualDevices.value.find((item) => item.id === id);
+  removeTarget.value = { id, name: device?.name.trim() || id };
+  removeOpen.value = true;
+}
+
+/** reka 关闭弹窗时只关开关；目标留到确认/下次打开时清理，避免抢在 @click 之前置空。 */
+function setRemoveOpen(open: boolean) {
+  removeOpen.value = open;
+}
+
+/** 确认移除：先关弹窗再落盘，重复点击不会发两次请求。 */
+async function confirmRemoveManual() {
+  const target = removeTarget.value;
+  removeTarget.value = null;
+  removeOpen.value = false;
+  if (!target) return;
+  try {
+    await removeManualDevice(target.id);
+    await loadManualDevices();
   } catch (e) {
     fail(e);
   }
@@ -245,6 +317,7 @@ watch(view, (next) => {
 onMounted(() => {
   void loadSettings();
   void startDiagnosticsFeed();
+  void loadManualDevices();
 });
 
 onBeforeUnmount(() => {
@@ -277,23 +350,29 @@ onBeforeUnmount(() => {
 
     <main class="mx-auto min-h-0 w-full max-w-[560px] flex-1 overflow-y-auto px-5 pt-4">
       <template v-if="view === 'devices'">
-        <div v-if="rows.length > 0" class="flex flex-col gap-2.5 pb-5">
-          <DeviceCard
-            v-for="row in rows"
-            :key="row.key"
-            :device="deviceById.get(row.deviceId)!"
-            :now-ms="nowMs"
-            :inactive-text="row.inactiveText"
-          />
-        </div>
-        <div
-          v-else-if="connected"
-          class="flex flex-col items-center justify-center gap-2 py-16 text-center"
-        >
-          <div class="size-3 rounded-full border-2 border-muted-foreground/40" />
-          <p class="text-sm font-medium">还没有发现设备</p>
-          <p class="max-w-[280px] text-xs leading-relaxed text-muted-foreground">
-            插上 2.4G 接收器，或在系统设置里把蓝牙耳机连接一次，设备会自己出现在这里。
+        <div v-if="connected" class="flex flex-col gap-2.5 pb-5">
+          <template v-if="rows.length > 0">
+            <DeviceCard
+              v-for="row in rows"
+              :key="row.key"
+              :device="deviceById.get(row.deviceId)!"
+              :now-ms="nowMs"
+              :inactive-text="row.inactiveText"
+            />
+          </template>
+
+          <!-- 空态只做说明：数据上报属于诊断页的职责，入口统一放在底部提示行。 -->
+          <div v-else class="flex flex-col items-center justify-center gap-2 py-10 text-center">
+            <div class="size-3 rounded-full border-2 border-muted-foreground/40" />
+            <p class="text-sm font-medium">还没有发现设备</p>
+            <p class="max-w-[280px] text-xs leading-relaxed text-muted-foreground">
+              插上 2.4G 接收器，或在系统设置里把蓝牙耳机连接一次，设备会自己出现在这里。
+            </p>
+          </div>
+
+          <!-- 兜底提示：纯文字，不占卡片，也不做按钮。 -->
+          <p class="text-center text-xs leading-relaxed text-muted-foreground">
+            若未自动识别，请切换为蓝牙模式或前往「诊断页」生成上报数据。
           </p>
         </div>
         <div v-else class="py-16 text-center text-sm text-muted-foreground">正在连接宿主进程…</div>
@@ -310,12 +389,39 @@ onBeforeUnmount(() => {
         v-else-if="view === 'diagnostics' && diagnostics"
         :diagnostics="diagnostics"
         :now-ms="nowMs"
+        :manual-devices="manualDevices"
         @restart="doRestart"
         @replay-onboarding="replayOnboarding = true"
+        @add-manual="addingDevice = true"
+        @remove-manual="doRemoveManual"
       />
 
       <div v-else class="py-16 text-center text-sm text-muted-foreground">正在读取…</div>
     </main>
+
+    <!-- 移除确认：用 shadcn AlertDialog，不用浏览器原生 confirm（WebView 里原生弹窗样式不可控）。 -->
+    <AlertDialog :open="removeOpen" @update:open="setRemoveOpen">
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>移除「{{ removeTarget?.name }}」？</AlertDialogTitle>
+          <AlertDialogDescription>
+            这条记录和它的报告文件都会删除，无法恢复。如需留档，请先「复制报告」。
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>取消</AlertDialogCancel>
+          <AlertDialogAction
+            :class="buttonVariants({ variant: 'destructive' })"
+            @click="confirmRemoveManual"
+          >
+            移除
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+
+    <!-- 生成上报数据：遮罩自标题栏下方起，抓包期间标题栏仍可用。 -->
+    <ManualAddPanel v-if="addingDevice" @close="addingDevice = false" @saved="onManualSaved" />
 
     <OnboardingFlow
       v-if="settings && (!settings.onboardingCompleted || replayOnboarding)"

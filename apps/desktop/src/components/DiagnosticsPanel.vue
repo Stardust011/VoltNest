@@ -6,19 +6,26 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import ManualDeviceList from "./ManualDeviceList.vue";
 import { humanizeAgo } from "../lib/time";
 import { visibleDiagEvents } from "../lib/format";
-import type { DiagnosticsDto } from "../lib/types";
+import type { DiagnosticsDto, ManualDeviceDto } from "../lib/types";
 
 const props = defineProps<{
   diagnostics: DiagnosticsDto;
   nowMs: number;
+  /** 手动上报的设备（不参与采集，故不在快照里）。 */
+  manualDevices: ManualDeviceDto[];
 }>();
 
 const emit = defineEmits<{
   (e: "restart", transport: "hid" | "ble"): void;
   /** 调试：重新唤起首次引导遮罩（是否落盘由宿主决定）。 */
   (e: "replayOnboarding"): void;
+  /** 打开「生成上报数据」流程。 */
+  (e: "addManual"): void;
+  /** 移除一条手动上报的设备记录（报告文件保留）。 */
+  (e: "removeManual", id: string): void;
 }>();
 
 const levelClass: Record<string, string> = {
@@ -270,6 +277,17 @@ function detailClass(code: string) {
         </ul>
       </CardContent>
     </Card>
+
+    <!--
+      生成上报数据：自动识别失败的唯一兜底入口。
+      放在诊断页而不是设备页 —— 它产出的是「给维护者看的数据」，不是日常监控视图。
+    -->
+    <ManualDeviceList
+      :devices="manualDevices"
+      :now-ms="nowMs"
+      @add="emit('addManual')"
+      @remove="(id) => emit('removeManual', id)"
+    />
 
     <!-- 诊断事件 -->
     <Card class="min-w-0 py-4">

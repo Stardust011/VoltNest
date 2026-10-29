@@ -50,7 +50,9 @@
 
 pub mod brands;
 pub mod frame;
+pub mod hex;
 pub mod mappings;
+pub mod probe;
 pub mod spec;
 pub mod table;
 
