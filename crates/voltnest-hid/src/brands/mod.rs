@@ -379,6 +379,7 @@ mod tests {
                 cmd: Some(0x01),
                 subtag: None,
                 percent_index: 0,
+                percent_mask: 0xFF,
                 charging: None,
             },
             listen: None,
@@ -446,12 +447,12 @@ mod tests {
         );
     }
 
-    /// 顶层 4 份 + 变体 12 份全部进注册表：新增变体必须登记，否则启动校验覆盖不到它。
+    /// 顶层 4 份 + 变体 13 份全部进注册表：新增变体必须登记，否则启动校验覆盖不到它。
     #[test]
     fn every_variant_is_registered_and_valid() {
         let reg = Registry::embedded();
         let total: usize = reg.brands().iter().map(|b| 1 + b.spec.variants.len()).sum();
-        assert_eq!(total, 16, "4 顶层 + 3 达尔优 + 5 迈从 + 4 雷柏");
+        assert_eq!(total, 17, "4 顶层 + 3 达尔优 + 6 迈从 + 4 雷柏");
         for b in reg.brands() {
             for variant in b.spec.variants {
                 assert!(variant.validate().is_ok(), "{} 非法", variant.id);

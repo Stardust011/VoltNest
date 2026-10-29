@@ -208,17 +208,56 @@ pub fn decode_battery(spec: &BrandSpec, report: &[u8]) -> Result<BatteryReading,
 }
 
 /// 同 [`decode_battery`]，但失败时给出**可复核的成因与原始字节**（诊断页用）。
+///
+/// # 无编号报告：两种首字节都要试
+/// 协议没声明报告 ID 时（迈从 CZ/GLW 族），hidapi 是否在首字节补一个报告 ID 槽，取决于该集合的
+/// 报告描述符与平台 —— 静态无法判定。官方解析器的输入是 WebHID 的 `report.data`（**不含** ID），
+/// 而 hidapi 在带编号的集合上会把 ID 放在 `[0]`。两种形态都试一次，命中哪个用哪个；
+/// 判据与 [`decode_listen`] 相同，误判只可能来自「ID 恰好等于命令字且长度字段也自洽」。
+///
+/// 声明了报告 ID 的协议不走这条容错：那时 ID 是**已知**的硬约束，放宽只会让坏帧蒙混过关。
 pub fn decode_battery_detailed(
     spec: &BrandSpec,
     report: &[u8],
 ) -> Result<BatteryReading, FrameReject> {
+    if spec.frame.report_id.is_some() {
+        return decode_battery_at(spec, report, report);
+    }
+    let mut first: Option<FrameReject> = None;
+    for shift in 0..=1usize {
+        let Some(window) = report.get(shift..) else {
+            continue;
+        };
+        match decode_battery_at(spec, window, report) {
+            Ok(reading) => return Ok(reading),
+            Err(reject) => {
+                if first.is_none() {
+                    first = Some(reject);
+                }
+            }
+        }
+    }
+    Err(first.unwrap_or_else(|| FrameReject {
+        code: ErrorCode::MalformedFrame,
+        reason: RejectReason::ReportTooShort {
+            min: spec.min_report_len(),
+        },
+        report: report.to_vec(),
+    }))
+}
+
+/// 在给定窗口上解析一帧；`original` 仅用于诊断（保留未位移的原始报告）。
+fn decode_battery_at(
+    spec: &BrandSpec,
+    report: &[u8],
+    original: &[u8],
+) -> Result<BatteryReading, FrameReject> {
     let layout = &spec.frame;
     // 每次拒绝都带上原始报告：诊断页要的是「被拒的那一帧长什么样」。
-    let original_report = report;
     let reject = |reason: RejectReason| FrameReject {
         code: reason_code(reason),
         reason,
-        report: original_report.to_vec(),
+        report: original.to_vec(),
     };
 
     // 1) 头部完整 + 报告 ID。
@@ -341,6 +380,8 @@ pub fn decode_battery_detailed(
                 index: spec.battery.percent_index,
             })
         })?;
+    // 一个字节塞两个字段的协议先取位：迈从 GLW 键盘 `0x80|pct`，整字节读会判成越界。
+    let raw = spec.battery.percent_of(raw);
     let percent = if spec.clamp_percent {
         Percent::new(raw.min(100)).expect("截断后的电量必定在 0..=100")
     } else {
@@ -405,11 +446,28 @@ pub fn decode_listen(spec: &BrandSpec, report: &[u8]) -> Option<BatteryReading> 
 ///
 /// 监听通道 / output 查询通道用它做前置过滤：只有命令字对上的帧才进解析器，
 /// 其它帧直接丢，不进 `lastError`。
+///
+/// 无编号报告的协议同样允许首字节是平台补的报告 ID 槽（与 [`decode_battery_detailed`] 一致）：
+/// 否则「位移一字节」的应答会在前置过滤就被静默丢掉 —— 设备在列表里却永远没有读数、也没有错误。
 pub fn matches_cmd(spec: &BrandSpec, report: &[u8]) -> bool {
     let Some(cmd) = spec.battery.cmd else {
         return true;
     };
     let index = spec.frame.cmd_index;
+    if spec.frame.report_id.is_none() {
+        // 位移后的窗口里，`normalized_byte` 的取反规则不再适用（它是按绝对下标写的），
+        // 故取反协议只认未位移的形态。
+        return (0..=1usize).any(|base| {
+            let at = base + index;
+            report.get(at).copied().map(|byte| {
+                if base == 0 {
+                    normalized_byte(spec, at, byte)
+                } else {
+                    byte
+                }
+            }) == Some(cmd)
+        });
+    }
     report
         .get(index)
         .copied()
@@ -521,7 +579,7 @@ pub fn decode_assembled(spec: &BrandSpec, assembled: &[u8]) -> Option<BatteryRea
         return None;
     }
     let raw = *assembled.get(spec.battery.percent_index)?;
-    let percent = Percent::new(raw)?;
+    let percent = Percent::new(spec.battery.percent_of(raw))?;
     // 状态字节只有协议声明了充电标志时才读：没声明就当作「未知」而不是「未充电」。
     let charging = spec
         .battery
@@ -561,6 +619,7 @@ mod tests {
             cmd: Some(0x22),
             subtag: None,
             percent_index: 0,
+            percent_mask: 0xFF,
             charging: Some(ChargingField {
                 mask: 0xFF,
                 index: 1,
@@ -612,6 +671,7 @@ mod tests {
             cmd: None,
             subtag: None,
             percent_index: 0,
+            percent_mask: 0xFF,
             charging: Some(ChargingField {
                 mask: 0x0F,
                 index: 1,
