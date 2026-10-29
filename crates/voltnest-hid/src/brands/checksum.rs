@@ -11,6 +11,7 @@
 //! | 匠盟（达尔优） | `0x55 - Σ` | 含报告 ID 与命令字 | 报文末字节 |
 //! | 迈从（键盘 2.4G） | `Σ & 0xFF` | 含报告 ID 与命令字 | 报文末字节 |
 //! | 维盛 AP（雷柏） | `Σ`（u16 回卷） | 命令字与 LEN，不含报告 ID | 报告 ID 之后两字节（小端） |
+//! | 迈从（键盘 CZ/QHW） | `⊕` | 从 `flags` 起（不含报告 ID 与 `version`） | 报文末字节 |
 
 /// 逐字节求和取低 8 位（迈从键盘 2.4G 的 `tJe`；**入参必须含报告 ID**，官方就是这么算的）。
 pub(crate) const fn sum8(bytes: &[u8]) -> u8 {
@@ -26,6 +27,21 @@ pub(crate) const fn sum8(bytes: &[u8]) -> u8 {
 /// `0x55 - Σ(bytes)` 的低 8 位（匠盟 `CheckSum`；入参含报告 ID + 命令字）。
 pub(crate) const fn neg_sum8(bytes: &[u8]) -> u8 {
     0x55u8.wrapping_sub(sum8(bytes))
+}
+
+/// 逐字节异或（迈从 CZ/QHW 族 `Ge` 帧的尾校验）。
+///
+/// 官方是 `d.slice(1).reduce(xor)`，`d` 为**不含报告 ID**的帧，故入参从 `flags` 起算 ——
+/// 既不含报告 ID，也不含 `version` 字节。这个「少算首字节」很容易看漏：整帧异或同样能
+/// 算出 0x0E 之外的值，发出去设备回不回、回什么就全看运气。
+pub(crate) const fn xor8(bytes: &[u8]) -> u8 {
+    let mut acc = 0u8;
+    let mut i = 0;
+    while i < bytes.len() {
+        acc ^= bytes[i];
+        i += 1;
+    }
+    acc
 }
 
 /// 逐字节 u16 累加（回卷），返回小端两字节（维盛 AP `WL`；入参**不含**报告 ID 与校验和本身）。
@@ -51,6 +67,8 @@ mod tests {
         assert_eq!(sum8(&[0x13, 0x4A, 0x01]), 0x5E);
         // 维盛 AP：0xAD 命令 + LEN 6 = 0x00B3，小端落成 `B3 00`。
         assert_eq!(sum16_le(&[0xAD, 0x06]), [0xB3, 0x00]);
+        // 迈从 CZ/QHW：flags 3 · length 0 · cmdLo 4 · cmdHi 9 · biz 0 · seq 0（`Ge` 队列项）。
+        assert_eq!(xor8(&[0x03, 0x00, 0x04, 0x09, 0x00, 0x00]), 0x0E);
     }
 
     #[test]

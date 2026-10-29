@@ -57,9 +57,11 @@ pub const JM: BrandSpec = BrandSpec {
     battery: BatteryFields {
         // 匠盟回显命令字：`GetReport` 只接受 `body[0] == 0x04` 的应答（`jmdevice.js:1490`）。
         cmd: Some(0x04),
+        cmd_high: None,
         subtag: None,
         // payload[0] = body[5] = Level；payload[1] = body[6] = Status。
         percent_index: 0,
+        percent_mask: 0xFF,
         charging: Some(ChargingField {
             mask: 0xFF,
             index: 1,
@@ -69,9 +71,11 @@ pub const JM: BrandSpec = BrandSpec {
         }),
     },
     listen: None,
+    notify: None,
     request: Some(RequestTemplate {
         usage_page: 0xFF02,
         cmd: 0x04,
+        cmd_high: None,
         prefix: &[],
         report_len: 17,
         cmd_index: 1,
@@ -120,9 +124,11 @@ pub const TG: BrandSpec = BrandSpec {
     battery: BatteryFields {
         // 官方对 Tg 应答只校验确认位，不校验命令回显（`tgdevice.js:1836`）。
         cmd: None,
+        cmd_high: None,
         subtag: None,
         // payload[0] = Status，payload[1] = Level。
         percent_index: 1,
+        percent_mask: 0xFF,
         charging: Some(ChargingField {
             mask: 0xFF,
             index: 0,
@@ -131,9 +137,11 @@ pub const TG: BrandSpec = BrandSpec {
         }),
     },
     listen: None,
+    notify: None,
     request: Some(RequestTemplate {
         usage_page: 0x000C,
         cmd: 0x80,
+        cmd_high: None,
         // body[0]=TargetId(0) / body[1]=HDR_SIZE(0x03) / body[2]=HDR_CLASS(0x07)。
         prefix: &[0x00, 0x03, 0x07],
         report_len: 65,
