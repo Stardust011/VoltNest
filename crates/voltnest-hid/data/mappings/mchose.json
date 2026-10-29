@@ -16,21 +16,25 @@
     "19F5:FC30": {
       "name": "Ace 60",
       "deviceType": "keyboard",
+      "driver": "glw",
       "mode": "USB"
     },
     "19F5:FC31": {
       "name": "Ace 60 Pro",
       "deviceType": "keyboard",
+      "driver": "glw",
       "mode": "USB"
     },
     "19F5:FF0F": {
       "name": "Ace 60 Pro",
       "deviceType": "keyboard",
+      "driver": "dje",
       "mode": "USB"
     },
     "19F5:FF1B": {
       "name": "Ace 60",
       "deviceType": "keyboard",
+      "driver": "dje",
       "mode": "USB"
     },
     "291D:385D": {
@@ -150,6 +154,7 @@
     "3837:1015": {
       "name": null,
       "deviceType": "keyboard",
+      "driver": "qhw",
       "mode": "2.4G",
       "ambiguous": true,
       "receiverMatch": "regex",
@@ -173,6 +178,7 @@
     "3837:1017": {
       "name": null,
       "deviceType": "keyboard",
+      "driver": "qhw",
       "mode": "2.4G",
       "ambiguous": true,
       "receiverMatch": "regex",
@@ -279,16 +285,19 @@
     "3837:200E": {
       "name": "K87S",
       "deviceType": "keyboard",
+      "driver": "glw",
       "mode": "USB"
     },
     "3837:200F": {
       "name": "K87S",
       "deviceType": "keyboard",
+      "driver": "dje",
       "mode": "USB"
     },
     "3837:2010": {
       "name": null,
       "deviceType": "keyboard",
+      "driver": "glw",
       "mode": "2.4G",
       "ambiguous": true,
       "receiverMatch": "contains",
@@ -315,61 +324,73 @@
     "3837:2015": {
       "name": "G87 V2",
       "deviceType": "keyboard",
+      "driver": "glw",
       "mode": "USB"
     },
     "3837:2019": {
       "name": "G87 V2",
       "deviceType": "keyboard",
+      "driver": "dje",
       "mode": "USB"
     },
     "3837:201A": {
       "name": "G87 V2 (1K)",
       "deviceType": "keyboard",
+      "driver": "dje",
       "mode": "USB"
     },
     "3837:201B": {
       "name": "G87 V2 (2.4G)",
       "deviceType": "keyboard",
+      "driver": "dje",
       "mode": "2.4G"
     },
     "3837:201F": {
       "name": "K99 V3",
       "deviceType": "keyboard",
+      "driver": "dje",
       "mode": "USB"
     },
     "3837:2020": {
       "name": "K99 V3",
       "deviceType": "keyboard",
+      "driver": "glw",
       "mode": "USB"
     },
     "3837:2021": {
       "name": "G75 V2",
       "deviceType": "keyboard",
+      "driver": "glw",
       "mode": "USB"
     },
     "3837:2022": {
       "name": "G75 V2",
       "deviceType": "keyboard",
+      "driver": "dje",
       "mode": "USB"
     },
     "3837:2023": {
       "name": "K87 V3",
       "deviceType": "keyboard",
+      "driver": "qhw",
       "mode": "USB"
     },
     "3837:2024": {
       "name": "K87 V3",
       "deviceType": "keyboard",
+      "driver": "dje",
       "mode": "USB"
     },
     "3837:2025": {
       "name": "G98 V3",
       "deviceType": "keyboard",
+      "driver": "qhw",
       "mode": "USB"
     },
     "3837:2026": {
       "name": "G98 V3",
       "deviceType": "keyboard",
+      "driver": "dje",
       "mode": "USB"
     },
     "3837:2B67": {
@@ -380,11 +401,13 @@
     "3837:3002": {
       "name": "Ace 60 Pro Nordic",
       "deviceType": "keyboard",
+      "driver": "glw",
       "mode": "USB"
     },
     "3837:3003": {
       "name": "Ace 68 III",
       "deviceType": "keyboard",
+      "driver": "glw",
       "mode": "USB",
       "ambiguous": true,
       "conflicts": ["Ace 68"]
@@ -392,31 +415,37 @@
     "3837:3007": {
       "name": "Ace 68 GT",
       "deviceType": "keyboard",
+      "driver": "glw",
       "mode": "USB"
     },
     "3837:3008": {
       "name": "Jet 75",
       "deviceType": "keyboard",
+      "driver": "glw",
       "mode": "USB"
     },
     "3837:3009": {
       "name": "Ace 68 GT",
       "deviceType": "keyboard",
+      "driver": "dje",
       "mode": "USB"
     },
     "3837:300A": {
       "name": "Ace 68 Air 2",
       "deviceType": "keyboard",
+      "driver": "glw",
       "mode": "USB"
     },
     "3837:300B": {
       "name": "Ace 68 Air 2",
       "deviceType": "keyboard",
+      "driver": "dje",
       "mode": "USB"
     },
     "3837:300D": {
       "name": "Mix 87 III",
       "deviceType": "keyboard",
+      "driver": "glw",
       "mode": "USB",
       "ambiguous": true,
       "conflicts": ["Mix 87"]
@@ -424,26 +453,31 @@
     "3837:301A": {
       "name": "God 60",
       "deviceType": "keyboard",
+      "driver": "dje",
       "mode": "USB"
     },
     "3837:301D": {
       "name": "Ace 75",
       "deviceType": "keyboard",
+      "driver": "glw",
       "mode": "USB"
     },
     "3837:3020": {
       "name": "God 60",
       "deviceType": "keyboard",
+      "driver": "glw",
       "mode": "USB"
     },
     "3837:3022": {
       "name": "Ace 60 Pro Nordic",
       "deviceType": "keyboard",
+      "driver": "dje",
       "mode": "USB"
     },
     "3837:3024": {
       "name": "Ace 68 V2 III",
       "deviceType": "keyboard",
+      "driver": "glw",
       "mode": "USB",
       "ambiguous": true,
       "conflicts": ["Ace 68 V2"]
@@ -451,11 +485,13 @@
     "3837:3025": {
       "name": "Ace 68 V2 III",
       "deviceType": "keyboard",
+      "driver": "dje",
       "mode": "USB"
     },
     "3837:3026": {
       "name": "Ace 68 Turbo 16K",
       "deviceType": "keyboard",
+      "driver": "glw",
       "mode": "USB",
       "ambiguous": true,
       "conflicts": ["Ace 68 Turbo"]
@@ -463,11 +499,13 @@
     "3837:3027": {
       "name": "Ace 68 Turbo 16K",
       "deviceType": "keyboard",
+      "driver": "dje",
       "mode": "USB"
     },
     "3837:3028": {
       "name": "Ace 68 Turbo 8K",
       "deviceType": "keyboard",
+      "driver": "glw",
       "mode": "USB",
       "ambiguous": true,
       "conflicts": ["Ace 68 Turbo"]
@@ -475,21 +513,25 @@
     "3837:3029": {
       "name": "Ace 68 Turbo 8K",
       "deviceType": "keyboard",
+      "driver": "dje",
       "mode": "USB"
     },
     "3837:302A": {
       "name": "Ace 68 III",
       "deviceType": "keyboard",
+      "driver": "dje",
       "mode": "USB"
     },
     "3837:302C": {
       "name": "Mix 87 III",
       "deviceType": "keyboard",
+      "driver": "dje",
       "mode": "USB"
     },
     "3837:3033": {
       "name": null,
       "deviceType": "keyboard",
+      "driver": "glw",
       "mode": "2.4G",
       "ambiguous": true,
       "receiverMatch": "contains",
@@ -516,6 +558,7 @@
     "3837:303C": {
       "name": "Ace 75 8K",
       "deviceType": "keyboard",
+      "driver": "glw",
       "mode": "USB",
       "ambiguous": true,
       "conflicts": ["Ace 75"]
@@ -523,16 +566,19 @@
     "3837:303D": {
       "name": "Ace 75 8K",
       "deviceType": "keyboard",
+      "driver": "dje",
       "mode": "USB"
     },
     "3837:3040": {
       "name": "Ace 60 Pro ISO FR",
       "deviceType": "keyboard",
+      "driver": "glw",
       "mode": "USB"
     },
     "3837:3041": {
       "name": "Ace 60 Pro ISO FR",
       "deviceType": "keyboard",
+      "driver": "dje",
       "mode": "USB"
     },
     "3837:4010": {
@@ -705,6 +751,7 @@
     "3837:6002": {
       "name": "K9 UITRA",
       "deviceType": "keyboard",
+      "driver": "dje",
       "mode": "USB",
       "ambiguous": true,
       "conflicts": ["K9 ULTRA"]
@@ -754,6 +801,7 @@
     "3837:6047": {
       "name": "K9",
       "deviceType": "keyboard",
+      "driver": "dje",
       "mode": "USB"
     },
     "3837:6089": {
@@ -779,26 +827,31 @@
     "41E4:2101": {
       "name": "Ace 60",
       "deviceType": "keyboard",
+      "driver": "glw",
       "mode": "USB"
     },
     "41E4:2102": {
       "name": "Ace 60",
       "deviceType": "keyboard",
+      "driver": "dje",
       "mode": "USB"
     },
     "41E4:2103": {
       "name": "Ace 60 Pro",
       "deviceType": "keyboard",
+      "driver": "glw",
       "mode": "USB"
     },
     "41E4:2104": {
       "name": "Ace 60 Pro",
       "deviceType": "keyboard",
+      "driver": "dje",
       "mode": "USB"
     },
     "41E4:2112": {
       "name": "Ace 60X II",
       "deviceType": "keyboard",
+      "driver": "glw",
       "mode": "USB",
       "ambiguous": true,
       "conflicts": ["Ace 60X"]
@@ -806,11 +859,13 @@
     "41E4:2113": {
       "name": "Ace 60X II",
       "deviceType": "keyboard",
+      "driver": "dje",
       "mode": "USB"
     },
     "41E4:2114": {
       "name": "Ace 68 I",
       "deviceType": "keyboard",
+      "driver": "glw",
       "mode": "USB",
       "ambiguous": true,
       "conflicts": ["Ace 68"]
@@ -818,11 +873,13 @@
     "41E4:2115": {
       "name": "Ace 68 I",
       "deviceType": "keyboard",
+      "driver": "dje",
       "mode": "USB"
     },
     "41E4:2116": {
       "name": "Ace 68 Pro",
       "deviceType": "keyboard",
+      "driver": "glw",
       "mode": "USB",
       "ambiguous": true,
       "conflicts": ["Ace 68"]
@@ -830,11 +887,13 @@
     "41E4:2117": {
       "name": "Ace 68 Pro",
       "deviceType": "keyboard",
+      "driver": "dje",
       "mode": "USB"
     },
     "41E4:2118": {
       "name": "Jet 75 I",
       "deviceType": "keyboard",
+      "driver": "glw",
       "mode": "USB",
       "ambiguous": true,
       "conflicts": ["Jet 75"]
@@ -842,11 +901,13 @@
     "41E4:2119": {
       "name": "Jet 75 I",
       "deviceType": "keyboard",
+      "driver": "dje",
       "mode": "USB"
     },
     "41E4:211A": {
       "name": "Jet 75 II",
       "deviceType": "keyboard",
+      "driver": "glw",
       "mode": "USB",
       "ambiguous": true,
       "conflicts": ["Jet 75"]
@@ -854,21 +915,25 @@
     "41E4:211B": {
       "name": "Jet 75 II",
       "deviceType": "keyboard",
+      "driver": "dje",
       "mode": "USB"
     },
     "41E4:211C": {
       "name": "ZERO 75X",
       "deviceType": "keyboard",
+      "driver": "glw",
       "mode": "USB"
     },
     "41E4:211D": {
       "name": "ZERO 75X",
       "deviceType": "keyboard",
+      "driver": "dje",
       "mode": "USB"
     },
     "41E4:2120": {
       "name": "Ace 68 Air II",
       "deviceType": "keyboard",
+      "driver": "glw",
       "mode": "USB",
       "ambiguous": true,
       "conflicts": ["Ace 68 Air"]
@@ -876,11 +941,13 @@
     "41E4:2121": {
       "name": "Ace 68 Air II",
       "deviceType": "keyboard",
+      "driver": "dje",
       "mode": "USB"
     },
     "41E4:2122": {
       "name": "Mix 87 I",
       "deviceType": "keyboard",
+      "driver": "glw",
       "mode": "USB",
       "ambiguous": true,
       "conflicts": ["Mix 87"]
@@ -888,11 +955,13 @@
     "41E4:2123": {
       "name": "Mix 87 I",
       "deviceType": "keyboard",
+      "driver": "dje",
       "mode": "USB"
     },
     "41E4:2126": {
       "name": "Ace 60X I",
       "deviceType": "keyboard",
+      "driver": "glw",
       "mode": "USB",
       "ambiguous": true,
       "conflicts": ["Ace 60X"]
@@ -900,11 +969,13 @@
     "41E4:2127": {
       "name": "Ace 60X I",
       "deviceType": "keyboard",
+      "driver": "dje",
       "mode": "USB"
     },
     "41E4:2132": {
       "name": "Ace 68 Air III",
       "deviceType": "keyboard",
+      "driver": "glw",
       "mode": "USB",
       "ambiguous": true,
       "conflicts": ["Ace 68 Air"]
@@ -912,6 +983,7 @@
     "41E4:2133": {
       "name": "Ace 68 Air III",
       "deviceType": "keyboard",
+      "driver": "dje",
       "mode": "USB"
     },
     "41E4:3201": {

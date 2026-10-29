@@ -41,6 +41,7 @@ pub const SPEC: BrandSpec = BrandSpec {
         cmd: Some(0xFA),
         subtag: Some((0, 0x03)),
         percent_index: 1,
+        percent_mask: 0xFF,
         charging: Some(ChargingField {
             mask: 0xFF,
             index: 2,
