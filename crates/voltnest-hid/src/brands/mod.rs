@@ -384,6 +384,7 @@ mod tests {
                 charging: None,
             },
             listen: None,
+            notify: None,
             request: None,
             ack: None,
             fallback_report_id: None,
