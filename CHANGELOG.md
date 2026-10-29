@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.4](https://github.com/Stardust011/VoltNest/compare/v0.2.3...v0.2.4) (2026-10-29)
+
+
+### 修复
+
+* **ci:** 修复CI错误 ([efdc84e](https://github.com/Stardust011/VoltNest/commit/efdc84ea131d163be2d669cf523dacd137d439ab))
+
 ## [0.2.3](https://github.com/Stardust011/VoltNest/compare/v0.2.2...v0.2.3) (2026-10-29)
 
 
