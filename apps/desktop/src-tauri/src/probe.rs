@@ -14,7 +14,7 @@
 
 use std::collections::HashMap;
 use std::fmt::Write as _;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -199,23 +199,17 @@ pub fn discard_hid_capture(session_id: u64, state: State<'_, Arc<ProbeState>>) {
     }
 }
 
-/// 生成 issue 报告：返回正文并落盘一份完整文件。
+/// 生成 issue 报告：只返回正文，不写磁盘（保存时才落盘）。
 #[tauri::command]
 pub fn generate_issue_report(
     form: ReportFormDto,
     state: State<'_, Arc<ProbeState>>,
 ) -> Result<ReportDto, String> {
     let (device, samples) = collect_samples(&state, &form.samples)?;
-    let now_ms = clock::now_utc_ms();
-    let path = report_path(&state.paths, &device, now_ms);
-    let hint = path.display().to_string();
-    let markdown = build_report(&device, &samples, &form, now_ms, Some(&hint));
-    atomic::write_atomic(&path, markdown.as_bytes())
-        .map_err(|err| format!("写入报告失败：{err}"))?;
-    Ok(ReportDto {
-        markdown,
-        path: hint,
-    })
+    // 预览**不落盘**：只想复制一段文本的人不该在磁盘上留下一堆报告文件。
+    // 文件只在 `save_manual_device` 里写，那是用户明确选择「保存」的时刻。
+    let markdown = build_report(&device, &samples, &form, clock::now_utc_ms(), None);
+    Ok(ReportDto { markdown })
 }
 
 /// 保存为「手动添加的设备」：同一份报告同时落盘，记录里只存文件路径。
@@ -290,9 +284,25 @@ pub fn list_manual_devices(state: State<'_, Arc<ProbeState>>) -> Vec<ManualDevic
     list
 }
 
-/// 删除一条手动设备记录。报告文件保留（用户可能已经贴进 issue，删文件没好处）。
+/// 删除一条手动设备记录，并把它的报告文件一并删掉。
+///
+/// 先落盘记录、后删文件：文件删失败只记日志，不回滚记录——否则会出现「列表里还在、
+/// 文件已经没了」的记录，用户点开只会看到读文件失败。
+///
+/// 路径必须落在 `reports/` 且是 `.md`：`manual_devices.json` 可被手工编辑，
+/// 不能让一条记录指到 `C://Windows` 之类的地方，删记录就等于删任意文件。
+fn removable_report_path(reports: &Path, stored: Option<&str>) -> Option<PathBuf> {
+    let path = PathBuf::from(stored?);
+    let under_reports = path.starts_with(reports);
+    let is_markdown = path
+        .extension()
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("md"));
+    (under_reports && is_markdown).then_some(path)
+}
+
 #[tauri::command]
 pub fn remove_manual_device(id: String, state: State<'_, Arc<ProbeState>>) -> Result<(), String> {
+    let removed = lock(&state.manual).get(&id).cloned();
     let mut next = lock(&state.manual).clone();
     if !next.remove(&id) {
         return Err("这条记录已经不存在".to_string());
@@ -302,6 +312,21 @@ pub fn remove_manual_device(id: String, state: State<'_, Arc<ProbeState>>) -> Re
         .save(&next)
         .map_err(|err| format!("保存手动设备失败：{err}"))?;
     *lock(&state.manual) = next;
+
+    let Some(device) = removed else {
+        return Ok(());
+    };
+    let Some(path) =
+        removable_report_path(&state.paths.reports_dir(), device.report_path.as_deref())
+    else {
+        return Ok(());
+    };
+    match std::fs::remove_file(&path) {
+        Ok(()) => log::info!("已删除报告文件 {}", path.display()),
+        // 文件早就被手动删掉是正常情况，不打扰用户。
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+        Err(err) => log::warn!("删除报告文件失败（{}）：{err}", path.display()),
+    }
     Ok(())
 }
 
@@ -788,7 +813,8 @@ fn anomaly_text(summary: Option<&CaptureSummary>) -> String {
 fn attachment_hint(report_path: Option<&str>) -> String {
     match report_path {
         Some(path) => format!("完整数据见报告文件，可把它作为附件上传：\n> `{path}`"),
-        None => "完整数据见导出文件。".to_string(),
+        // 预览阶段没有文件可指：告诉用户哪一步才会生成，别让他去找一个不存在的路径。
+        None => "需要完整数据时点「保存到本地」，报告文件会写到数据目录并显示路径。".to_string(),
     }
 }
 
@@ -1126,6 +1152,35 @@ mod tests {
         assert!(cut.contains("已截断"));
         assert!(cut.contains("p.md"));
         assert_eq!(truncate_to_chars("abc".to_string(), 100, None), "abc");
+        // 预览没有文件可指：截断说明必须把用户导向「保存到本地」，而不是让他去找不存在的路径。
+        let preview = truncate_to_chars("长".repeat(400), 100, None);
+        assert!(preview.contains("保存到本地"), "{preview}");
+    }
+
+    /// 只删 `reports/` 下的 `.md`：手工改过的 `manual_devices.json` 不能变成「指哪删哪」。
+    #[test]
+    fn only_markdown_under_reports_is_deletable() {
+        let reports = Path::new("C:/data/voltnest/reports");
+        assert_eq!(
+            removable_report_path(reports, Some("C:/data/voltnest/reports/hid-7768-6426.md")),
+            Some(PathBuf::from("C:/data/voltnest/reports/hid-7768-6426.md"))
+        );
+        // 目录外一律拒绝（含大小写不同的盘符写法不在此断言：Path 比较按字面组件）。
+        assert_eq!(
+            removable_report_path(reports, Some("C:/Windows/System32/ntoskrnl.exe")),
+            None
+        );
+        assert_eq!(
+            removable_report_path(reports, Some("C:/data/voltnest/settings.json")),
+            None
+        );
+        // 在 reports 下但不是 Markdown
+        assert_eq!(
+            removable_report_path(reports, Some("C:/data/voltnest/reports/hid.json")),
+            None
+        );
+        // 没有绑定报告文件
+        assert_eq!(removable_report_path(reports, None), None);
     }
 
     #[test]
