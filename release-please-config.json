@@ -30,13 +30,12 @@
           "path": "apps/desktop/src-tauri/tauri.conf.json",
           "jsonpath": "$.version"
         },
-        { "type": "json", "path": "apps/desktop/package-lock.json", "jsonpath": "$.version" },
+        { "type": "toml", "path": "Cargo.toml", "jsonpath": "$.workspace.package.version" },
         {
-          "type": "json",
-          "path": "apps/desktop/package-lock.json",
-          "jsonpath": "$.packages[\"\"].version"
-        },
-        { "type": "toml", "path": "Cargo.toml", "jsonpath": "$.workspace.package.version" }
+          "type": "toml",
+          "path": "Cargo.lock",
+          "jsonpath": "$.package[?(@.name.match(/^voltnest-/))].version"
+        }
       ]
     }
   }
