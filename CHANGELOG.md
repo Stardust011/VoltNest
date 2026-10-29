@@ -1,5 +1,36 @@
 # Changelog
 
+## [0.2.1](https://github.com/Stardust011/VoltNest/compare/v0.2.0...v0.2.1) (2026-10-29)
+
+
+### 修复
+
+* **release:** Add commit user details for GitHub Actions ([4d9d5d7](https://github.com/Stardust011/VoltNest/commit/4d9d5d7f552ea694e63ae94a3beee98716631944))
+* **release:** fix github-actions[bot] email ([c863a46](https://github.com/Stardust011/VoltNest/commit/c863a46d23dce2e8a8233e13a8cdc6ebaa32aeeb))
+* **release:** release PR 只保留一个 GPG 签名提交 ([2266daf](https://github.com/Stardust011/VoltNest/commit/2266daf19d986c0dfae49205f51d57f2fe9fdb93))
+* **release:** use github-actions[bot] ([91d9ddc](https://github.com/Stardust011/VoltNest/commit/91d9ddc4b21e6e7a640a7e6dc11c2e0c6077e4b4))
+* **release:** use github-actions[bot] ([85f885f](https://github.com/Stardust011/VoltNest/commit/85f885f9e97b04fa6df4aa64e77fe76b66878133))
+* **release:** 改用等值匹配更新 Cargo.lock，避免正则被 jsonpath 解析失败 ([4529e4f](https://github.com/Stardust011/VoltNest/commit/4529e4fa76ebab7015abad421b11605dbe682dbd))
+* **release:** 改由工作流同步 Cargo.lock 版本 ([45e49cd](https://github.com/Stardust011/VoltNest/commit/45e49cd79602e597778dba4d274c65e1a12dd4f0))
+* **release:** 用 Git Data API 以 github-actions[bot] 身份提交 Cargo.lock ([dcb6e4f](https://github.com/Stardust011/VoltNest/commit/dcb6e4ff094e8c260839a52db5d177cfe8cb9346))
+* **release:** 用 git-auto-commit-action 提交并 amend 回 release PR ([7b6a3a4](https://github.com/Stardust011/VoltNest/commit/7b6a3a452993288ab17c65a38a98702dad755be5))
+* **release:** 移除 GPG 签名相关配置，简化提交过程 ([20ca805](https://github.com/Stardust011/VoltNest/commit/20ca805b590ff00416a7bdafbbeebadb8750e822))
+
+
+### 构建
+
+* **release:** 让 release PR 同步更新 Cargo.lock 版本 ([a6ea0e6](https://github.com/Stardust011/VoltNest/commit/a6ea0e67331dbe76da9c867ec4a6539544408ae8))
+
+
+### 持续集成
+
+* **release:** 尝试修复代码签名流程 ([70a3e74](https://github.com/Stardust011/VoltNest/commit/70a3e746c15ca23482a1aee10a6608be33bf8339))
+
+
+### 维护
+
+* **release:** 同步 Cargo.lock 至 0.2.0 ([5fbd271](https://github.com/Stardust011/VoltNest/commit/5fbd2710c29876f18e6979bf5077ad22b87cd611))
+
 ## [0.2.0](https://github.com/Stardust011/VoltNest/compare/v0.1.1...v0.2.0) (2026-10-29)
 
 
