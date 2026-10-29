@@ -497,9 +497,9 @@ pub struct ReportFormDto {
 #[serde(rename_all = "camelCase")]
 pub struct ReportDto {
     /// 完整 Markdown（用户可直接复制进 issue）。
+    ///
+    /// 只有正文：预览不落盘，报告文件由 `save_manual_device` 在用户选择保存时写。
     pub markdown: String,
-    /// 已写入磁盘的文件路径。
-    pub path: String,
 }
 
 /// 手动添加的设备（落盘记录的前端投影）。

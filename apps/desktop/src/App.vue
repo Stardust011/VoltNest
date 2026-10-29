@@ -8,8 +8,18 @@ import OnboardingFlow from "./components/OnboardingFlow.vue";
 import SettingsPanel from "./components/SettingsPanel.vue";
 import TitleBar from "./components/TitleBar.vue";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { useSnapshot } from "./composables/useSnapshot";
 import {
   completeOnboarding,
@@ -42,6 +52,15 @@ const diagnostics = ref<DiagnosticsDto | null>(null);
 const manualDevices = ref<ManualDeviceDto[]>([]);
 /** 生成上报数据面板是否打开。 */
 const addingDevice = ref(false);
+/** 等待确认移除的记录（只留确认框要用的字段）。 */
+const removeTarget = ref<{ id: string; name: string } | null>(null);
+/**
+ * 确认框开关，与 `removeTarget` 分开存。
+ *
+ * `AlertDialogAction` 点击时会先触发 reka 的关闭（`update:open false`），
+ * 若开关与目标同一个变量，确认逻辑拿到的就是 `null` —— 表现就是「点了移除什么都没发生」。
+ */
+const removeOpen = ref(false);
 const busy = ref(false);
 const error = ref<string | null>(null);
 
@@ -146,12 +165,26 @@ async function onManualSaved() {
   await loadManualDevices();
 }
 
-/** 移除一条手动设备记录：报告文件保留，故只需一次确认。 */
-async function doRemoveManual(id: string) {
+/** 移除一条手动设备记录：先弹确认框（记录与报告文件一起删）。 */
+function doRemoveManual(id: string) {
   const device = manualDevices.value.find((item) => item.id === id);
-  if (!window.confirm(`移除「${device?.name ?? id}」？报告文件会保留在数据目录。`)) return;
+  removeTarget.value = { id, name: device?.name.trim() || id };
+  removeOpen.value = true;
+}
+
+/** reka 关闭弹窗时只关开关；目标留到确认/下次打开时清理，避免抢在 @click 之前置空。 */
+function setRemoveOpen(open: boolean) {
+  removeOpen.value = open;
+}
+
+/** 确认移除：先关弹窗再落盘，重复点击不会发两次请求。 */
+async function confirmRemoveManual() {
+  const target = removeTarget.value;
+  removeTarget.value = null;
+  removeOpen.value = false;
+  if (!target) return;
   try {
-    await removeManualDevice(id);
+    await removeManualDevice(target.id);
     await loadManualDevices();
   } catch (e) {
     fail(e);
@@ -365,6 +398,27 @@ onBeforeUnmount(() => {
 
       <div v-else class="py-16 text-center text-sm text-muted-foreground">正在读取…</div>
     </main>
+
+    <!-- 移除确认：用 shadcn AlertDialog，不用浏览器原生 confirm（WebView 里原生弹窗样式不可控）。 -->
+    <AlertDialog :open="removeOpen" @update:open="setRemoveOpen">
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>移除「{{ removeTarget?.name }}」？</AlertDialogTitle>
+          <AlertDialogDescription>
+            这条记录和它的报告文件都会删除，无法恢复。如需留档，请先「复制报告」。
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>取消</AlertDialogCancel>
+          <AlertDialogAction
+            :class="buttonVariants({ variant: 'destructive' })"
+            @click="confirmRemoveManual"
+          >
+            移除
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
 
     <!-- 生成上报数据：遮罩自标题栏下方起，抓包期间标题栏仍可用。 -->
     <ManualAddPanel v-if="addingDevice" @close="addingDevice = false" @saved="onManualSaved" />

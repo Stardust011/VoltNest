@@ -196,8 +196,8 @@ export interface ReportForm {
 }
 
 export interface ReportDto {
+  /** 只有正文：预览不落盘，文件在「保存到本地」时才生成。 */
   markdown: string;
-  path: string;
 }
 
 export interface ManualDeviceDto {
