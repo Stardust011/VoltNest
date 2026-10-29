@@ -13,11 +13,13 @@
     "format": "pnpm --dir apps/desktop run format",
     "format:check": "pnpm --dir apps/desktop run format:check",
     "format:rust": "pnpm --dir apps/desktop run format:rust",
-    "format:web": "pnpm --dir apps/desktop run format:web",
-    "format:repo": "pnpm --dir apps/desktop run format:repo",
     "format:check:rust": "pnpm --dir apps/desktop run format:check:rust",
+    "format:web": "pnpm --dir apps/desktop run format:web",
     "format:check:web": "pnpm --dir apps/desktop run format:check:web",
+    "format:repo": "pnpm --dir apps/desktop run format:repo",
     "format:check:repo": "pnpm --dir apps/desktop run format:check:repo",
+    "format:py": "pnpm --dir apps/desktop run format:py",
+    "format:check:py": "pnpm --dir apps/desktop run format:check:py",
     "hooks:install": "husky"
   },
   "devDependencies": {
