@@ -965,27 +965,34 @@ onBeforeUnmount(() => {
             >
               <LoaderCircle v-if="saving" class="animate-spin" aria-hidden="true" />
               <Save v-else aria-hidden="true" />
-              {{ saved ? "已保存" : "保存到我的设备" }}
+              {{ saved ? "已保存" : "保存到本地" }}
             </Button>
           </div>
 
           <div v-if="report" class="rounded-lg border bg-card/50 p-2.5">
-            <p class="text-[11px] font-medium">完整报告已保存</p>
-            <p class="mt-0.5 font-mono text-[10px] break-all text-muted-foreground select-text">
-              {{ report.path }}
-            </p>
-            <p class="mt-1 text-[10px] leading-relaxed text-muted-foreground">
-              正文过长时界面只展示前 500
-              组帧；把上面的文件作为附件一起提交，维护者才能看到全量数据。
+            <p class="text-[11px] font-medium">报告预览</p>
+            <p class="mt-0.5 text-[10px] leading-relaxed text-muted-foreground">
+              点「复制报告」可直接贴进
+              issue，此时不写任何文件；需要留档再点「保存到本地」，报告才会写到数据目录。
             </p>
             <pre
               class="mt-2 max-h-40 overflow-auto rounded-md bg-muted/60 p-2 font-mono text-[10px] leading-4 whitespace-pre-wrap select-text"
               >{{ report.markdown }}</pre>
           </div>
 
-          <p v-if="saved" class="text-[11px] text-emerald-600 dark:text-emerald-400">
-            已保存「{{ saved.name }}」：诊断页的「生成上报数据」列表里可以随时取回报告。
-          </p>
+          <div v-if="saved" class="flex flex-col gap-1">
+            <p class="text-[11px] text-emerald-600 dark:text-emerald-400">
+              已保存「{{
+                saved.name
+              }}」：报告已写入本地，诊断页的「生成上报数据」列表里可以随时取回。
+            </p>
+            <p
+              v-if="saved.reportPath"
+              class="font-mono text-[10px] break-all text-muted-foreground select-text"
+            >
+              {{ saved.reportPath }}
+            </p>
+          </div>
 
           <div class="flex justify-end">
             <Button type="button" size="sm" variant="ghost" @click="close">完成</Button>
