@@ -93,3 +93,133 @@ export interface OnboardingChoice {
   autostart: boolean;
   startMinimized: boolean;
 }
+
+// ---- 生成上报数据（HID 抓包）----
+// 与 Rust 侧 `apps/desktop/src-tauri/src/dto.rs` 的 probe 段一一对应，字段名须匹配 camelCase。
+
+/**
+ * 一台设备（同一 VID:PID 的全部集合）。
+ *
+ * 交互的第一步是按 VID:PID 收敛：复合 HID 会把标准鼠标集合和厂商私有集合一起列出来，
+ * 直接平铺会让用户在几十条 `0xFF00/0x0001` 里挑。
+ */
+export interface HidTargetDto {
+  vid: number;
+  pid: number;
+  vidPid: string;
+  displayName: string;
+  manufacturer: string | null;
+  /** 多个序列号用「、」连接；无则 null。 */
+  serialSummary: string | null;
+  /** 私有集合（UsagePage >= 0xFF00）数量。 */
+  privateCollections: number;
+  collections: HidCollectionDto[];
+}
+
+/** 一个 HID 集合（第二步的候选行）。`path` 是打开与去重的唯一标识。 */
+export interface HidCollectionDto {
+  path: string;
+  vid: number;
+  pid: number;
+  /** `0xVVVV:0xPPPP`，宿主拼好，前端不再格式化。 */
+  vidPid: string;
+  displayName: string;
+  product: string | null;
+  manufacturer: string | null;
+  serial: string | null;
+  /** 后端不提供时为 -1。 */
+  interfaceNumber: number;
+  /** 该 path 上全部 Usage 的紧凑写法。 */
+  usageSummary: string;
+  /** 只声明了标准鼠标/键盘用法：多半不是厂商私有通道。 */
+  standardOnly: boolean;
+}
+
+export interface CaptureStartRequest {
+  path: string;
+  durationMs: number;
+  /** 十六进制文本，宿主负责解析；空数组 = 纯监听。 */
+  writeFrames: string[];
+  writeIntervalMs?: number;
+}
+
+export interface CaptureStartResult {
+  sessionId: number;
+  device: HidCollectionDto;
+  durationMs: number;
+  maxFrames: number;
+}
+
+export interface CaptureFrameDto {
+  atMs: number;
+  direction: "IN" | "OUT";
+  len: number;
+  /** 空格分隔的大写十六进制。 */
+  hex: string;
+}
+
+export interface CaptureSummaryDto {
+  frames: number;
+  inputFrames: number;
+  outputFrames: number;
+  elapsedMs: number;
+  truncated: boolean;
+  writeFailures: number;
+  writeError: string | null;
+}
+
+export type CaptureStatus = "running" | "done" | "stopped" | "failed";
+
+export interface CaptureEventDto {
+  sessionId: number;
+  frames: CaptureFrameDto[];
+  total: number;
+  status: CaptureStatus;
+  message: string | null;
+  summary: CaptureSummaryDto | null;
+}
+
+/** 一次采样：会话号 + 当时驱动显示的电量。 */
+export interface ReportSample {
+  sessionId: number;
+  /** null = 驱动没显示电量（不编造 0%）。 */
+  batteryPercent: number | null;
+}
+
+/** 生成报告 / 保存手动设备共用的表单（采样按顺序编号）。 */
+export interface ReportForm {
+  samples: ReportSample[];
+  name: string;
+  steps: string;
+  expectation: string;
+  note: string;
+}
+
+export interface ReportDto {
+  markdown: string;
+  path: string;
+}
+
+export interface ManualDeviceDto {
+  id: string;
+  name: string;
+  vidPid: string;
+  usageSummary: string;
+  product: string | null;
+  serial: string | null;
+  note: string;
+  addedAtMs: number;
+  lastCaptureAtMs: number | null;
+  /** 全部采样的帧数之和。 */
+  capturedFrames: number;
+  /** 采样记录（含每次驱动显示的电量）。 */
+  samples: ManualSampleDto[];
+  reportPath: string | null;
+}
+
+export interface ManualSampleDto {
+  /** null = 当时没填 / 驱动没显示。 */
+  batteryPercent: number | null;
+  frames: number;
+  capturedAtMs: number;
+}
