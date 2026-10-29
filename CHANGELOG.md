@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.2](https://github.com/Stardust011/VoltNest/compare/v0.2.1...v0.2.2) (2026-10-29)
+
+
+### 修复
+
+* **release:** 修正 Windows 签名配置写入方式 ([444ad4f](https://github.com/Stardust011/VoltNest/commit/444ad4f09610fc86fd413ae409d362dc267f2e6e))
+
 ## [0.2.1](https://github.com/Stardust011/VoltNest/compare/v0.2.0...v0.2.1) (2026-10-29)
 
 
