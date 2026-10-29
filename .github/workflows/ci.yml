@@ -73,6 +73,8 @@ jobs:
               - ".github/workflows/ci.yml"
             python:
               - "mappings/scripts/**"
+              - "**/*.py"
+              - ".ruff.toml"
               - ".github/workflows/ci.yml"
 
   # --------------------------------------------------
@@ -184,7 +186,8 @@ jobs:
 
       - name: Check Python formatting
         if: needs.changes.outputs.python == 'true'
-        run: ruff format --check mappings/scripts/
+        # 与本地 `pnpm run format:py` 同范围：全仓 Python，而不是只查脚本目录。
+        run: ruff format --check .
 
       - uses: Swatinem/rust-cache@v2
         if: needs.changes.outputs.rust == 'true'

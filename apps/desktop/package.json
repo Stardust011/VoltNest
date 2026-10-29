@@ -9,14 +9,16 @@
     "build": "vue-tsc --noEmit && vite build",
     "preview": "vite preview",
     "test": "vitest run",
-    "format": "pnpm run format:rust && pnpm run format:web && pnpm run format:repo",
-    "format:check": "pnpm run format:check:rust && pnpm run format:check:web && pnpm run format:check:repo",
+    "format": "pnpm run format:rust && pnpm run format:web && pnpm run format:repo && pnpm run format:py",
+    "format:check": "pnpm run format:check:rust && pnpm run format:check:web && pnpm run format:check:repo && pnpm run format:check:py",
     "format:rust": "cargo fmt --all --manifest-path ../../Cargo.toml",
     "format:check:rust": "cargo fmt --all --manifest-path ../../Cargo.toml --check",
     "format:web": "prettier --write .",
     "format:check:web": "prettier --check .",
     "format:repo": "cd ../.. && prettier --write .",
     "format:check:repo": "cd ../.. && prettier --check .",
+    "format:py": "cd ../.. && ruff format .",
+    "format:check:py": "cd ../.. && ruff format --check .",
     "tauri": "tauri"
   },
   "dependencies": {
