@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.3](https://github.com/Stardust011/VoltNest/compare/v0.2.2...v0.2.3) (2026-10-29)
+
+
+### 修复
+
+* **release:** Locate signtool and add to PATH for Windows builds ([4d6f492](https://github.com/Stardust011/VoltNest/commit/4d6f4924e303477042b8ee3368582563364db376))
+
 ## [0.2.2](https://github.com/Stardust011/VoltNest/compare/v0.2.1...v0.2.2) (2026-10-29)
 
 
