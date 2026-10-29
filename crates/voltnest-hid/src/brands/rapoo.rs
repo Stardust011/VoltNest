@@ -60,6 +60,7 @@ pub const NRF54L: BrandSpec = BrandSpec {
         cmd: None,
         subtag: None,
         percent_index: 1,
+        percent_mask: 0xFF,
         charging: Some(ChargingField {
             mask: 0xFF,
             index: 0,
@@ -83,6 +84,7 @@ pub const LM20RT: BrandSpec = BrandSpec {
     id: "rapoo-lm20rt",
     label: "雷柏 · LM20RT 固件",
     battery: BatteryFields {
+        percent_mask: 0xFF,
         charging: None,
         ..NRF54L.battery
     },
@@ -102,6 +104,7 @@ pub const CH584: BrandSpec = BrandSpec {
         fixed_payload_len: 2,
     },
     battery: BatteryFields {
+        percent_mask: 0xFF,
         charging: None,
         ..NRF54L.battery
     },
@@ -149,6 +152,7 @@ pub const AP: BrandSpec = BrandSpec {
         cmd: Some(0xAD),
         subtag: None,
         percent_index: 0,
+        percent_mask: 0xFF,
         charging: Some(ChargingField {
             mask: 0xFF,
             index: 1,

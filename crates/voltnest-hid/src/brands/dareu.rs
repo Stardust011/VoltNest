@@ -60,6 +60,7 @@ pub const JM: BrandSpec = BrandSpec {
         subtag: None,
         // payload[0] = body[5] = Level；payload[1] = body[6] = Status。
         percent_index: 0,
+        percent_mask: 0xFF,
         charging: Some(ChargingField {
             mask: 0xFF,
             index: 1,
@@ -123,6 +124,7 @@ pub const TG: BrandSpec = BrandSpec {
         subtag: None,
         // payload[0] = Status，payload[1] = Level。
         percent_index: 1,
+        percent_mask: 0xFF,
         charging: Some(ChargingField {
             mask: 0xFF,
             index: 0,

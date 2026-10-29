@@ -139,8 +139,24 @@ pub struct BatteryFields {
     pub subtag: Option<(usize, u8)>,
     /// 电量百分比在 payload 内的下标（`0..=100`，越界即 `PercentOutOfRange`）。
     pub percent_index: usize,
+    /// 电量字节里承载百分比的位。`0xFF` = 整字节（既有品牌的行为）。
+    ///
+    /// 只有「一个字节塞两个字段」的协议才需要它：迈从 GLW 键盘把电量（bit0..6）与充电标志
+    /// （bit7）压在同一个字节里（官方 `rf_battery:127&e[32], isCharging:e[32]>>7&1`）。
+    /// 不取位时 `0x80|pct` 会读成 128..228，在 `Percent::new` 处被判成越界 —— 充电时反而没读数。
+    pub percent_mask: u8,
     /// 充电标志。`None` = 协议不提供充电状态 → 读数恒为 `None`。
     pub charging: Option<ChargingField>,
+}
+
+impl BatteryFields {
+    /// 从电量字节取百分比：先按 [`Self::percent_mask`] 取位，再交给 `Percent` 校验范围。
+    ///
+    /// 取位不能省：迈从 GLW 键盘的 `0x80|pct` 整字节读出来是 128..228，直接判越界 ——
+    /// 于是「正在充电」这个最该显示电量的场景反而没有读数。
+    pub const fn percent_of(&self, byte: u8) -> u8 {
+        byte & self.percent_mask
+    }
 }
 
 /// 设备**自发上报**（宿主未提问）的电量帧布局（与应答帧布局无关，两条通道各有一套）。
@@ -499,6 +515,11 @@ impl BrandSpec {
             });
         }
 
+        // 电量掩码为 0 = 取位后恒为 0，会把「充着电」静默读成 0% —— 比读不到更危险。
+        if self.battery.percent_mask == 0 {
+            return Err(SpecError::ZeroPercentMask { brand: self.id });
+        }
+
         // 子标签不得与电量字段抢同一字节。
         if let Some((index, _)) = self.battery.subtag
             && index == self.battery.percent_index
@@ -506,9 +527,11 @@ impl BrandSpec {
             return Err(SpecError::SubtagOverlapsPercent { brand: self.id });
         }
 
-        // 充电标志不得与电量字段抢同一字节。
+        // 充电标志不得与电量字段抢同一字节 —— 除非两边各占一个位域（迈从 GLW 键盘把电量放
+        // bit0..6、充电放 bit7）。判据是「取位后互不重叠」：`mask & percent_mask == 0`。
         if let Some(charging) = self.battery.charging
             && charging.index == self.battery.percent_index
+            && (charging.mask & self.battery.percent_mask) != 0
         {
             return Err(SpecError::ChargingOverlapsPercent { brand: self.id });
         }
@@ -691,6 +714,11 @@ pub enum SpecError {
         /// 品牌标识。
         brand: &'static str,
     },
+    /// 电量掩码为 0（取位后恒为 0%）。
+    ZeroPercentMask {
+        /// 品牌标识。
+        brand: &'static str,
+    },
     /// 充电标志与电量字段重叠。
     ChargingOverlapsPercent {
         /// 品牌标识。
@@ -847,6 +875,9 @@ impl core::fmt::Display for SpecError {
             ),
             Self::SubtagOverlapsPercent { brand } => {
                 write!(f, "品牌 {brand} 的子标签与电量字段重叠")
+            }
+            Self::ZeroPercentMask { brand } => {
+                write!(f, "品牌 {brand} 的电量掩码为 0，取位后恒为 0%")
             }
             Self::ChargingOverlapsPercent { brand } => {
                 write!(f, "品牌 {brand} 的充电标志与电量字段重叠")
@@ -1215,6 +1246,7 @@ mod tests {
                 need: 2,
             },
             SpecError::SubtagOverlapsPercent { brand: B },
+            SpecError::ZeroPercentMask { brand: B },
             SpecError::ChargingOverlapsPercent { brand: B },
             SpecError::ListenLayoutInvalid { brand: B },
             SpecError::RequestWithoutWritePage { brand: B },
@@ -1500,6 +1532,41 @@ mod tests {
             |s| s.fallback_report_id = Some(0x06),
             |e| matches!(e, SpecError::FallbackReportIdInvalid { .. }),
             "监听通道没有备用报告 ID",
+        );
+        rejects(
+            |s| s.battery.percent_mask = 0,
+            |e| matches!(e, SpecError::ZeroPercentMask { .. }),
+            "电量掩码为 0",
+        );
+    }
+
+    /// 一个字节装两个字段：电量与充电**可以**同下标，只要掩码互不重叠。
+    ///
+    /// 迈从 GLW 键盘就是这样（`payload[32]`：bit0..6 电量、bit7 充电）。反过来，掩码重叠时
+    /// 必须照旧拒绝 —— 同一批位既是电量又是充电标志，解析结果一定是错的。
+    #[test]
+    fn charging_may_share_byte_only_when_masks_are_disjoint() {
+        let mut spec = base();
+        spec.battery.percent_index = 1;
+        spec.battery.percent_mask = 0x7F;
+        spec.battery.charging = Some(ChargingField {
+            index: 1,
+            mask: 0x80,
+            true_values: &[0x80],
+            error_from: None,
+        });
+        assert!(
+            spec.validate().is_ok(),
+            "电量 bit0..6 + 充电 bit7 是合法布局：{:?}",
+            spec.validate()
+        );
+        assert_eq!(spec.battery.percent_of(0x80 | 42), 42, "取位后只剩电量");
+
+        // 掩码重叠 → 仍是「抢同一批位」，必须拒绝。
+        spec.battery.percent_mask = 0xFF;
+        assert_eq!(
+            spec.validate(),
+            Err(SpecError::ChargingOverlapsPercent { brand: spec.id })
         );
     }
 }

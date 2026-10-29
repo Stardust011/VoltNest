@@ -874,11 +874,12 @@ mod tests {
         assert_eq!(target.classification.method, ClassificationMethod::HidUsage);
     }
 
-    /// 迈从键鼠的官方过滤器同时声明 `0xFF01` 与 `0xFF0B`：主页面零命中时必须降级到备用页面，
-    /// 否则这批设备会「枚举得到但一个候选都没有」——静默消失，比读不到更难查。
+    /// 迈从 CZ/GLW 族键盘正常挂在标准页 `0x0001`，官方过滤器里还有一条 `0xFF00`（boot 模式）：
+    /// 主页面零命中时必须降级到备用页面，否则这批设备会「枚举得到但一个候选都没有」——
+    /// 静默消失，比读不到更难查。
     #[test]
     fn alt_usage_page_covers_devices_with_only_the_secondary_page() {
-        let entries = vec![entry(0x19F5, 0xFC30, 0xFF0B, 0x0001, "/dev/hidraw7")];
+        let entries = vec![entry(0x19F5, 0xFC30, 0xFF00, 0x0001, "/dev/hidraw7")];
         let (found, conflicts) = select_targets(&entries, &HashMap::new());
         assert!(conflicts.is_empty(), "不应有冲突：{conflicts:?}");
         let target = found.get("hid:19f5:fc30").expect("备用页面必须能选中");
@@ -890,8 +891,8 @@ mod tests {
     fn primary_usage_page_wins_over_secondary() {
         // 备用页面先被枚举：单遍实现会把它当成主页面，还会把真正的主页面报成冲突。
         let entries = vec![
-            entry(0x19F5, 0xFC30, 0xFF0B, 0x0001, "/dev/hidraw5"),
-            entry(0x19F5, 0xFC30, 0xFF01, 0x0001, "/dev/hidraw6"),
+            entry(0x19F5, 0xFC30, 0xFF00, 0x0001, "/dev/hidraw5"),
+            entry(0x19F5, 0xFC30, 0x0001, 0x0006, "/dev/hidraw6"),
         ];
         let (found, conflicts) = select_targets(&entries, &HashMap::new());
         assert!(
