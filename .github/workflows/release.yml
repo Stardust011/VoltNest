@@ -135,7 +135,10 @@ jobs:
           $digestAlg = "sha256"
 
           $customSignCmd = "signtool sign /sha1 $thumbprint /fd $digestAlg /td $digestAlg /tr http://timestamp.digicert.com %1"
-          Add-Content -Path $env:GITHUB_ENV -Value "TAURI_BUNDLE_WINDOWS_SIGN_COMMAND=$customSignCmd"
+          $configPath = "apps/desktop/src-tauri/tauri.conf.json"
+          $config = Get-Content $configPath -Raw | ConvertFrom-Json
+          $config.bundle.windows.signCommand = $signCommand
+          $config | ConvertTo-Json -Depth 10 | Set-Content $configPath -Encoding utf8
 
       # beforeBuildCommand（npm run build）由 tauri-action 负责执行。
       - uses: tauri-apps/tauri-action@v1
