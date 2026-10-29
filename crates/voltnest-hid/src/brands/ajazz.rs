@@ -39,8 +39,10 @@ pub const SPEC: BrandSpec = BrandSpec {
     },
     battery: BatteryFields {
         cmd: Some(0xFA),
+        cmd_high: None,
         subtag: Some((0, 0x03)),
         percent_index: 1,
+        percent_mask: 0xFF,
         charging: Some(ChargingField {
             mask: 0xFF,
             index: 2,
@@ -50,6 +52,7 @@ pub const SPEC: BrandSpec = BrandSpec {
     },
     // 纯监听：不向设备发任何报文。
     listen: None,
+    notify: None,
     request: None,
     // 该固件无应答确认位约定。
     ack: None,

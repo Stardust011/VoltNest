@@ -30,6 +30,12 @@ candidates 顺序与官方白名单一致；receiverMatch/fallback 对应
 pickUsefulProductName 的匹配方式与兜底型号（认不出时官方会直接按兜底型号处理）。
 非歧义条目若已知接收器名，也会带上 receiverProductName。
 
+键盘的协议族（`driver`，Cz 驱动 `cz_main.js` 的 `getDeviceManufacturer()`）：
+    "glw"：CZ 配置对象没有 `manufacturer` 字段 —— 缺省值，含 G75 V2 / Ace 全系
+    "qhw"：显式 `manufacturer:"qhw"` —— G98 V3(0x2025) / K87 V3(0x2023)
+    "dje"：不在 CZ 配置表里的键盘（purify 老驱动那一套，含各型号的升级模式孪生 PID）
+三族的 HID 页面与帧完全不同，故必须落到表里，由 Rust 侧 `route()` 按 `driver` 分派。
+
 仅使用 Python 标准库。
 
 用法：
@@ -402,6 +408,58 @@ def parse_card_list(data) -> list[dict]:
     return rows
 
 
+IDENTITY_RE = re.compile(
+    r'_identity:\{vendorId:(\d+),productId:(\d+),productName:(null|"[^"]*"),key:"([^"]*)"\}'
+)
+
+# CZ 配置表里的任意设备键（`_identity.key` / `bootUpdateMode.key` / `spread[].key`）：
+# 形如 `0x3837_0x3033_MCHOSE G75 V2 2.4G`。**出现在这里 = 走 CZ 驱动**（新一代键盘）。
+CZ_KEY_RE = re.compile(r'key:"0x([0-9A-Fa-f]{4})_0x([0-9A-Fa-f]{4})')
+
+# 官方 `cz_main.js` 里显式声明 `manufacturer:"qhw"` 的型号。
+#
+# 判据不能在脚本里自动继承：`manufacturer` 写在 `_identity` **之后/之前**的位置随对象而变，
+# 而共享接收器 PID（0x1015）又是多个型号共用、本身不带 `manufacturer`，自动继承会把它判成 glw。
+# 这里按「型号 → 孪生 PID」显式列全，并由下面的交叉校验在官方新增 qhw 型号时出声。
+QHW_PIDS: set[tuple[int, int]] = {
+    (0x3837, 0x2025),  # G98 V3
+    (0x3837, 0x2023),  # K87 V3
+    (0x3837, 0x1015),  # 上述两台共用的 2.4G 接收器 PID
+    (0x3837, 0x1017),  # 同上，运行 / 升级孪生
+}
+
+
+def parse_cz_drivers(js: str, quiet: bool = False) -> dict[tuple[int, int], str]:
+    """CZ 驱动配置表 → 键盘协议族（`glw` / `qhw`）。
+
+    只回答「哪些 VID:PID 归 CZ 驱动、其中哪些是 qhw」；不在这里的键盘由调用方记为 `dje`
+    （purify 老驱动那一套）。
+    """
+    cz: set[tuple[int, int]] = set()
+    for m in CZ_KEY_RE.finditer(js):
+        cz.add((int(m.group(1), 16), int(m.group(2), 16)))
+    # qhw 型号的孪生 PID 不一定出现在官方设备键里（0x1017 只列在 cardList 的 identities 中），
+    # 但它们必然属于 CZ 驱动 —— 否则会落到 `dje`，拿老族的帧去问一台新键盘。
+    cz |= QHW_PIDS
+
+    # 交叉校验：官方若给新型号标了 `manufacturer:"qhw"`，而 QHW_PIDS 还没跟上，必须出声 ——
+    # 静默按 glw 处理会让那台设备「在列表里但永远读不出」，比不显示更难查。
+    declared: set[tuple[int, int]] = set()
+    for m in re.finditer(r'manufacturer:"qhw"', js):
+        nxt = IDENTITY_RE.search(js, m.end())
+        if nxt:
+            declared.add((int(nxt.group(1)), int(nxt.group(2))))
+    unknown = declared - QHW_PIDS
+    if unknown and not quiet:
+        names = ", ".join(f"0x{v:04X}:0x{p:04X}" for v, p in sorted(unknown))
+        print(
+            f"[warn] 官方新增 qhw 型号未登记到 QHW_PIDS：{names}（已按 glw 处理，需人工核对）",
+            file=sys.stderr,
+        )
+
+    return {key: ("qhw" if key in QHW_PIDS else "glw") for key in cz}
+
+
 def parse_keyboard_config(data) -> dict[tuple[int, int], str]:
     """键盘配置键形如 0x3837_0x3033_MCHOSE G87 V2 2.4G，带 2.4G 后缀即接收器 PID。"""
     overrides: dict[tuple[int, int], str] = {}
@@ -497,7 +555,9 @@ def merge_records(records: Iterable[dict]) -> tuple[list[dict], list[str]]:
     return list(models.values()), warnings
 
 
-def _ambiguous_entry(vid: int, pid: int, items: list[dict]) -> dict:
+def _ambiguous_entry(
+    vid: int, pid: int, items: list[dict], driver: str | None = None
+) -> dict:
     """多个型号共用同一 VID:PID 时的条目：不猜型号，把候选与官方规则一起交出去。"""
     rule = SHARED_RECEIVER_RULES.get((vid, pid))
     order = (
@@ -514,19 +574,25 @@ def _ambiguous_entry(vid: int, pid: int, items: list[dict]) -> dict:
     entry: dict = {
         "name": None,
         "deviceType": types.pop() if len(types) == 1 else None,
-        "mode": modes.most_common(1)[0][0],
-        "ambiguous": True,
-        "receiverMatch": (rule["match"] if rule else None),
-        "candidates": [
-            {
-                "name": item["name"],
-                "receiverProductName": item["receiverProductName"]
-                or _rule_canonical_name(vid, pid, item["name"]),
-            }
-            for item in items
-        ],
-        "fallback": None,
     }
+    if driver:
+        entry["driver"] = driver
+    entry["mode"] = modes.most_common(1)[0][0]
+    entry.update(
+        {
+            "ambiguous": True,
+            "receiverMatch": (rule["match"] if rule else None),
+            "candidates": [
+                {
+                    "name": item["name"],
+                    "receiverProductName": item["receiverProductName"]
+                    or _rule_canonical_name(vid, pid, item["name"]),
+                }
+                for item in items
+            ],
+            "fallback": None,
+        }
+    )
     if rule:
         fallback_fp = _model_fingerprint(rule["fallback"])
         for candidate in entry["candidates"]:
@@ -543,8 +609,10 @@ def build_output(
     source: dict,
     mouse_vid: int,
     mode_overrides: dict[tuple[int, int], str] | None = None,
+    drivers: dict[tuple[int, int], str] | None = None,
 ) -> dict:
     overrides = mode_overrides or {}
+    driver_map = drivers or {}
     grouped: dict[str, list[dict]] = {}
 
     for model in models:
@@ -587,7 +655,11 @@ def build_output(
 
         if len(items) == 1:
             item = items[0]
-            entry = {"name": item["name"], "deviceType": item["deviceType"], "mode": item["mode"]}
+            entry = {"name": item["name"], "deviceType": item["deviceType"]}
+            if item["deviceType"] == "keyboard":
+                # 键盘三族（glw / qhw / dje）的页面与帧都不同，必须逐台记录协议族。
+                entry["driver"] = driver_map.get((vid, pid), "dje")
+            entry["mode"] = item["mode"]
             if item["receiverProductName"]:
                 entry["receiverProductName"] = item["receiverProductName"]
             devices[key] = entry
@@ -595,7 +667,13 @@ def build_output(
 
         if (vid, pid) in SHARED_RECEIVER_RULES:
             # 官方明确按 productName 消歧的共享接收器 PID：不猜，交出候选与规则
-            devices[key] = _ambiguous_entry(vid, pid, items)
+            is_keyboard = all(item["deviceType"] == "keyboard" for item in items)
+            devices[key] = _ambiguous_entry(
+                vid,
+                pid,
+                items,
+                driver_map.get((vid, pid), "dje") if is_keyboard else None,
+            )
             ambiguous_keys.append(key)
             continue
 
@@ -605,11 +683,10 @@ def build_output(
         best = items[0]
         # 同一台模型的有线/无线 PID 混在同一列表里，取多数派更能反映该 PID 的真实用途
         modes = Counter(item["mode"] for item in items)
-        entry = {
-            "name": best["name"],
-            "deviceType": best["deviceType"],
-            "mode": modes.most_common(1)[0][0],
-        }
+        entry = {"name": best["name"], "deviceType": best["deviceType"]}
+        if best["deviceType"] == "keyboard":
+            entry["driver"] = driver_map.get((vid, pid), "dje")
+        entry["mode"] = modes.most_common(1)[0][0]
         if best["receiverProductName"]:
             entry["receiverProductName"] = best["receiverProductName"]
         entry["ambiguous"] = True
@@ -648,7 +725,7 @@ def fetch_stamp() -> str:
 # --------------------------------------------------------------------------
 def collect(
     site_url: str, timeout: float, max_chunks: int, quiet: bool
-) -> tuple[list[dict], str, dict[tuple[int, int], str]]:
+) -> tuple[list[dict], str, dict[tuple[int, int], str], dict[tuple[int, int], str]]:
     html = http_get(site_url, timeout=timeout)
     bundles = discover_entry_bundles(html, site_url)
 
@@ -671,9 +748,11 @@ def collect(
         queue.extend(u for u in discover_related_chunks(text, url) if u not in seen)
 
     cz_url = discover_cz_bundle(site_url, timeout)
+    cz_text = ""
     if cz_url:
         try:
-            texts.append(http_get(cz_url, timeout=timeout * 2))
+            cz_text = http_get(cz_url, timeout=timeout * 2)
+            texts.append(cz_text)
             if not quiet:
                 print(f"[info] 已加载 {cz_url}", file=sys.stderr)
         except Exception as exc:
@@ -703,11 +782,21 @@ def collect(
     except Exception as exc:
         print(f"[warn] 全局配置不可用: {exc}", file=sys.stderr)
 
-    return records, web_version, overrides
+    drivers = parse_cz_drivers(cz_text, quiet) if cz_text else {}
+    if not quiet:
+        print(
+            f"[info] CZ 键盘族 {len(drivers)} 台"
+            f"（qhw {sum(1 for v in drivers.values() if v == 'qhw')}）",
+            file=sys.stderr,
+        )
+
+    return records, web_version, overrides, drivers
 
 
 def run(args: argparse.Namespace) -> dict:
-    records, web_version, overrides = collect(args.url, args.timeout, args.max_chunks, args.quiet)
+    records, web_version, overrides, drivers = collect(
+        args.url, args.timeout, args.max_chunks, args.quiet
+    )
     if not records:
         raise RuntimeError("未解析到任何设备记录，页面结构可能已变更")
 
@@ -723,6 +812,7 @@ def run(args: argparse.Namespace) -> dict:
         source=source,
         mouse_vid=args.mouse_vid,
         mode_overrides=overrides,
+        drivers=drivers,
     )
 
 

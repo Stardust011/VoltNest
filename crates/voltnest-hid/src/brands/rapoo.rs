@@ -58,8 +58,10 @@ pub const NRF54L: BrandSpec = BrandSpec {
     },
     battery: BatteryFields {
         cmd: None,
+        cmd_high: None,
         subtag: None,
         percent_index: 1,
+        percent_mask: 0xFF,
         charging: Some(ChargingField {
             mask: 0xFF,
             index: 0,
@@ -69,6 +71,7 @@ pub const NRF54L: BrandSpec = BrandSpec {
         }),
     },
     listen: None,
+    notify: None,
     request: None,
     ack: None,
     fallback_report_id: None,
@@ -83,6 +86,7 @@ pub const LM20RT: BrandSpec = BrandSpec {
     id: "rapoo-lm20rt",
     label: "雷柏 · LM20RT 固件",
     battery: BatteryFields {
+        percent_mask: 0xFF,
         charging: None,
         ..NRF54L.battery
     },
@@ -102,6 +106,7 @@ pub const CH584: BrandSpec = BrandSpec {
         fixed_payload_len: 2,
     },
     battery: BatteryFields {
+        percent_mask: 0xFF,
         charging: None,
         ..NRF54L.battery
     },
@@ -147,8 +152,10 @@ pub const AP: BrandSpec = BrandSpec {
     },
     battery: BatteryFields {
         cmd: Some(0xAD),
+        cmd_high: None,
         subtag: None,
         percent_index: 0,
+        percent_mask: 0xFF,
         charging: Some(ChargingField {
             mask: 0xFF,
             index: 1,
@@ -158,9 +165,11 @@ pub const AP: BrandSpec = BrandSpec {
         }),
     },
     listen: None,
+    notify: None,
     request: Some(RequestTemplate {
         usage_page: 0xFF1C,
         cmd: 0xAD,
+        cmd_high: None,
         // 报告 ID 之后的第 1、2 字节是小端校验和。
         prefix: &AP_QUERY_CHECKSUM,
         // 报告 ID + 63 字节报文（`payloadByteLength: 63`）。

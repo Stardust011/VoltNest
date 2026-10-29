@@ -135,12 +135,49 @@ pub struct BatteryFields {
     /// `None` = 该协议**不在应答里回显命令字**，故不校验（官方驱动对这类固件只校验确认位）；
     /// 此时 `cmd_index` 不参与匹配，但仍需落在 payload 之前。
     pub cmd: Option<u8>,
+    /// 命令字的高字节：`Some` = 该协议的命令字是**双字节小端**，低字节在 `cmd_index`、
+    /// 高字节在 `cmd_index + 1`。
+    ///
+    /// 只有 CZ 的 `Ge` 帧这样定义命令（电量 = `0x0904`，线上写作 `04 09`）。必须连高字节一起比：
+    /// 只比低字节时，`0x0A04`、`0x1A04` 这些真·别的命令都会被当成电量应答解析。
+    pub cmd_high: Option<u8>,
     /// payload 内的子标签：`(下标, 期望值)`。`None` = 该协议没有子标签。
     pub subtag: Option<(usize, u8)>,
     /// 电量百分比在 payload 内的下标（`0..=100`，越界即 `PercentOutOfRange`）。
     pub percent_index: usize,
+    /// 电量字节里承载百分比的位。`0xFF` = 整字节（既有品牌的行为）。
+    ///
+    /// 只有「一个字节塞两个字段」的协议才需要它：迈从 GLW 键盘把电量（bit0..6）与充电标志
+    /// （bit7）压在同一个字节里（官方 `rf_battery:127&e[32], isCharging:e[32]>>7&1`）。
+    /// 不取位时 `0x80|pct` 会读成 128..228，在 `Percent::new` 处被判成越界 —— 充电时反而没读数。
+    pub percent_mask: u8,
     /// 充电标志。`None` = 协议不提供充电状态 → 读数恒为 `None`。
     pub charging: Option<ChargingField>,
+}
+
+impl BatteryFields {
+    /// 从电量字节取百分比：先按 [`Self::percent_mask`] 取位，再交给 `Percent` 校验范围。
+    ///
+    /// 取位不能省：迈从 GLW 键盘的 `0x80|pct` 整字节读出来是 128..228，直接判越界 ——
+    /// 于是「正在充电」这个最该显示电量的场景反而没有读数。
+    pub const fn percent_of(&self, byte: u8) -> u8 {
+        byte & self.percent_mask
+    }
+
+    /// 这组字段至少要占多少字节：子标签与电量里下标更靠后的那个。
+    ///
+    /// 推送帧与应答帧的字段是两份（[`NotifySpec`]），故必须按**当前正在解析的那一份**算，
+    /// 不能统一取 [`BrandSpec::battery`] —— 否则「应答帧装得下、推送帧装不下」的布局会漏过校验。
+    pub const fn min_payload_len(&self) -> usize {
+        let percent = self.percent_index + 1;
+        match self.subtag {
+            Some((index, _)) => {
+                let subtag = index + 1;
+                if subtag > percent { subtag } else { percent }
+            }
+            None => percent,
+        }
+    }
 }
 
 /// 设备**自发上报**（宿主未提问）的电量帧布局（与应答帧布局无关，两条通道各有一套）。
@@ -187,6 +224,46 @@ impl ListenSpec {
             self.status_index
         };
         max + 1
+    }
+}
+
+/// 设备**主动推送**的电量帧：与应答共用同一套帧头（[`BrandSpec::frame`]），但命令字与字段下标另有一套。
+///
+/// 与 [`ListenSpec`] 的区别在帧形状：`ListenSpec` 描述的是「无帧头、首字节即命令字 + 子标签」的
+/// 老族上报帧（迈从键鼠 `0A 05 <电量> <状态>`）；本结构描述的是「与应答共用头部、只是命令字不同」
+/// 的推送帧（CZ/QHW 的 `MANUAL_REPORT`：命令 `0x0700`、7 字节头、电量在 `data[3]`）。
+///
+/// # 为什么不复用 [`BatteryFields`]
+/// 同一台设备的推送帧与查询应答是**两套下标**：qhw 的 `getBattery`(0x0904) 读 `data[0]/data[1]`，
+/// 而 `MANUAL_REPORT`(0x0700) 读 `data[2]/data[3]`。塞进一份会让其中一条通道稳定读错字节，
+/// 且错得很像「电量跳变」而不是坏帧。
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct NotifySpec {
+    /// 推送帧的命令字低字节（位于 [`BrandSpec::frame`] 的 `cmd_index`）。
+    pub cmd: u8,
+    /// 命令字高字节：`Some` = 双字节小端命令。
+    pub cmd_high: Option<u8>,
+    /// 电量百分比在 payload 内的下标。
+    pub percent_index: usize,
+    /// 电量字节里承载百分比的位。`0xFF` = 整字节。
+    pub percent_mask: u8,
+    /// 充电标志。`None` = 推送帧不提供充电状态（此时不得拿应答帧的充电字段去凑）。
+    pub charging: Option<ChargingField>,
+}
+
+impl NotifySpec {
+    /// 推送帧按 [`BatteryFields`] 的形状表达，供 [`crate::frame`] 复用同一套解析器。
+    ///
+    /// 不含子标签与确认位：这两项是**应答**的语义（「这条应答属于哪一问」），推送帧没有提问。
+    pub const fn fields(self) -> BatteryFields {
+        BatteryFields {
+            cmd: Some(self.cmd),
+            cmd_high: self.cmd_high,
+            subtag: None,
+            percent_index: self.percent_index,
+            percent_mask: self.percent_mask,
+            charging: self.charging,
+        }
     }
 }
 
@@ -238,6 +315,12 @@ pub struct RequestTemplate {
     pub usage_page: u16,
     /// 报文中携带的命令字（查询命令，可与上报帧的命令字不同）。
     pub cmd: u8,
+    /// 命令字的高字节：`Some` = 双字节小端命令，写在 `cmd_index + 1`。
+    ///
+    /// CZ 的 `Ge` 帧用 `hJ(command)`（`[cmd & 0xFF, cmd >> 8]`）拼头，电量命令 `2308` 即
+    /// 线上 `04 09`。只写低字节会把命令变成 `0x0004`（读信息），设备照常应答别的数据 ——
+    /// 表现为「有帧、但电量永远是垃圾」。
+    pub cmd_high: Option<u8>,
     /// 命令字之前的固定报文内容。
     pub prefix: &'static [u8],
     /// 报文总长（HID 输出报告长度，不足补 0）。
@@ -284,6 +367,12 @@ impl RequestTemplate {
         }
         if let Some(slot) = buf.get_mut(self.cmd_index) {
             *slot = self.cmd;
+        }
+        // 双字节命令：高字节紧跟低字节（官方 `hJ(command) = [cmd & 0xFF, cmd >> 8]`）。
+        if let Some(high) = self.cmd_high
+            && let Some(slot) = buf.get_mut(self.cmd_index + 1)
+        {
+            *slot = high;
         }
         let end = self
             .payload_offset
@@ -375,6 +464,12 @@ pub struct BrandSpec {
     /// 监听通道上「设备自发上报的电量帧」的识别模板。
     /// `None` = 该协议没有这条旁路（读数只从查询应答取）。
     pub listen: Option<ListenSpec>,
+    /// 设备**主动推送**的电量帧（与应答共用帧头、命令字不同）。
+    ///
+    /// 与 `listen` 是两条互斥的旁路：`listen` 认「无头 + 首字节命令」，本字段认「有头 + 另一条命令」。
+    /// 声明后查询通道可以退化成「连接时问一次」，之后全靠推送 —— 这正是省电的关键：
+    /// 键盘的电量查询要唤醒固件处理一条命令，推送则由设备自己决定何时发。
+    pub notify: Option<NotifySpec>,
     /// 主动查询模板。`None` = 纯监听（不向设备发任何报文）。
     pub request: Option<RequestTemplate>,
     /// 多包应答的重组约定。`None` = 一次查询由单条报告应答（绝大多数品牌）。
@@ -423,14 +518,7 @@ impl BrandSpec {
     /// 充电标志**不计入**：它是可选字段，缺失表示「未知」，不得把缺一个字节
     /// 的旧固件判成坏帧（会直接把可用读数变成 `Unavailable`）。
     pub const fn min_payload_len(&self) -> usize {
-        let percent = self.battery.percent_index + 1;
-        match self.battery.subtag {
-            Some((index, _)) => {
-                let subtag = index + 1;
-                if subtag > percent { subtag } else { percent }
-            }
-            None => percent,
-        }
+        self.battery.min_payload_len()
     }
 
     /// 一帧报告的最小长度。
@@ -473,14 +561,35 @@ impl BrandSpec {
             });
         }
 
+        // 双字节命令字连高字节也要落在 payload 之前：`cmd_index + 1 == payload_offset` 时
+        // 高字节会被当成 payload 的第一个字节，两边各读一次。
+        if self.battery.cmd_high.is_some() && self.frame.cmd_index + 1 >= self.frame.payload_offset
+        {
+            return Err(SpecError::CmdHighOutsideHeader {
+                brand: self.id,
+                cmd_index: self.frame.cmd_index,
+            });
+        }
+
+        // 高字节只能附在低字节上：`cmd: None` 表示「本协议不校验命令字」，
+        // 这时再给一个高字节无从比对，等于写了条永不生效的规则。
+        if self.battery.cmd_high.is_some() && self.battery.cmd.is_none() {
+            return Err(SpecError::CmdHighWithoutCmd { brand: self.id });
+        }
+
         // 报告 ID 占首字节，此时 payload 不能从 0 开始。
         if self.frame.report_id.is_some() && self.frame.payload_offset == 0 {
             return Err(SpecError::PayloadStartsAtReportId { brand: self.id });
         }
 
-        // 长度字段必须在头部。
+        // 长度字段必须在头部，且不得与命令字抢字节 —— 同一字节被当成两种语义，
+        // 两边至少有一个读到垃圾。头部的字节顺序不固定（CZ 的 `Ge` 帧是
+        // `version · flags · length · cmdLo · cmdHi`，长度在命令**之前**），故只校验
+        // 「在 payload 之前」与「不压命令字」，不假设谁先谁后。
         if let Some(index) = self.frame.len_index
-            && (index < self.frame.cmd_index || index >= self.frame.payload_offset)
+            && (index >= self.frame.payload_offset
+                || index == self.frame.cmd_index
+                || (self.battery.cmd_high.is_some() && index == self.frame.cmd_index + 1))
         {
             return Err(SpecError::LengthFieldOutsideHeader {
                 brand: self.id,
@@ -499,6 +608,11 @@ impl BrandSpec {
             });
         }
 
+        // 电量掩码为 0 = 取位后恒为 0，会把「充着电」静默读成 0% —— 比读不到更危险。
+        if self.battery.percent_mask == 0 {
+            return Err(SpecError::ZeroPercentMask { brand: self.id });
+        }
+
         // 子标签不得与电量字段抢同一字节。
         if let Some((index, _)) = self.battery.subtag
             && index == self.battery.percent_index
@@ -506,9 +620,11 @@ impl BrandSpec {
             return Err(SpecError::SubtagOverlapsPercent { brand: self.id });
         }
 
-        // 充电标志不得与电量字段抢同一字节。
+        // 充电标志不得与电量字段抢同一字节 —— 除非两边各占一个位域（迈从 GLW 键盘把电量放
+        // bit0..6、充电放 bit7）。判据是「取位后互不重叠」：`mask & percent_mask == 0`。
         if let Some(charging) = self.battery.charging
             && charging.index == self.battery.percent_index
+            && (charging.mask & self.battery.percent_mask) != 0
         {
             return Err(SpecError::ChargingOverlapsPercent { brand: self.id });
         }
@@ -522,6 +638,23 @@ impl BrandSpec {
             return Err(SpecError::ListenLayoutInvalid { brand: self.id });
         }
 
+        // 推送帧：掩码为 0 会把「充着电」读成 0%；命令字与应答相同则同一帧会被两条通道用
+        // 不同下标解释，必有一条读错字节 —— 而错法看起来像「电量跳变」，不是坏帧。
+        if let Some(notify) = self.notify {
+            if notify.percent_mask == 0 {
+                return Err(SpecError::ZeroPercentMask { brand: self.id });
+            }
+            if self.battery.cmd == Some(notify.cmd) && self.battery.cmd_high == notify.cmd_high {
+                return Err(SpecError::NotifyCollidesWithReply { brand: self.id });
+            }
+            if let Some(charging) = notify.charging
+                && charging.index == notify.percent_index
+                && (charging.mask & notify.percent_mask) != 0
+            {
+                return Err(SpecError::ChargingOverlapsPercent { brand: self.id });
+            }
+        }
+
         // 查询模板必须自洽，且声明了写通道。
         if let Some(req) = self.request {
             if self.usage_page_write.is_none() {
@@ -533,6 +666,8 @@ impl BrandSpec {
             }
             if req.data_end() > req.report_len
                 || req.cmd_index >= req.payload_offset
+                // 双字节命令的高字节同样不能压到 payload 上。
+                || (req.cmd_high.is_some() && req.cmd_index + 1 >= req.payload_offset)
                 || req.report_len < self.frame.payload_offset
                 || req.prefix.len() > req.cmd_index
             {
@@ -540,6 +675,11 @@ impl BrandSpec {
             }
             if self.frame.report_id.is_some() && req.report_len == 0 {
                 return Err(SpecError::RequestLayoutInvalid { brand: self.id });
+            }
+            // 「不周期查询」只有在确有推送源时才成立：否则唯一读数来源就是探活本身，
+            // 那是**隐性轮询**（还带着 `expected_interval_ms` 的节奏），不如显式写 `Some`。
+            if req.interval_ms.is_none() && self.listen.is_none() && self.notify.is_none() {
+                return Err(SpecError::PassiveWithoutPushSource { brand: self.id });
             }
             // 运行时只有一个读句柄：写页与读页不同时，查询会写到读集合上，表现为永远没应答。
             // 读页为 `0`（通配）时无从比较，跳过。
@@ -666,6 +806,18 @@ pub enum SpecError {
         /// 品牌标识。
         brand: &'static str,
     },
+    /// 双字节命令字的高字节越过 payload 起点。
+    CmdHighOutsideHeader {
+        /// 品牌标识。
+        brand: &'static str,
+        /// 命令字低字节下标。
+        cmd_index: usize,
+    },
+    /// 声明了命令字高字节，却没有声明命令字低字节。
+    CmdHighWithoutCmd {
+        /// 品牌标识。
+        brand: &'static str,
+    },
     /// 长度字段不在头部。
     LengthFieldOutsideHeader {
         /// 品牌标识。
@@ -691,6 +843,11 @@ pub enum SpecError {
         /// 品牌标识。
         brand: &'static str,
     },
+    /// 电量掩码为 0（取位后恒为 0%）。
+    ZeroPercentMask {
+        /// 品牌标识。
+        brand: &'static str,
+    },
     /// 充电标志与电量字段重叠。
     ChargingOverlapsPercent {
         /// 品牌标识。
@@ -701,6 +858,14 @@ pub enum SpecError {
         /// 品牌标识。
         brand: &'static str,
     },
+    /// 推送帧的命令字与应答帧的命令字相同。
+    ///
+    /// 两条通道共用同一个 `FrameLayout`，命令字是唯一的区分依据：相同意味着同一帧会被
+    /// 按两套下标各解析一次，其中一套必然读错字节。
+    NotifyCollidesWithReply {
+        /// 品牌标识。
+        brand: &'static str,
+    },
     /// 声明了查询模板，却没有写通道 UsagePage。
     RequestWithoutWritePage {
         /// 品牌标识。
@@ -708,6 +873,13 @@ pub enum SpecError {
     },
     /// 查询模板越界。
     RequestLayoutInvalid {
+        /// 品牌标识。
+        brand: &'static str,
+    },
+    /// 查询模板不周期发送，但该协议没有任何推送源（`listen` / `notify` 全空）。
+    ///
+    /// 此时唯一的读数来源是探活查询本身，等于把轮询藏进了「推送为主」的写法里。
+    PassiveWithoutPushSource {
         /// 品牌标识。
         brand: &'static str,
     },
@@ -828,6 +1000,13 @@ impl core::fmt::Display for SpecError {
             Self::PayloadStartsAtReportId { brand } => {
                 write!(f, "品牌 {brand} 带报告 ID，payload 不得从 0 开始")
             }
+            Self::CmdHighOutsideHeader { brand, cmd_index } => write!(
+                f,
+                "品牌 {brand} 的双字节命令字（低字节 @{cmd_index}）越过了 payload 起点"
+            ),
+            Self::CmdHighWithoutCmd { brand } => {
+                write!(f, "品牌 {brand} 声明了命令字高字节，却没有命令字低字节")
+            }
             Self::LengthFieldOutsideHeader {
                 brand,
                 len_index,
@@ -835,7 +1014,7 @@ impl core::fmt::Display for SpecError {
                 payload_offset,
             } => write!(
                 f,
-                "品牌 {brand} 的长度字段下标 {len_index} 不在头部 [{cmd_index}, {payload_offset})"
+                "品牌 {brand} 的长度字段下标 {len_index} 不在头部（须 < payload_offset={payload_offset} 且不等于命令字下标 {cmd_index}）"
             ),
             Self::FixedPayloadTooShort {
                 brand,
@@ -848,12 +1027,22 @@ impl core::fmt::Display for SpecError {
             Self::SubtagOverlapsPercent { brand } => {
                 write!(f, "品牌 {brand} 的子标签与电量字段重叠")
             }
+            Self::ZeroPercentMask { brand } => {
+                write!(f, "品牌 {brand} 的电量掩码为 0，取位后恒为 0%")
+            }
             Self::ChargingOverlapsPercent { brand } => {
                 write!(f, "品牌 {brand} 的充电标志与电量字段重叠")
             }
             Self::ListenLayoutInvalid { brand } => {
                 write!(f, "品牌 {brand} 的监听帧字段与其他字段重叠")
             }
+            Self::NotifyCollidesWithReply { brand } => {
+                write!(f, "品牌 {brand} 的推送帧命令字与应答帧相同，两者无法区分")
+            }
+            Self::PassiveWithoutPushSource { brand } => write!(
+                f,
+                "品牌 {brand} 声明了不周期查询，却没有 listen / notify 任何推送源"
+            ),
             Self::RequestWithoutWritePage { brand } => write!(
                 f,
                 "品牌 {brand} 声明了查询模板，必须同时给出 usage_page_write"
@@ -956,6 +1145,7 @@ mod tests {
         RequestTemplate {
             usage_page: 0xFFB2,
             cmd: 0xFB,
+            cmd_high: None,
             prefix: &[],
             report_len: 8,
             cmd_index: 1,
@@ -1055,6 +1245,7 @@ mod tests {
         spec.request = Some(RequestTemplate {
             usage_page: 0xFFB1,
             cmd: 0xFB,
+            cmd_high: None,
             prefix: &[],
             report_len: 8,
             cmd_index: 1,
@@ -1076,6 +1267,7 @@ mod tests {
         spec.request = Some(RequestTemplate {
             usage_page: 0xFFB1,
             cmd: 0xFB,
+            cmd_high: None,
             prefix: &[],
             report_len: 6,
             cmd_index: 1,
@@ -1133,6 +1325,7 @@ mod tests {
         let req = RequestTemplate {
             usage_page: 0xFFB1,
             cmd: 0xFB,
+            cmd_high: None,
             prefix: &[],
             report_len: 8,
             cmd_index: 1,
@@ -1159,6 +1352,7 @@ mod tests {
         let mut req = RequestTemplate {
             usage_page: 0xFFB1,
             cmd: 0xFB,
+            cmd_high: None,
             prefix: &[],
             report_len: 8,
             cmd_index: 1,
@@ -1178,6 +1372,7 @@ mod tests {
         let req = RequestTemplate {
             usage_page: 0xFFB1,
             cmd: 0xFB,
+            cmd_high: None,
             prefix: &[],
             report_len: 6,
             cmd_index: 1,
@@ -1215,8 +1410,16 @@ mod tests {
                 need: 2,
             },
             SpecError::SubtagOverlapsPercent { brand: B },
+            SpecError::ZeroPercentMask { brand: B },
             SpecError::ChargingOverlapsPercent { brand: B },
             SpecError::ListenLayoutInvalid { brand: B },
+            SpecError::NotifyCollidesWithReply { brand: B },
+            SpecError::CmdHighOutsideHeader {
+                brand: B,
+                cmd_index: 1,
+            },
+            SpecError::CmdHighWithoutCmd { brand: B },
+            SpecError::PassiveWithoutPushSource { brand: B },
             SpecError::RequestWithoutWritePage { brand: B },
             SpecError::RequestLayoutInvalid { brand: B },
             SpecError::RequestPageDiffersFromRead { brand: B },
@@ -1500,6 +1703,151 @@ mod tests {
             |s| s.fallback_report_id = Some(0x06),
             |e| matches!(e, SpecError::FallbackReportIdInvalid { .. }),
             "监听通道没有备用报告 ID",
+        );
+        rejects(
+            |s| s.battery.percent_mask = 0,
+            |e| matches!(e, SpecError::ZeroPercentMask { .. }),
+            "电量掩码为 0",
+        );
+        // 高字节只能附在低字节上：`cmd: None` 时无从比对，写了也是永不生效的规则。
+        rejects(
+            |s| {
+                s.battery.cmd = None;
+                s.battery.cmd_high = Some(0x09);
+            },
+            |e| matches!(e, SpecError::CmdHighWithoutCmd { .. }),
+            "只有命令字高字节",
+        );
+        // 双字节命令的高字节不能压到 payload 上。
+        rejects(
+            |s| {
+                s.frame.cmd_index = 1;
+                s.frame.payload_offset = 2;
+                s.battery.cmd_high = Some(0x09);
+            },
+            |e| matches!(e, SpecError::CmdHighOutsideHeader { .. }),
+            "命令字高字节越过 payload",
+        );
+        // 长度字段在头部任意位置都合法（CZ 的 `Ge` 帧把它放在命令**之前**），
+        // 但压到 payload 上或与命令字抢字节必须拒绝。
+        rejects(
+            |s| {
+                s.frame.len_index = Some(2);
+                s.frame.payload_offset = 2;
+            },
+            |e| matches!(e, SpecError::LengthFieldOutsideHeader { .. }),
+            "长度字段落在 payload 里",
+        );
+        rejects(
+            |s| {
+                s.frame.len_index = Some(1);
+                s.frame.cmd_index = 1;
+            },
+            |e| matches!(e, SpecError::LengthFieldOutsideHeader { .. }),
+            "长度字段与命令字抢同一字节",
+        );
+        // 推送帧与应答共用同一个帧头，命令字是唯一区分依据：相同则同一帧被两套下标各解析一次。
+        rejects(
+            |s| {
+                s.notify = Some(NotifySpec {
+                    cmd: 0xFA,
+                    cmd_high: None,
+                    percent_index: 0,
+                    percent_mask: 0xFF,
+                    charging: None,
+                });
+            },
+            |e| matches!(e, SpecError::NotifyCollidesWithReply { .. }),
+            "推送帧与应答命令字相同",
+        );
+        // 「不周期查询」必须有推送源：否则探活就是唯一来源，等于把轮询藏进被动写法。
+        rejects(
+            |s| {
+                *s = with_request(*s);
+                s.request = s.request.map(|mut req| {
+                    req.interval_ms = None;
+                    req
+                });
+                s.listen = None;
+                s.notify = None;
+            },
+            |e| matches!(e, SpecError::PassiveWithoutPushSource { .. }),
+            "不轮询又没有推送源",
+        );
+        // 推送帧的掩码为 0 同样是「充着电读成 0%」。
+        rejects(
+            |s| {
+                s.notify = Some(NotifySpec {
+                    cmd: 0x01,
+                    cmd_high: None,
+                    percent_index: 0,
+                    percent_mask: 0,
+                    charging: None,
+                });
+            },
+            |e| matches!(e, SpecError::ZeroPercentMask { .. }),
+            "推送帧电量掩码为 0",
+        );
+    }
+
+    /// 推送帧是另一套下标：`NotifySpec::fields()` 必须原样交给解析器，
+    /// 不能被 [`BrandSpec::battery`] 的值悄悄顶掉。
+    #[test]
+    fn notify_fields_are_independent_of_reply_fields() {
+        let mut spec = base();
+        spec.notify = Some(NotifySpec {
+            cmd: 0x00,
+            cmd_high: Some(0x07),
+            percent_index: 3,
+            percent_mask: 0xFF,
+            charging: Some(ChargingField {
+                mask: 0xFF,
+                index: 2,
+                true_values: &[0x01],
+                error_from: None,
+            }),
+        });
+        assert!(spec.validate().is_ok(), "命令不同的推送帧应当合法");
+
+        let fields = spec.notify.expect("刚设置过").fields();
+        assert_eq!(fields.cmd, Some(0x00));
+        assert_eq!(fields.cmd_high, Some(0x07));
+        assert_eq!(fields.percent_index, 3);
+        assert_ne!(
+            fields.percent_index, spec.battery.percent_index,
+            "推送帧与应答帧的下标是两份"
+        );
+        // 应答侧不受影响。
+        assert_eq!(spec.battery.percent_index, base().battery.percent_index);
+    }
+
+    /// 一个字节装两个字段：电量与充电**可以**同下标，只要掩码互不重叠。
+    ///
+    /// 迈从 GLW 键盘就是这样（`payload[32]`：bit0..6 电量、bit7 充电）。反过来，掩码重叠时
+    /// 必须照旧拒绝 —— 同一批位既是电量又是充电标志，解析结果一定是错的。
+    #[test]
+    fn charging_may_share_byte_only_when_masks_are_disjoint() {
+        let mut spec = base();
+        spec.battery.percent_index = 1;
+        spec.battery.percent_mask = 0x7F;
+        spec.battery.charging = Some(ChargingField {
+            index: 1,
+            mask: 0x80,
+            true_values: &[0x80],
+            error_from: None,
+        });
+        assert!(
+            spec.validate().is_ok(),
+            "电量 bit0..6 + 充电 bit7 是合法布局：{:?}",
+            spec.validate()
+        );
+        assert_eq!(spec.battery.percent_of(0x80 | 42), 42, "取位后只剩电量");
+
+        // 掩码重叠 → 仍是「抢同一批位」，必须拒绝。
+        spec.battery.percent_mask = 0xFF;
+        assert_eq!(
+            spec.validate(),
+            Err(SpecError::ChargingOverlapsPercent { brand: spec.id })
         );
     }
 }
