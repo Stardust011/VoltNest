@@ -555,9 +555,7 @@ def merge_records(records: Iterable[dict]) -> tuple[list[dict], list[str]]:
     return list(models.values()), warnings
 
 
-def _ambiguous_entry(
-    vid: int, pid: int, items: list[dict], driver: str | None = None
-) -> dict:
+def _ambiguous_entry(vid: int, pid: int, items: list[dict], driver: str | None = None) -> dict:
     """多个型号共用同一 VID:PID 时的条目：不猜型号，把候选与官方规则一起交出去。"""
     rule = SHARED_RECEIVER_RULES.get((vid, pid))
     order = (
