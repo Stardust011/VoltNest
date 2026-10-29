@@ -58,6 +58,7 @@ pub const NRF54L: BrandSpec = BrandSpec {
     },
     battery: BatteryFields {
         cmd: None,
+        cmd_high: None,
         subtag: None,
         percent_index: 1,
         percent_mask: 0xFF,
@@ -150,6 +151,7 @@ pub const AP: BrandSpec = BrandSpec {
     },
     battery: BatteryFields {
         cmd: Some(0xAD),
+        cmd_high: None,
         subtag: None,
         percent_index: 0,
         percent_mask: 0xFF,
@@ -165,6 +167,7 @@ pub const AP: BrandSpec = BrandSpec {
     request: Some(RequestTemplate {
         usage_page: 0xFF1C,
         cmd: 0xAD,
+        cmd_high: None,
         // 报告 ID 之后的第 1、2 字节是小端校验和。
         prefix: &AP_QUERY_CHECKSUM,
         // 报告 ID + 63 字节报文（`payloadByteLength: 63`）。

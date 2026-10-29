@@ -39,6 +39,7 @@ pub const SPEC: BrandSpec = BrandSpec {
     },
     battery: BatteryFields {
         cmd: Some(0xFA),
+        cmd_high: None,
         subtag: Some((0, 0x03)),
         percent_index: 1,
         percent_mask: 0xFF,
