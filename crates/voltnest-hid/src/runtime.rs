@@ -421,6 +421,28 @@ fn consider_target(
 /// 换报告 ID 后的等待（毫秒）。
 const REPORT_ID_SWITCH_GAP_MS: u64 = 50;
 
+/// 档位探测最多听几帧：够容纳「一条无关推送 + 一条 base 应答」，再多就是在等一个不会来的应答。
+const PROFILE_PROBE_FRAMES: usize = 4;
+
+/// 在报告里找出命令字为 `cmd` 的应答，返回它的 payload。
+///
+/// 偏移容错同 [`frame::decode_listen`]：带报告 ID 的集合里 `cmd` 在 `cmd_index`，
+/// 无编号报告的集合可能被平台补了一个 ID 槽。
+fn probe_payload<'a>(brand: &BrandSpec, cmd: u8, report: &'a [u8]) -> Option<&'a [u8]> {
+    let layout = &brand.frame;
+    let bases: &[usize] = if layout.report_id.is_some() {
+        &[0]
+    } else {
+        &[0, 1]
+    };
+    for base in bases {
+        if report.get(base + layout.cmd_index).copied() == Some(cmd) {
+            return report.get(base + layout.payload_offset..);
+        }
+    }
+    None
+}
+
 /// 读取线程入口：按协议形状选一条通道，退出时按原因收尾。
 fn read_loop(
     dev: HidDevice,
@@ -491,6 +513,10 @@ struct Reader {
     last_reading: Option<Instant>,
     /// 最近一次主动探活的时刻：读数一直不来时避免每轮都发报文。
     last_probe: Option<Instant>,
+    /// 最近一次读到的电量：只报充电状态的上报帧要靠它拼出一条完整读数。
+    last_percent: Option<voltnest_provider::Percent>,
+    /// 设备当前板载档位（探测成功前为 `None`，查询按档位 0 构造）。
+    profile: Option<u8>,
 }
 
 impl Reader {
@@ -511,6 +537,8 @@ impl Reader {
             reassembler: frame::Reassembler::new(),
             last_reading: None,
             last_probe: None,
+            last_percent: None,
+            profile: None,
         }
     }
 
@@ -553,7 +581,12 @@ impl Reader {
                 if due {
                     // 新一次查询前先丢半包：半包拼出来的电量不可信。
                     self.reassembler.reset();
-                    let _ = self.dev.write(&req.build(self.brand.frame.report_id));
+                    self.ensure_profile()?;
+                    let _ = self.dev.write(&req.build_at(
+                        self.brand.frame.report_id,
+                        self.profile.unwrap_or_default(),
+                        self.brand.block_offset,
+                    ));
                     self.last_probe = Some(now);
                     let gap = req.interval_ms.unwrap_or(self.brand.expected_interval_ms);
                     next = now + Duration::from_millis(gap);
@@ -574,6 +607,35 @@ impl Reader {
             self.last_probe,
             now,
         )
+    }
+
+    /// 读一次 base，解出当前板载档位。
+    ///
+    /// 官方 `getBase()` 是「发一问、收一答」，答帧与电量应答共用同一个头、靠命令字区分。
+    /// 每次探活都重读：用户切换板载档位后设备不会主动告诉我们，而 `0x05` 是按档位偏移读的，
+    /// 沿用旧档位会一直读同一块。探活本身是低频兜底（常态零查询），多一问可以接受。
+    fn ensure_profile(&mut self) -> Flow {
+        let Some(probe) = self.brand.profile_probe else {
+            return Ok(());
+        };
+        if self
+            .dev
+            .write(&probe.request.build(self.brand.frame.report_id))
+            .is_err()
+        {
+            return Ok(());
+        }
+        for _ in 0..PROFILE_PROBE_FRAMES {
+            let Some(n) = self.read_input(LISTEN_READ_TIMEOUT_MS)? else {
+                break;
+            };
+            if let Some(payload) = probe_payload(self.brand, probe.request.cmd, &self.buf[..n]) {
+                let profile = probe.resolve(payload);
+                self.profile = Some(profile);
+                return Ok(());
+            }
+        }
+        Ok(())
     }
 
     /// `FeatureQuery`：周期发 feature 查询并读应答；声明了实时上报通道时，两次查询之间先听设备自发上报。
@@ -671,9 +733,9 @@ impl Reader {
     fn on_input(&mut self, n: usize) -> Flow {
         let report = &self.buf[..n];
         if self.brand.listen.is_some()
-            && let Some(reading) = frame::decode_listen(self.brand, report)
+            && let Some(event) = frame::decode_listen(self.brand, report)
         {
-            return self.emit_reading(reading);
+            return self.on_listen(event);
         }
         // 推送帧与应答共用帧头，靠命令字区分（[`crate::spec::NotifySpec`]）；
         // 认不出来就继续往下走，不吞掉可能是应答的那一帧。
@@ -701,15 +763,33 @@ impl Reader {
     /// 上报一条**有效读数**，并记下时刻 —— 推送型协议据此判断「要不要探活」。
     fn emit_reading(&mut self, reading: frame::BatteryReading) -> Flow {
         self.last_reading = Some(Instant::now());
+        self.last_percent = Some(reading.percent);
         self.send(reading_event_of(&self.stable_id, reading))
+    }
+
+    /// 监听帧 → 事件。
+    ///
+    /// 只通报充电状态的帧（迈从 GLW `FA FB FF`）沿用上一次电量：还没有任何电量时丢掉，
+    /// 因为「充电中」配一个编出来的百分比比不显示更糟。
+    fn on_listen(&mut self, event: frame::ListenEvent) -> Flow {
+        match event {
+            frame::ListenEvent::Reading(reading) => self.emit_reading(reading),
+            frame::ListenEvent::Charging(charging) => match self.last_percent {
+                Some(percent) => self.emit_reading(frame::BatteryReading {
+                    percent,
+                    charging: Some(charging),
+                }),
+                None => Ok(()),
+            },
+        }
     }
 
     /// 听一帧设备自发上报；认不出是电量帧就丢。
     fn listen_once(&mut self, timeout_ms: i32) -> Flow {
         if let Some(n) = self.read_input(timeout_ms)?
-            && let Some(reading) = frame::decode_listen(self.brand, &self.buf[..n])
+            && let Some(event) = frame::decode_listen(self.brand, &self.buf[..n])
         {
-            return self.emit_reading(reading);
+            return self.on_listen(event);
         }
         Ok(())
     }
