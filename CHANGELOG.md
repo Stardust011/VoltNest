@@ -1,5 +1,216 @@
 # Changelog
 
+## [0.2.4](https://github.com/Stardust011/VoltNest/compare/v0.2.4...v0.2.4) (2026-10-30)
+
+
+### ⚠ BREAKING CHANGES
+
+* **hid:** 型号表改用厂商映射表并统一到 data/mappings
+* **hid:** `Snapshot.provider`、日志前缀与诊断分组键的家族 ID 由 `hid-nearlink-ajazz` 改为 `hid-vbas`，不保留旧值兼容读取（v1 未发版）。
+* **desktop-ui:** 组件层全量切换为 shadcn-vue 与 Tailwind 令牌
+
+### 新功能
+
+* **app:** Tauri 宿主、宿主事件循环与采集线程监管 ([7bd4f81](https://github.com/Stardust011/VoltNest/commit/7bd4f81e938a9cd3ea197626697bceb120b5dd9b))
+* **autostart:** 自启与手动启动统一受「启动时最小化到托盘」管控 ([a0fec4b](https://github.com/Stardust011/VoltNest/commit/a0fec4bc7ddff13f2903d237b99330c87151a674))
+* **ble:** 出现检测独立于读数轮询，连上蓝牙即被发现 ([24eb926](https://github.com/Stardust011/VoltNest/commit/24eb9261f8669a20aed2fd33d4719fa4b838189e))
+* **ble:** 实现 ble-bas 解析与协调/会话模型 ([713ff36](https://github.com/Stardust011/VoltNest/commit/713ff36dd357cff44e1438ad62985e6cae78dd94))
+* **ble:** 支持 Linux bluez 后端 ([5f467dc](https://github.com/Stardust011/VoltNest/commit/5f467dcfcd0b43081f14ec38088ccdb746056f17))
+* **ble:** 断链改为事件驱动，巡检降为保底 ([07cb0b7](https://github.com/Stardust011/VoltNest/commit/07cb0b732234acca4a3cf9e69779ab412ad57c38))
+* **brand:** 应用图标改为「V + 闪电」标识 ([c177547](https://github.com/Stardust011/VoltNest/commit/c177547f0216c619443d5b890ea0cc8b2da06859))
+* **classify:** 增加 HID 与 BLE 设备类型识别，证据不足返回 Unknown ([69a0848](https://github.com/Stardust011/VoltNest/commit/69a08488c955acbc16d3dd2d435a7e4b4bb8f2a2))
+* **classify:** 补齐 Generic Desktop 页 HID 设备类 Usage ([b98a177](https://github.com/Stardust011/VoltNest/commit/b98a1774cf1ff86596182a2375866034686c8e08))
+* **core:** 回填通知投递的真实结果 ([013baed](https://github.com/Stardust011/VoltNest/commit/013baed4eeed1603285a9f671787605f504dd4e3))
+* **core:** 状态机、归一化、L2 分组与快照 ([50a0bb4](https://github.com/Stardust011/VoltNest/commit/50a0bb4dec8a0720d0152038a5f2d397639fe047))
+* **desktop-ui:** 启动回填时用缓存电量填充主读数 ([8c9fd1b](https://github.com/Stardust011/VoltNest/commit/8c9fd1b3363bd69cb691499eaf699acf0cb7ef96))
+* **desktop:** Linux 平台适配与采集失败原因透传 ([47c7042](https://github.com/Stardust011/VoltNest/commit/47c7042b28aef5bac47a09014d022befdaca2775))
+* **diagnostics:** 坏帧记录成因与原始字节，按种类去重 ([4e8d279](https://github.com/Stardust011/VoltNest/commit/4e8d279fb4c40f2c96c7f46e26847c4323989f77))
+* **diagnostics:** 底部加红框调试区，一键重现首次引导 ([827b619](https://github.com/Stardust011/VoltNest/commit/827b6194f54a9c9f49692e78f79a1aa1b5074ca0))
+* **diagnostics:** 未支持组合降为 debug 级，结论行只留参与判定的证据 ([49e6322](https://github.com/Stardust011/VoltNest/commit/49e6322a90c8d921e673c3f555de30cbc273facc))
+* **hid:** add multi-brand battery support ([f044428](https://github.com/Stardust011/VoltNest/commit/f04442882e36bc0ca1288c5cb81360ad4e777c83))
+* **hid:** 型号表改为运行时加载 ([f98005e](https://github.com/Stardust011/VoltNest/commit/f98005ec81b42039ca02a633799ea10c01d34786))
+* **hid:** 实现 hid-nearlink-ajazz 解析器与读取线程组 ([f0d551e](https://github.com/Stardust011/VoltNest/commit/f0d551eded79d0952447dad78eb0ef9715dc56ba))
+* **hid:** 支持 Linux hidraw 后端 ([526b431](https://github.com/Stardust011/VoltNest/commit/526b431282c8e0f8855a771d65979ca14c4fa408))
+* **mappings:** restrict rapoo device map to vendor id 24AE ([0ce93e7](https://github.com/Stardust011/VoltNest/commit/0ce93e7661f4ca8e2a68165ef9d274cadb262c23))
+* **mchose:** qhw 族改走设备主动推送，查询只在读数过期前探活 ([74e0920](https://github.com/Stardust011/VoltNest/commit/74e092053eabee7fc1b15a51aa3571e77a8f5905))
+* **mchose:** 对齐官方驱动的 GLW 电量采集 ([aa77064](https://github.com/Stardust011/VoltNest/commit/aa77064044d94a4dc03b3ee6873d4c843cf7ee51))
+* **mchose:** 接入 CZ/QHW 族键盘（G98 V3 / K87 V3） ([55f342a](https://github.com/Stardust011/VoltNest/commit/55f342a67f0ec93befbc4ec93f42c54fc1eb530e))
+* **onboarding:** 引导页两步结构重做，补齐进度、示意面板与无障碍关联 ([7d3d613](https://github.com/Stardust011/VoltNest/commit/7d3d613352a4eab14bd342cc71966beb43b5ebd1))
+* **panel:** 充电读数改绿色，与托盘环同色 ([67744bd](https://github.com/Stardust011/VoltNest/commit/67744bd815b2952eea340003b3f589db52849c78))
+* **platform:** Linux 上实现自启、单实例与 AUMID 适配 ([d97143e](https://github.com/Stardust011/VoltNest/commit/d97143e7b653e48c4317618818ae48168290e4a1))
+* **platform:** 自启动注册、单实例与 AUMID 声明 ([93cb9d8](https://github.com/Stardust011/VoltNest/commit/93cb9d83a5c33bc9c4f76471c39509d147249535))
+* **probe:** 新增「生成上报数据」，未识别设备可抓包产出 issue 报告 ([2cd44f4](https://github.com/Stardust011/VoltNest/commit/2cd44f440abc1b745d8c328b831e2014b98c7dda))
+* **probe:** 移除确认改用 AlertDialog，删记录一并删报告文件，预览不再落盘 ([6cd0653](https://github.com/Stardust011/VoltNest/commit/6cd0653262a1be1ce44d92736cdfcaab0b8db09f))
+* **provider:** 落地 Provider 契约与 PC-1..PC-7 不变量 ([d9655af](https://github.com/Stardust011/VoltNest/commit/d9655af3ba317c1ef11f9e2b872476964a10cc74))
+* **provider:** 采集节奏与出现检测间隔移入 data/profiles.json ([cb31a66](https://github.com/Stardust011/VoltNest/commit/cb31a668fee87c8287333e59376ab66eab4244e2))
+* **settings:** 低电量档位拆成两行列表，输入实时标红并分离临时输入 ([d010513](https://github.com/Stardust011/VoltNest/commit/d01051378fded3a81a99acf7b645c59d79c72c35))
+* **settings:** 阈值输入改用数字框并放开到 0～95，失焦不再自动调整 ([761da8a](https://github.com/Stardust011/VoltNest/commit/761da8a1205ea3489aa87906a97858205da21908))
+* **storage:** settings.json / state.json 原子读写与损坏恢复 ([37ac706](https://github.com/Stardust011/VoltNest/commit/37ac70625e7d413b3da02925e0f0201c62616eae))
+* **storage:** 数据目录改按 XDG Base Directory 解析 ([e2b1a6f](https://github.com/Stardust011/VoltNest/commit/e2b1a6f055f321cd8fb59ccb74c90a5df6c8eaf8))
+* **storage:** 设置加载告警提供可读文案 ([3c67375](https://github.com/Stardust011/VoltNest/commit/3c67375755be9bf53a92fb40744d4746dc155f7a))
+* **titlebar:** 标题栏改为最小化到托盘与退出程序 ([a5e9952](https://github.com/Stardust011/VoltNest/commit/a5e9952e7847c2f77f4cab5c9805b6c7dce0321b))
+* **tray:** 基础图标聚合「还有 N 台」 ([b050d81](https://github.com/Stardust011/VoltNest/commit/b050d819fc011032560dfb1de41039b7352be900))
+* **tray:** 没有设备时托盘用应用图标占位 ([6af756f](https://github.com/Stardust011/VoltNest/commit/6af756fed8dbc82daa3acc2ac05a289db277fa02))
+* **ui:** Vue 面板壳、快照订阅与纯函数测试 ([e45437c](https://github.com/Stardust011/VoltNest/commit/e45437cae88300e01ca78a577299bdd662e24cf1))
+* **ui:** 设备卡最左侧显示类型图标，去掉类型文字标签 ([40ac290](https://github.com/Stardust011/VoltNest/commit/40ac29024e0b029b462ce43f15f4f4376fed7c18))
+
+
+### 修复
+
+* **ble:** 已连接设备改用 retrieve_peripherals 枚举，修复取不到电量 ([0bd5ed7](https://github.com/Stardust011/VoltNest/commit/0bd5ed746cce8dad2f8f6acc176b7b9d46007d4e))
+* **ci:** 修复CI错误 ([fe23e31](https://github.com/Stardust011/VoltNest/commit/fe23e31a9347811be7ef962a84a862c2604fc4ff))
+* **ci:** 修正缓存作用域与冷缓存写入 ([9a51cfb](https://github.com/Stardust011/VoltNest/commit/9a51cfb11abcbd96287fc813f70c88058e544710))
+* **ci:** 更新 CI 配置以排除 changelog 变更时的构建步骤 ([619dc77](https://github.com/Stardust011/VoltNest/commit/619dc77ea62b8d11b4c392785c28b5117dfe6702))
+* **desktop-tray:** 冷启动无读数时托盘画蓝环，与面板「等待读数」同色 ([76e75d4](https://github.com/Stardust011/VoltNest/commit/76e75d408f4b9a44caa2e5f102e0b84d85d16441))
+* **desktop-tray:** 托盘每张图标右键可用，有设备时隐藏基础灰环 ([aa7d7d1](https://github.com/Stardust011/VoltNest/commit/aa7d7d1a17121034a58b861352fff562b6aac2bd))
+* **desktop-tray:** 等待读数的蓝环也把电量写进 tooltip ([e048825](https://github.com/Stardust011/VoltNest/commit/e048825c3eba849934e9df918813c01b823448d1))
+* **diagnostics:** 线程组状态变化主动推送，重启次数即时刷新 ([b49a2bd](https://github.com/Stardust011/VoltNest/commit/b49a2bde738382d14c379d572b8bf342ee9bfb73))
+* **diagnostics:** 通知触发节点改按阈值从高到低排列 ([c756e7d](https://github.com/Stardust011/VoltNest/commit/c756e7d425e9492e90f9346dc4f7885eebdeb939))
+* **grouping:** 合并设备在启动时只呈现一台 ([144e793](https://github.com/Stardust011/VoltNest/commit/144e7935e0d7b0a782d9c5e28d7512e7d36a3ad2))
+* **hid:** 补齐 Linux 安装形态的型号表目录探测 ([ff568d2](https://github.com/Stardust011/VoltNest/commit/ff568d2a40845e1d42120f235171bed3cb651f03))
+* **hid:** 钉死 MCHOSE GLW 键盘集合的 usage ([57b5ba9](https://github.com/Stardust011/VoltNest/commit/57b5ba9a982158f84441fffdcabc41fdf44feda0))
+* **mchose:** 按官方驱动族分派键盘电量，修复键盘全部枚举不到 ([445ea92](https://github.com/Stardust011/VoltNest/commit/445ea92c2132770223ceb7841a228744e9bc1aac))
+* **mchose:** 鼠标不再周期查询，改为连接时读一次 + 靠实时帧刷新 ([b031bfb](https://github.com/Stardust011/VoltNest/commit/b031bfb19189a21df8bf188ac22f5358dfecd69c))
+* **notify:** Toast 显式使用 VoltNest 的 AUMID 与图标 ([ab01ebb](https://github.com/Stardust011/VoltNest/commit/ab01ebb798cf7e6ea46e8b3a24c5ad905228bd82))
+* **notify:** 两档反转给出方向提示，改阈值后清理旧触发节点 ([77961a0](https://github.com/Stardust011/VoltNest/commit/77961a0a4f570bd9e0306976cb564f2952eadbf2))
+* **notify:** 改阈值后立即重建两档节点，并推送诊断刷新 ([ab44417](https://github.com/Stardust011/VoltNest/commit/ab444172d7f487ff947fff55ba0228f552ec9164))
+* **panel:** 充电闪电与电量数字改垂直居中，行高钉死 1em ([fa746fe](https://github.com/Stardust011/VoltNest/commit/fa746fe30451ab1015887380f06fa2338d610e53))
+* **release:** Locate signtool and add to PATH for Windows builds ([40dabb9](https://github.com/Stardust011/VoltNest/commit/40dabb9fa3539ca2e51c712bbeb52021886a5cb5))
+* **release:** release PR 只保留一个 GPG 签名提交 ([9c440fe](https://github.com/Stardust011/VoltNest/commit/9c440fe89d55a83e8e6f8c305f8116693d9224f5))
+* **release:** 修正 Windows 签名配置写入方式 ([7312741](https://github.com/Stardust011/VoltNest/commit/73127419dec5e1c5f4f71ea8912a4b0badfc9c3b))
+* **release:** 改用等值匹配更新 Cargo.lock，避免正则被 jsonpath 解析失败 ([7c4fd91](https://github.com/Stardust011/VoltNest/commit/7c4fd91a20f3a21f02c9bef9eba870f1d2582633))
+* **release:** 改由工作流同步 Cargo.lock 版本 ([8651983](https://github.com/Stardust011/VoltNest/commit/8651983626a7ef9ae8e9722fc64b6465c8f37cb7))
+* **release:** 更新文件路径以完成构建输出 ([387ddf3](https://github.com/Stardust011/VoltNest/commit/387ddf3d22101715ebe9927c30c76729969fd81c))
+* **release:** 用 Git Data API 以 github-actions[bot] 身份提交 Cargo.lock ([c3a911c](https://github.com/Stardust011/VoltNest/commit/c3a911c7dbc801ee4552c7a27b99a887d6bdf416))
+* **release:** 补回 0.1.1 升级时漏掉的 Cargo.lock ([716eff1](https://github.com/Stardust011/VoltNest/commit/716eff1b6afb51ee66bf3634d1b3dc748d346774))
+* **tray,panel:** 充电绿环保留电量弧 + 闪电与数字按基线对齐 ([ef06d5d](https://github.com/Stardust011/VoltNest/commit/ef06d5dfd7a9915030b96a9a251ceb99eab66a46))
+
+
+### 重构
+
+* **brand:** 界面徽标改用打包位图，便于整体替换 ([12f4fae](https://github.com/Stardust011/VoltNest/commit/12f4fae6f634593043e43fb626a7197c691f0f82))
+* **desktop-ui:** 精简设置页文案并改用下拉框选择过期速度 ([f332475](https://github.com/Stardust011/VoltNest/commit/f332475cdf9af7b8c309ba1139650ef7d1429c89))
+* **desktop-ui:** 精简诊断页字段与文案 ([23a5f88](https://github.com/Stardust011/VoltNest/commit/23a5f88c7f5221bf94e3911139869a92027e0d57))
+* **desktop-ui:** 组件层全量切换为 shadcn-vue 与 Tailwind 令牌 ([2180575](https://github.com/Stardust011/VoltNest/commit/21805757976a1766b959d0112a35db956285e465))
+* **diagnostics:** 结论行只留类型与方法，全部证据降为 debug ([7413f5d](https://github.com/Stardust011/VoltNest/commit/7413f5ddb41e98c494aaa48c19dfe65dc36df2a5))
+* **hid:** 型号表 source 仅作展示，不再按结构解析 ([99bf1bc](https://github.com/Stardust011/VoltNest/commit/99bf1bc51395e1e377f16f64ed8cd6772b9ae29d))
+* **hid:** 型号表改用厂商映射表并统一到 data/mappings ([aceac43](https://github.com/Stardust011/VoltNest/commit/aceac43ebe8eb0ea3c1720f0761c65d38050d9d4))
+* **hid:** 家族统一为 hid-vbas 并抽象品牌可扩展协议描述 ([f347700](https://github.com/Stardust011/VoltNest/commit/f3477007385109588b46c4fcfb37a2e342e33c9e))
+* **hid:** 读取线程改为按 ReplyTransport 一一对应的会话方法 ([ab6261b](https://github.com/Stardust011/VoltNest/commit/ab6261bf9e5c8b276e9e7995f9792f9ab4fe38f2))
+* **mappings:** config_version 改为抓取时刻 ([c9243cc](https://github.com/Stardust011/VoltNest/commit/c9243ccb9ec12ddc083842a7612b4efaa9dce8e2))
+* **mappings:** make rapoo vendor filter a list ([9681454](https://github.com/Stardust011/VoltNest/commit/968145493c06a5127996a667208f8054125e7f1a))
+* **naming:** 统一上位机侧命名并收敛一词多义 ([4f456e3](https://github.com/Stardust011/VoltNest/commit/4f456e3f0f44074500d26b598bd1750ca5d8f1e8))
+* **provider:** 三档阈值改为逐档秒值，去掉倍率换算 ([78ccbf1](https://github.com/Stardust011/VoltNest/commit/78ccbf10ab4db30d48b111c7231a2c9e496be321))
+* **provider:** 阈值链基线与三档倍率移入 data/profiles.json ([310467d](https://github.com/Stardust011/VoltNest/commit/310467ddd1f03d5acdc4339a138c50cb96ae6219))
+* **settings:** 「数据过期速度」改为「刷新速率」 ([c2143f0](https://github.com/Stardust011/VoltNest/commit/c2143f0e9dec123a5764dac57dad37b1307472a9))
+* **ui:** 显示调试改为开关并挪进调试区 ([6f522a5](https://github.com/Stardust011/VoltNest/commit/6f522a5ce3c34907a6a916399f34f19a1ba11719))
+* 精简全仓注释与面向用户文案 ([6769fb7](https://github.com/Stardust011/VoltNest/commit/6769fb720d9f3a55005ce4d95afd40627bbb8a93))
+
+
+### 文档
+
+* **hid:** 精简 GLW 集合钉死的注释 ([9c47d7c](https://github.com/Stardust011/VoltNest/commit/9c47d7c999d15f4836de4e509a53a71d55b5aa2a))
+* **naming:** 新增上位机命名审计与重命名方案 ([ff423a6](https://github.com/Stardust011/VoltNest/commit/ff423a6b45b59121818c67d8e314d5491c373faf))
+* README 补充 Linux 构建、运行与已知限制 ([25057a3](https://github.com/Stardust011/VoltNest/commit/25057a304c01ce3c9ddbac1916fe94be1bf96867))
+* **readme:** 补充开发流程、指标与已知限制 ([d3f087a](https://github.com/Stardust011/VoltNest/commit/d3f087a9d4affc595db97b2db331cee93cc7135f))
+
+
+### 测试
+
+* **app:** 采集线程 panic 隔离与退避序列 ([696f30b](https://github.com/Stardust011/VoltNest/commit/696f30b03c7c3a4fbb63564b26f6079356ee311b))
+* **core:** 按阈值定位通知条目而不是取下标 ([dd2f12b](https://github.com/Stardust011/VoltNest/commit/dd2f12bedf021c6ab6b02770ce042fd437fd7075))
+* **hid:** 补齐命令字过滤、成因文本与布局校验分支的覆盖 ([66b9cdd](https://github.com/Stardust011/VoltNest/commit/66b9cdd1b2f48ed5a78507c3ed79cb250eb3b02a))
+* **hid:** 补齐诊断文本与解码分支的覆盖 ([161f17e](https://github.com/Stardust011/VoltNest/commit/161f17e5497ce6eca4cc27dc78942d25e15ed418))
+* **storage:** 隔离 Linux 路径语义测试避免 Windows 上误报失败 ([e178a29](https://github.com/Stardust011/VoltNest/commit/e178a29ef9a05dc5734176622b28205ed4026c6d))
+
+
+### 构建
+
+* **deps:** bump actions/checkout from 4 to 7 in the actions group ([6453a84](https://github.com/Stardust011/VoltNest/commit/6453a84d6dafbf5dfddf71f99007a4cd3ec5860b))
+* **deps:** bump actions/checkout from 4 to 7 in the actions group ([6453a84](https://github.com/Stardust011/VoltNest/commit/6453a84d6dafbf5dfddf71f99007a4cd3ec5860b))
+* **deps:** 升级 commitlint 到 21.2.4 ([9a03741](https://github.com/Stardust011/VoltNest/commit/9a0374135579f495207661f7306cd6de638cbe08))
+* **desktop:** 按平台拆分打包目标，Linux 出 deb 与 AppImage ([7b436f6](https://github.com/Stardust011/VoltNest/commit/7b436f6d9b73edea24516c33c396080956eb10ef))
+* **pnpm:** 前端脚本内部串联改用 pnpm ([82f1248](https://github.com/Stardust011/VoltNest/commit/82f1248478211ba5a97e1313608ede23dc432bb0))
+* **pnpm:** 包管理从 npm 迁移到 pnpm workspace ([072b857](https://github.com/Stardust011/VoltNest/commit/072b8576cbc53d85e221de3ae24e098d626088f7))
+* **release:** 让 release PR 同步更新 Cargo.lock 版本 ([266343f](https://github.com/Stardust011/VoltNest/commit/266343f9c111a5f879d28e5e82aa303cc66a1fb8))
+* **scripts:** 前端脚本统一从仓库根目录运行 ([89d363b](https://github.com/Stardust011/VoltNest/commit/89d363b8119c92ad1c2da870f981832be87fbea7))
+
+
+### 持续集成
+
+* **deps:** cargo 生态补上依赖冷却期 ([915166f](https://github.com/Stardust011/VoltNest/commit/915166f1e70f338f77836edde4ae2999750024b3))
+* **deps:** 禁止 dependabot 升级 typescript 主版本 ([4c8b7f3](https://github.com/Stardust011/VoltNest/commit/4c8b7f35612edd9c91981e65eb8a584a2b2fb372))
+* fmt、clippy、测试、覆盖率、前端与矩阵校验 ([41cdc25](https://github.com/Stardust011/VoltNest/commit/41cdc25731483cc0822a998579c1365a43935959))
+* **format:** 补齐根目录文本与 Python 脚本的格式门禁 ([443a2b0](https://github.com/Stardust011/VoltNest/commit/443a2b0b13012c22ae00ab005128b5744ae0f262))
+* **mappings:** 仅在 devices 有差异时开 PR ([2f96f41](https://github.com/Stardust011/VoltNest/commit/2f96f4145c754102b5c5679d59f4e1e9046cad0a))
+* **mappings:** 抓取后统一型号表排版再落盘 ([0640a6f](https://github.com/Stardust011/VoltNest/commit/0640a6ffadf1d1e351a15af4a4da62df65b66f55))
+* **mappings:** 每月自动抓取厂商型号表 ([7c6a1c8](https://github.com/Stardust011/VoltNest/commit/7c6a1c804bae2923521b100d677ac87f49e78f81))
+* release 构建只留在 release.yml ([e44644e](https://github.com/Stardust011/VoltNest/commit/e44644e23d04b5d6d91200ba4e7d2db3622623e3))
+* **release:** 尝试修复代码签名流程 ([7e37335](https://github.com/Stardust011/VoltNest/commit/7e3733586775a9cfa33e41374fa9a7f10af03248))
+* **release:** 恢复 master 触发，补齐 manifest 并支持按 tag 重打包 ([bff0072](https://github.com/Stardust011/VoltNest/commit/bff0072f6594a87bdd1426382aea5251af9e54ae))
+* **release:** 打包前增加 release 模式编译检查 ([3142c8c](https://github.com/Stardust011/VoltNest/commit/3142c8c81730c1dda9cbfe4ba49c22296766d3da))
+* **release:** 改由 release-please 生成版本与更新日志 ([3025b45](https://github.com/Stardust011/VoltNest/commit/3025b45fcd49da47e164cef5a60ab04ec8d68f34))
+* **release:** 添加代码签名流程 ([72f602d](https://github.com/Stardust011/VoltNest/commit/72f602d9fb7e0667682b06cbf8e5be983f91bb53))
+* **workflows:** skip release PRs and remove release check ([c756a72](https://github.com/Stardust011/VoltNest/commit/c756a7280722324106c276e61fc3951b8073db6d))
+* 优化ci流程 ([67e80fd](https://github.com/Stardust011/VoltNest/commit/67e80fd762a52c5f54788a0e36d022415deb86f2))
+* 修正触发分支并补 release 构建冒烟 ([68bf2ae](https://github.com/Stardust011/VoltNest/commit/68bf2ae1f72afccba43ce18d01e98f29b557d36d))
+* 升级 pnpm/action-setup 到 v6 ([be3847e](https://github.com/Stardust011/VoltNest/commit/be3847e481df625540562c2126afbcd137b06667))
+* 升级 tauri-action 1 与 create-pull-request 8 ([bc8f4a4](https://github.com/Stardust011/VoltNest/commit/bc8f4a4de5b52f85edc78b491edf379a0722c7ae))
+* 增加 Linux 构建与测试任务 ([7a4193f](https://github.com/Stardust011/VoltNest/commit/7a4193f84d5752c2a703be49b280f23f151f30fe))
+* 新增 tag 发布、依赖扫描与每周漂移检测 ([b7040d9](https://github.com/Stardust011/VoltNest/commit/b7040d95b96fcad8e2dbff90a2692058193e97b4))
+* 移除覆盖率门禁 ([d532e42](https://github.com/Stardust011/VoltNest/commit/d532e42a69969f6378c8006ecddd368b0e2e9448))
+
+
+### 维护
+
+* **bundle:** 卸载器勾选「删除应用数据」时清理 %APPDATA%\VoltNest ([3f93f72](https://github.com/Stardust011/VoltNest/commit/3f93f72cba3eca8942ac170dd48ad2604545b5b5))
+* **comments:** 精简 hid crate Linux 后端选型注释 ([3b0e416](https://github.com/Stardust011/VoltNest/commit/3b0e416b4c41c49d5179425cd4fdfa0abd1fd813))
+* **config:** 关闭 WebView 调试模式 ([0d5c3ce](https://github.com/Stardust011/VoltNest/commit/0d5c3ceef7505280d54f64a3ab8aeeb4b25e923a))
+* **deps:** 升级 uuid 1.29 与 winreg 0.56 ([673d2cf](https://github.com/Stardust011/VoltNest/commit/673d2cf71b20aae3fad4c571eed0c626443c7e9e))
+* **deps:** 取消版本上限并按最新版本解析 ([1309f6f](https://github.com/Stardust011/VoltNest/commit/1309f6fd13002833fa8cea0d02b9e5e185f53ed8))
+* **format:** npm run format 改为全仓格式化 ([72fb35d](https://github.com/Stardust011/VoltNest/commit/72fb35d3dce550eedaf951cb5d43068b913c0075))
+* **format:** 格式化脚本纳入 Python（ruff） ([750b26c](https://github.com/Stardust011/VoltNest/commit/750b26c3d50081f7add00e0b9f477befc49ea1fc))
+* **frontend:** 引入 Prettier 统一前端排版 ([eb70949](https://github.com/Stardust011/VoltNest/commit/eb709496f587254f64b9f1c62a702e86668b7052))
+* **hooks:** 增加提交信息与代码格式的 Git 钩子 ([ce9f981](https://github.com/Stardust011/VoltNest/commit/ce9f9816570d668c34efda2f4848ccfe04a10f98))
+* **hooks:** 提交钩子改用 husky 与 commitlint ([01eeb5d](https://github.com/Stardust011/VoltNest/commit/01eeb5d8ec6f82d1118fe5ac9d55f5e4adfef08a))
+* **lint:** 收敛新工具链下的 clippy 与 rustfmt 告警 ([d4e9609](https://github.com/Stardust011/VoltNest/commit/d4e96094b9c33be0e5c3ab0f9fa2f6c894786ce0))
+* **mappings:** 同步迈从型号表 ([91f434d](https://github.com/Stardust011/VoltNest/commit/91f434dbc846e4062caf6c4ba2675f3f15d15120))
+* **mappings:** 型号表统一为 LF ([7cf923b](https://github.com/Stardust011/VoltNest/commit/7cf923b40015b416053c418318b33d9846e7cf8c))
+* **master:** release 0.1.0 ([8bf3fe4](https://github.com/Stardust011/VoltNest/commit/8bf3fe4d1e9e5ffe3389540eb27cf1325c50a597))
+* **master:** release 0.1.0 ([a1170da](https://github.com/Stardust011/VoltNest/commit/a1170da025b509c4585483e0d91d51a5d967b546))
+* **master:** release 0.1.1 ([dc8b2a1](https://github.com/Stardust011/VoltNest/commit/dc8b2a1e6b5396a80b95d7a677e53086d6b94e15))
+* **master:** release 0.1.1 ([4738555](https://github.com/Stardust011/VoltNest/commit/4738555bfddd6470edb8760b95a1911a58c60a91))
+* **master:** release 0.2.0 ([c8a3ac9](https://github.com/Stardust011/VoltNest/commit/c8a3ac9c0ada106c6accdcae4efd5c8ef60a7789))
+* **master:** release 0.2.0 ([5a54348](https://github.com/Stardust011/VoltNest/commit/5a54348db3075c30e3e1d38bf2b64111a3a87a67))
+* **master:** release 0.2.1 ([3289730](https://github.com/Stardust011/VoltNest/commit/3289730f69757a8fa5e86f96a63756f887795814))
+* **master:** release 0.2.1 ([ebcb2b3](https://github.com/Stardust011/VoltNest/commit/ebcb2b32f1a1166310e6b97f511da0265db2e5fc))
+* **master:** release 0.2.2 ([da01d2d](https://github.com/Stardust011/VoltNest/commit/da01d2ddb9eaeb4685072c47399dce7ef49e8c1b))
+* **master:** release 0.2.2 ([aef2ce4](https://github.com/Stardust011/VoltNest/commit/aef2ce430279a2e37c897f9c8d5768c6be489fbd))
+* **master:** release 0.2.3 ([ecb5ba1](https://github.com/Stardust011/VoltNest/commit/ecb5ba1002fb0f69ee477258b882717e5c679155))
+* **master:** release 0.2.3 ([00e16c5](https://github.com/Stardust011/VoltNest/commit/00e16c5ff783aca1bf3faa9e96b9e09145998421))
+* **master:** release 0.2.4 ([75a1b00](https://github.com/Stardust011/VoltNest/commit/75a1b00e665ffa25d9c1fd53ac2990bd80ecd6c5))
+* **master:** release 0.2.4 ([494e796](https://github.com/Stardust011/VoltNest/commit/494e7968c29a2081eb3f47fb7144f3117a2baad7))
+* release 0.2.4 ([33e2734](https://github.com/Stardust011/VoltNest/commit/33e2734bfce2f7b5cee6812b3397dfb538472f1d))
+* **release:** 同步 Cargo.lock 至 0.2.0 ([49d2a38](https://github.com/Stardust011/VoltNest/commit/49d2a382caa51e205eaa3061185665c17da8580a))
+* **repo:** 忽略 .voltnest 兜底目录 ([ce9d2bc](https://github.com/Stardust011/VoltNest/commit/ce9d2bce4f1c0fa17752e607f1dd2172b765dbf6))
+* **repo:** 清理内部规格文档与探针工具，统一注释表述 ([4753fe9](https://github.com/Stardust011/VoltNest/commit/4753fe940185f1f5eb3ac4a1fd6ae6c57de06872))
+* **tauri:** 允许 MSVC 链接器提示 ([fc6dd78](https://github.com/Stardust011/VoltNest/commit/fc6dd78d147c5b3b7fe6a0513b020c2f2fa4e80b))
+* **web:** 升级前端工具链至 vite 8 / vitest 5 / TS 6 ([a8f350f](https://github.com/Stardust011/VoltNest/commit/a8f350ffad8d59590656bce720d5efd09bf8048b))
+* 初始化 workspace 骨架 ([b64ff8d](https://github.com/Stardust011/VoltNest/commit/b64ff8d1ed798a54ac04ceb0163e132937e31e8a))
+
+
+### 样式
+
+* **ble:** 修正 runtime 超长行的 rustfmt 差异 ([49a1cff](https://github.com/Stardust011/VoltNest/commit/49a1cff6e9657ffaaf86ac4702c52f00d747b598))
+* **core:** 按 rustfmt 归一 notify.rs ([b6390e1](https://github.com/Stardust011/VoltNest/commit/b6390e146eae1509f8331b9e982f860dde401399))
+* **hid:** 按 rustfmt 归一 frame.rs 与 mchose.rs ([2dd0e8e](https://github.com/Stardust011/VoltNest/commit/2dd0e8e8b62a158b334c2e07dba2ec19ebd1caa5))
+* **mappings:** 型号表纳入 prettier 统一排版 ([b059d6e](https://github.com/Stardust011/VoltNest/commit/b059d6e2b360db91c09e459d13848a7128dd2cea))
+* **panel:** 重排设备卡片布局，收紧徽章与错误文本尺寸 ([5d1ed86](https://github.com/Stardust011/VoltNest/commit/5d1ed86e3c52885cdde7420b174f3ace56bedce9))
+* **platform:** 应用 rustfmt ([46a94a8](https://github.com/Stardust011/VoltNest/commit/46a94a89181d546218b16cf9ef8e56af52c10f4f))
+* **provider:** 统一 rustfmt 格式并整理多行构造 ([ecd26aa](https://github.com/Stardust011/VoltNest/commit/ecd26aae2ade031fd15ae669dd202c6d92375393))
+* 格式化 Markdown 表格、JSON 与 Python 抓取脚本 ([40197fd](https://github.com/Stardust011/VoltNest/commit/40197fd02653c0f7239a7007df4b06e3b3b81213))
+* 统一 rustfmt 与 prettier 格式 ([eb7a872](https://github.com/Stardust011/VoltNest/commit/eb7a8726fed4274ef5d56168235de22b9da5f9a0))
+
 ## [0.2.4](https://github.com/Stardust011/VoltNest/compare/v0.2.3...v0.2.4) (2026-10-29)
 
 
