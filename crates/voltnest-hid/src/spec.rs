@@ -180,6 +180,30 @@ impl BatteryFields {
     }
 }
 
+/// 监听帧里状态字节的语义。
+///
+/// 两种形状互不相同，不能共用一个「低半字节」字段：老族把一个字节拆成满电/充电两个半字节，
+/// GLW 族则把整字节当**门控** —— 它的取值既决定充电状态，又决定这一帧的电量是否可信。
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum ListenStatus {
+    /// 高半字节 = 满电标志（非零即按 100% 上报），低半字节 = 充电状态（等于该值即充电中）。
+    Nibbles {
+        /// 低半字节等于该值表示「充电中」。
+        charging_low_nibble: u8,
+    },
+    /// 整字节是充电标志，同时是电量可信度的门控。
+    ///
+    /// 迈从 GLW 的 `FA FB 07 <pct> <flag>` 就是这种：`flag == 0` 表示刚停充、电量可信；
+    /// `flag == 1` 表示正在充电，官方在这一帧上**直接 return**（充电中的读数不可信），
+    /// 既不更新电量也不更新状态。
+    Gate {
+        /// 该字节取这些值 → 充电中。
+        charging: &'static [u8],
+        /// 该字节取这些值时，本帧的电量才可信；其它取值整帧丢弃。
+        usable: &'static [u8],
+    },
+}
+
 /// 设备**自发上报**（宿主未提问）的电量帧布局（与应答帧布局无关，两条通道各有一套）。
 ///
 /// 只描述「怎么认出宿主监听通道上的一帧电量上报、字段在哪」；通道（输入报告）由运行时决定。
@@ -194,35 +218,43 @@ impl BatteryFields {
 /// | 2.4G | `0x0A` | 4 | 5 | 6 |
 ///
 /// 2.4G 帧前面多 3 字节：官方解析器对无线帧先 `array("space0", length:3)` 再读 `type`。
+///
+/// 迈从 GLW 键盘是另一种形状（官方 `handleMessage` 的 `250/251` 分支）：双字节头 `FA FB`、
+/// 第三字节是子标签、第四字节电量、第五字节是充电门控；另有 `FA FB FF` 一帧只报充电状态。
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct ListenSpec {
     /// 帧首字节（命令字）必须等于该值。
     pub cmd: u8,
+    /// 第二头字节。`None` = 单字节头（老族 `0x0A`）；`Some(0xFB)` = `FA FB` 双字节头。
+    pub cmd2: Option<u8>,
     /// 子标签（`type`）所在下标。
     pub subtag_index: usize,
     /// 子标签必须等于该值（电量上报包的 `type`）。
     pub subtag_value: u8,
-    /// 电量字节下标。
-    pub percent_index: usize,
-    /// 状态字节下标：高半字节 = 满电标志，低半字节 = 充电状态。
+    /// 电量字节：`(下标, 掩码)`。`None` = 本帧只通报充电状态、不含电量（GLW 的 `FA FB FF`）。
+    pub percent: Option<(usize, u8)>,
+    /// 状态字节下标。
     pub status_index: usize,
-    /// 状态低半字节等于该值表示「充电中」。
-    pub charging_low_nibble: u8,
+    /// 状态字节语义。
+    pub status: ListenStatus,
 }
 
 impl ListenSpec {
     /// 帧至少要有多少字节才装得下全部字段。
     pub const fn min_len(&self) -> usize {
-        let max = if self.subtag_index > self.percent_index {
-            self.subtag_index
-        } else {
-            self.percent_index
-        };
-        let max = if max > self.status_index {
-            max
-        } else {
-            self.status_index
-        };
+        let mut max = self.subtag_index;
+        if max < self.status_index {
+            max = self.status_index;
+        }
+        if let Some((index, _)) = self.percent
+            && max < index
+        {
+            max = index;
+        }
+        // 双字节头要求第二字节存在。
+        if self.cmd2.is_some() && max < 1 {
+            max = 1;
+        }
         max + 1
     }
 }
@@ -345,12 +377,128 @@ pub struct RequestTemplate {
     pub retry: u8,
 }
 
+/// 查询报文里「数据块偏移」字段的位置：偏移随板载档位变化时用来重算报文。
+///
+/// 只有迈从 GLW 的 `0x05` 用到（官方按 `64 × profile` 定位功能配置块）。字段全在 payload 内，
+/// 下标相对 payload 起点。
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct BlockOffset {
+    /// 偏移低字节的下标。
+    pub lo_index: usize,
+    /// 偏移高字节的下标。
+    pub hi_index: usize,
+    /// 折叠校验和的下标；`None` = 该协议头部没有校验和。
+    pub checksum_index: Option<usize>,
+    /// 参与校验和的长度字节下标（官方 `sum([size, lo, hi, 0])`）。`None` = 不计长度。
+    pub size_index: Option<usize>,
+    /// 每档板载的字节跨度。
+    pub stride: u16,
+}
+
+/// 「先问一次设备当前板载档位」的探测描述。
+///
+/// 官方 `getBase()` → `Ne()`：读 56 字节，`[0]` 是板载下标、`[1]` 是档位数、`[2..]` 是档位顺序表。
+/// 顺序表是 `0..N` 的一个排列时，真实档位是 `order[active]`（板载排序）；否则就是 `active` 本身。
+///
+/// 声明它之后，查询会先读一帧 base，再按解析出的档位构造后续查询（见 [`BlockOffset`]）。
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct ProfileProbe {
+    /// 读 base 的查询模板。
+    pub request: RequestTemplate,
+    /// payload 内「当前板载下标」的位置。
+    pub active_index: usize,
+    /// payload 内「档位数」的位置；`None` = 不校验。
+    pub length_index: Option<usize>,
+    /// payload 内档位顺序表的起点。
+    pub order_offset: usize,
+    /// 顺序表项数。
+    pub order_len: usize,
+}
+
+impl ProfileProbe {
+    /// 从 base 应答的 payload 解出当前档位；判定不成立时按 0 处理（官方 `Ne()` 的 `else 0`）。
+    pub fn resolve(&self, payload: &[u8]) -> u8 {
+        let Some(active) = payload
+            .get(self.active_index)
+            .copied()
+            .filter(|value| usize::from(*value) < self.order_len)
+        else {
+            return 0;
+        };
+        let Some(order) = payload.get(self.order_offset..self.order_offset + self.order_len) else {
+            return 0;
+        };
+        // 顺序表是 `0..N` 的排列时按它取值（官方 `isSorted + isUnique` 的合并判据）。
+        let arranged = order.iter().enumerate().all(|(index, value)| {
+            usize::from(*value) < self.order_len
+                && order[..index].iter().all(|other| other != value)
+        });
+        if !arranged {
+            return active;
+        }
+        let length_ok = self.length_index.is_none_or(|index| {
+            payload
+                .get(index)
+                .is_some_and(|value| usize::from(*value) <= self.order_len)
+        });
+        if !length_ok {
+            return 0;
+        }
+        order.get(usize::from(active)).copied().unwrap_or(0)
+    }
+}
+
 impl RequestTemplate {
-    /// 按模板拼一帧可直接 `write` 的报文。
+    /// 按模板拼一帧可直接 `write` 的报文（数据块偏移取 0）。
     ///
     /// 若协议带报告 ID，报告 ID 必须写在首字节 —— 这是 hidapi 的约定，
     /// 写错会被设备当成普通数据丢掉，表现为「查询永远没响应」。
     pub fn build(&self, report_id: Option<u8>) -> Vec<u8> {
+        self.build_at(report_id, 0, None)
+    }
+
+    /// 按板载档位 `profile` 拼报文：偏移与折叠校验和随档位重算。
+    ///
+    /// 迈从 GLW 的 `0x05` 查询按 `64 × profile` 定位功能配置块（官方
+    /// `getFuncConfig(t) → _simpleGetCommand(5, 64*t, 64)`）。偏移落在 payload 内，
+    /// 且官方头部的折叠校验和是 `size + lo + hi + 0` 的**求和**（不是异或 —— 只有
+    /// `lo = hi = 0` 时两者才同值，按 profile 偏移后就会算错）。
+    ///
+    /// `block` 为 `None` 时 `profile` 不参与，与 [`Self::build`] 等价。
+    pub fn build_at(
+        &self,
+        report_id: Option<u8>,
+        profile: u8,
+        block: Option<BlockOffset>,
+    ) -> Vec<u8> {
+        let mut buf = self.build_raw(report_id);
+        let Some(offset) = block else {
+            return buf;
+        };
+        let raw = u16::from(profile) * offset.stride;
+        let base = usize::from(report_id.is_some()) + self.payload_offset;
+        if let Some(slot) = buf.get_mut(base + offset.lo_index) {
+            *slot = (raw & 0xFF) as u8;
+        }
+        if let Some(slot) = buf.get_mut(base + offset.hi_index) {
+            *slot = (raw >> 8) as u8;
+        }
+        if let Some(index) = offset.checksum_index {
+            let size = offset
+                .size_index
+                .and_then(|index| buf.get(base + index).copied())
+                .unwrap_or(0);
+            let lo = (raw & 0xFF) as u8;
+            let hi = (raw >> 8) as u8;
+            if let Some(slot) = buf.get_mut(base + index) {
+                *slot = size.wrapping_add(lo).wrapping_add(hi);
+            }
+        }
+        buf
+    }
+
+    /// 只按静态 payload 拼报文，不做板载档位替换。
+    fn build_raw(&self, report_id: Option<u8>) -> Vec<u8> {
         let mut buf = vec![0u8; self.report_len];
         if let Some(id) = report_id
             && let Some(first) = buf.first_mut()
@@ -461,9 +609,10 @@ pub struct BrandSpec {
     pub frame: FrameLayout,
     /// 电量字段。
     pub battery: BatteryFields,
-    /// 监听通道上「设备自发上报的电量帧」的识别模板。
+    /// 监听通道上「设备自发上报的电量帧」的识别模板。可声明多条（同一设备用不同帧分别报
+    /// 电量与充电状态，如迈从 GLW 的 `FA FB 07` 与 `FA FB FF`）。
     /// `None` = 该协议没有这条旁路（读数只从查询应答取）。
-    pub listen: Option<ListenSpec>,
+    pub listen: Option<&'static [ListenSpec]>,
     /// 设备**主动推送**的电量帧（与应答共用帧头、命令字不同）。
     ///
     /// 与 `listen` 是两条互斥的旁路：`listen` 认「无头 + 首字节命令」，本字段认「有头 + 另一条命令」。
@@ -472,6 +621,12 @@ pub struct BrandSpec {
     pub notify: Option<NotifySpec>,
     /// 主动查询模板。`None` = 纯监听（不向设备发任何报文）。
     pub request: Option<RequestTemplate>,
+    /// 查询报文里的「数据块偏移」字段：声明后查询按当前板载档位构造（见 [`BlockOffset`]）。
+    ///
+    /// 迈从 GLW 的功能配置块按 `64 × profile` 分块，官方始终读**当前档位**那一块。
+    pub block_offset: Option<BlockOffset>,
+    /// 连接后先读一次「当前板载档位」的探测描述（见 [`ProfileProbe`]）。`None` = 不需要探测。
+    pub profile_probe: Option<ProfileProbe>,
     /// 多包应答的重组约定。`None` = 一次查询由单条报告应答（绝大多数品牌）。
     ///
     /// 声明后，这条通道的输入报告改为「先拼包再解析」：`frame` / `battery` 描述的是
@@ -629,13 +784,25 @@ impl BrandSpec {
             return Err(SpecError::ChargingOverlapsPercent { brand: self.id });
         }
 
-        // 监听帧的三个字段各占一个字节，重叠等于把同一字节当两种语义。
-        if let Some(listen) = self.listen
-            && (listen.percent_index == listen.status_index
-                || listen.subtag_index == listen.percent_index
-                || listen.subtag_index == listen.status_index)
-        {
-            return Err(SpecError::ListenLayoutInvalid { brand: self.id });
+        // 监听帧的每个字段各占一个字节，重叠等于把同一字节当两种语义；双字节头还要求
+        // 子标签不能落进头里（`FA FB` 占了 `[0]`、`[1]`）。
+        if let Some(listen) = self.listen {
+            for frame in listen {
+                let mut fields = Vec::with_capacity(3);
+                fields.push(frame.subtag_index);
+                fields.push(frame.status_index);
+                if let Some((index, _)) = frame.percent {
+                    fields.push(index);
+                }
+                let overlap = fields
+                    .iter()
+                    .enumerate()
+                    .any(|(index, field)| fields[index + 1..].contains(field));
+                let header = if frame.cmd2.is_some() { 2 } else { 1 };
+                if overlap || frame.subtag_index < header {
+                    return Err(SpecError::ListenLayoutInvalid { brand: self.id });
+                }
+            }
         }
 
         // 推送帧：掩码为 0 会把「充着电」读成 0%；命令字与应答相同则同一帧会被两条通道用
@@ -686,6 +853,35 @@ impl BrandSpec {
             if self.usage_page != 0 && req.usage_page != self.usage_page {
                 return Err(SpecError::RequestPageDiffersFromRead { brand: self.id });
             }
+        }
+
+        // 板载档位偏移的字段必须落在静态 payload 内，否则「按档位重算」写不到该写的字节。
+        if let Some(block) = self.block_offset {
+            let Some(req) = self.request else {
+                return Err(SpecError::RequestLayoutInvalid { brand: self.id });
+            };
+            let max = [
+                Some(block.lo_index),
+                Some(block.hi_index),
+                block.checksum_index,
+                block.size_index,
+            ]
+            .into_iter()
+            .flatten()
+            .max()
+            .unwrap_or_default();
+            if block.stride == 0 || block.lo_index == block.hi_index || max >= req.payload.len() {
+                return Err(SpecError::RequestLayoutInvalid { brand: self.id });
+            }
+        }
+
+        // 档位探测至少要有一个顺序表项，且不能与「当前下标」抢同一字节。
+        if let Some(probe) = self.profile_probe
+            && (probe.order_len == 0
+                || probe.active_index == probe.order_offset
+                || probe.request.payload.len() < probe.order_offset + probe.order_len)
+        {
+            return Err(SpecError::RequestLayoutInvalid { brand: self.id });
         }
 
         match self.transport {
@@ -1516,11 +1712,14 @@ mod tests {
         // 单帧监听的最小长度 = 三个下标的较大者 + 1。
         let listen = ListenSpec {
             cmd: 0xFA,
+            cmd2: None,
             subtag_index: 5,
             subtag_value: 0x03,
-            percent_index: 2,
+            percent: Some((2, 0xFF)),
             status_index: 7,
-            charging_low_nibble: 0,
+            status: ListenStatus::Nibbles {
+                charging_low_nibble: 0,
+            },
         };
         assert_eq!(listen.min_len(), 8);
         // 多包重组的包长 = 头部两个下标的较大者 + 1。
@@ -1617,14 +1816,17 @@ mod tests {
         // 监听帧：子标签与电量抢同一字节。
         rejects(
             |s| {
-                s.listen = Some(ListenSpec {
+                s.listen = Some(&[ListenSpec {
                     cmd: 0xFA,
+                    cmd2: None,
                     subtag_index: 1,
                     subtag_value: 0x03,
-                    percent_index: 1,
+                    percent: Some((1, 0xFF)),
                     status_index: 2,
-                    charging_low_nibble: 0,
-                })
+                    status: ListenStatus::Nibbles {
+                        charging_low_nibble: 0,
+                    },
+                }])
             },
             |e| matches!(e, SpecError::ListenLayoutInvalid { .. }),
             "监听帧字段重叠",
