@@ -54,7 +54,7 @@ jobs:
       # release-please 的 extra-files 处理不了 Cargo.lock（带 [@] 的 jsonpath 会被拆坏），
       # 改为在 release PR 分支上对齐锁文件，再走 Git Data API 重写成单提交：
       # 提交由 GitHub 服务端签名（Verified），作者是 github-actions[bot]。
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         if: steps.release-note.outputs.released != 'true'
         with:
           fetch-depth: 0
