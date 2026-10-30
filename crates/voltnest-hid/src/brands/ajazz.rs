@@ -60,6 +60,8 @@ pub const SPEC: BrandSpec = BrandSpec {
     fallback_report_id: None,
     expected_interval_ms: 30_000,
     // 型号表由运行时从映射目录读取（`crate::mappings`），此处只声明文件名。
+    block_offset: None,
+    profile_probe: None,
     device_table_file: "ajazz.json",
     // 单协议品牌：没有变体，也不按型号表字段分派。
     variants: &[],
