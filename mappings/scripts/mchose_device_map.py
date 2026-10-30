@@ -131,6 +131,11 @@ SHARED_RECEIVER_RULES: dict[tuple[int, int], dict] = {
     (0x3837, 0x1017): _KB_RECEIVER_1015,
 }
 
+# 升级模式的孪生 PID：设备进入 bootloader 后换这个 PID 出现，官方只用它做 OTA
+# （`bootUpdateMode.key`），不读电量。表里标成 `upgrade`，采集端据此排除 —— 否则
+# 升级过程中会对着 bootloader 发查询。
+UPGRADE_PIDS: set[tuple[int, int]] = {(0x3837, 0x2010)}
+
 # 同一 VID:PID 被多个型号登记时，保留哪一条：数字越小越可信
 SOURCE_RANK = {"cardList": 0, "cz": 1, "bundle": 2, "mouse-table": 3}
 
@@ -623,7 +628,8 @@ def build_output(
             key = f"{vid}:{pid}" if key_format == "dec" else f"{vid:04X}:{pid:04X}"
             entry_mode = overrides.get((vid, pid), mode)
             if (vid, pid) in SHARED_RECEIVER_RULES:
-                entry_mode = "2.4G"  # 规则命中的 PID 都是接收器侧接口
+                # 规则命中的 PID 都是接收器侧接口；其中孪生 PID 是升级模式，不参与采集。
+                entry_mode = "upgrade" if (vid, pid) in UPGRADE_PIDS else "2.4G"
             grouped.setdefault(key, []).append(
                 {
                     "vid": vid,

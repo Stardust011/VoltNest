@@ -18,7 +18,7 @@
 //! | [`decode_listen`] | 监听通道上的自发上报帧（混着位移、媒体键等大量无关帧） | 静默丢弃 |
 //! | [`decode_assembled`] | 多包应答经 [`Reassembler`] 拼合之后 | 返回 `None` |
 
-use crate::spec::{BatteryFields, BrandSpec};
+use crate::spec::{BatteryFields, BrandSpec, ListenSpec, ListenStatus};
 use std::time::{Duration, Instant};
 use voltnest_provider::{DIAG_BYTES, ErrorCode, Percent, hex_bytes};
 
@@ -440,6 +440,18 @@ pub fn decode_notify(spec: &BrandSpec, report: &[u8]) -> Option<BatteryReading> 
     decode_battery_at(spec, &notify.fields(), None, report, report).ok()
 }
 
+/// 监听通道上一帧的解析结果。
+///
+/// 只通报充电状态的上报帧（迈从 GLW `FA FB FF 00`）没有电量，不能硬凑一个 `BatteryReading`
+/// —— 那会把「电量未知」写成某个具体百分比。
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum ListenEvent {
+    /// 电量 + 可选充电状态。
+    Reading(BatteryReading),
+    /// 只有充电状态变化。
+    Charging(bool),
+}
+
 /// 解析一帧**设备自发上报**（宿主未提问）的电量。
 ///
 /// 返回 `None` 表示「这一帧不是电量上报」（鼠标位移、媒体键、或别的命令），调用方应静默丢弃 ——
@@ -448,30 +460,63 @@ pub fn decode_notify(spec: &BrandSpec, report: &[u8]) -> Option<BatteryReading> 
 /// 偏移容错：官方解析器的输入是 WebHID 的 `report.data`（**不含**报告 ID），而 hidapi 的
 /// `read_timeout` 在报告带编号时把报告 ID 放在首字节。两种都试，命中哪个用哪个 ——
 /// 首字节必须等于 `cmd`，误判成电量的概率只来自「报告 ID 恰好等于 cmd 且子标签也对上」。
-pub fn decode_listen(spec: &BrandSpec, report: &[u8]) -> Option<BatteryReading> {
-    let listen = spec.listen?;
+pub fn decode_listen(spec: &BrandSpec, report: &[u8]) -> Option<ListenEvent> {
+    let frames = spec.listen?;
     for offset in [0usize, 1] {
         let Some(window) = report.get(offset..) else {
             continue;
         };
-        if window.len() < listen.min_len() {
-            continue;
+        for frame in frames {
+            if let Some(event) = decode_listen_frame(frame, window) {
+                return Some(event);
+            }
         }
-        if window[0] != listen.cmd || window[listen.subtag_index] != listen.subtag_value {
-            continue;
-        }
-        let raw = window[listen.percent_index];
-        let status = window[listen.status_index];
-        // 官方：高半字节 `fullStatus` 非零即满电，直接把电量按 100 上报。
-        let percent = if status >> 4 != 0 { 100u8 } else { raw };
-        let percent = Percent::new(percent)?;
-        let charging = (status & 0x0F) == listen.charging_low_nibble;
-        return Some(BatteryReading {
-            percent,
-            charging: Some(charging),
-        });
     }
     None
+}
+
+/// 单条监听模板的匹配与解码；字段下标相对窗口起点。
+fn decode_listen_frame(frame: &ListenSpec, window: &[u8]) -> Option<ListenEvent> {
+    if window.len() < frame.min_len() || window[0] != frame.cmd {
+        return None;
+    }
+    if let Some(second) = frame.cmd2
+        && window[1] != second
+    {
+        return None;
+    }
+    if window[frame.subtag_index] != frame.subtag_value {
+        return None;
+    }
+    let status = window[frame.status_index];
+    match frame.status {
+        ListenStatus::Nibbles {
+            charging_low_nibble,
+        } => {
+            let (index, mask) = frame.percent?;
+            let raw = window[index] & mask;
+            // 官方：高半字节 `fullStatus` 非零即满电，直接把电量按 100 上报。
+            let percent = if status >> 4 != 0 { 100u8 } else { raw };
+            Some(ListenEvent::Reading(BatteryReading {
+                percent: Percent::new(percent)?,
+                charging: Some((status & 0x0F) == charging_low_nibble),
+            }))
+        }
+        ListenStatus::Gate { charging, usable } => {
+            let charging = charging.contains(&status);
+            let Some((index, mask)) = frame.percent else {
+                return Some(ListenEvent::Charging(charging));
+            };
+            // 官方对充电中的那一帧直接丢弃：充电时电压法读出的百分比不可信。
+            if !usable.contains(&status) {
+                return None;
+            }
+            Some(ListenEvent::Reading(BatteryReading {
+                percent: Percent::new(window[index] & mask)?,
+                charging: Some(charging),
+            }))
+        }
+    }
 }
 
 /// 该帧是不是本协议的电量帧（按命令字判定，不解析字段）。
@@ -667,6 +712,8 @@ mod tests {
         listen: None,
         notify: None,
         request: None,
+        block_offset: None,
+        profile_probe: None,
         ack: None,
         fallback_report_id: None,
         expected_interval_ms: 20_000,

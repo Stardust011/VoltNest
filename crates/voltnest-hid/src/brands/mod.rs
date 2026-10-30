@@ -389,6 +389,8 @@ mod tests {
             ack: None,
             fallback_report_id: None,
             expected_interval_ms: 30_000,
+            block_offset: None,
+            profile_probe: None,
             device_table_file: ajazz::SPEC.device_table_file,
             variants: &[],
             route: None,
@@ -502,6 +504,8 @@ mod tests {
         static NO_FILE: BrandSpec = BrandSpec {
             id: "no-file",
             label: "缺表品牌",
+            block_offset: None,
+            profile_probe: None,
             device_table_file: "nope.json",
             ..ajazz::SPEC
         };
@@ -533,6 +537,8 @@ mod tests {
         static NO_FILE: BrandSpec = BrandSpec {
             id: "no-file",
             label: "缺表品牌",
+            block_offset: None,
+            profile_probe: None,
             device_table_file: "nope.json",
             ..ajazz::SPEC
         };
