@@ -371,8 +371,9 @@ fn consider_target(
         return;
     }
     // 品牌声明了 Usage 就只在它上面打开：同一 UsagePage 下可能并存「配置页 / 升级页」，
-    // 只按 UsagePage 匹配会按枚举顺序随机选中一个。
-    if spec.usage.is_some_and(|usage| usage != info.usage) {
+    // 只按 UsagePage 匹配会按枚举顺序随机选中一个。钉死只作用于主页面 —— 备用页面是不同页，
+    // 不用本品牌的 usage 再过滤（GLW 族的 `0xFF00` boot 页就是靠页面兜底，而不是 usage）。
+    if !alt && spec.usage.is_some_and(|usage| usage != info.usage) {
         return;
     }
     let stable_id = StableId::hid(vid, pid);
@@ -966,9 +967,10 @@ mod tests {
     #[test]
     fn primary_usage_page_wins_over_secondary() {
         // 备用页面先被枚举：单遍实现会把它当成主页面，还会把真正的主页面报成冲突。
+        // 主页面是 GLW 钉死的厂商私有集合 `1/0`（官方 WebHID 过滤器 `usagePage:1,usage:0`）。
         let entries = vec![
             entry(0x19F5, 0xFC30, 0xFF00, 0x0001, "/dev/hidraw5"),
-            entry(0x19F5, 0xFC30, 0x0001, 0x0006, "/dev/hidraw6"),
+            entry(0x19F5, 0xFC30, 0x0001, 0x0000, "/dev/hidraw6"),
         ];
         let (found, conflicts) = select_targets(&entries, &HashMap::new());
         assert!(
@@ -977,6 +979,30 @@ mod tests {
         );
         let target = found.get("hid:19f5:fc30").expect("必须选中一台设备");
         assert_eq!(path_of(target), "/dev/hidraw6", "主页面优先");
+    }
+
+    /// GLW 族在标准页 `0x0001` 上钉死 `usage=0`，只选厂商私有集合，绝不落到键盘 `1/6`。
+    ///
+    /// 选错集合的表现正是「设备在列表里但永远没有读数」：键盘集合上没有 GLW 输出报告，
+    /// 发的 `55 05 …` 查询会被丢弃，应答永远回不来。键盘集合即便先枚举也不能抢走。
+    #[test]
+    fn glw_pins_vendor_collection_not_keyboard() {
+        // 键盘集合先被枚举（顺序无关）：仍必须选中厂商私有集合 `1/0`。
+        let entries = vec![
+            entry(0x19F5, 0xFC30, 0x0001, 0x0006, "/dev/hidraw5"),
+            entry(0x19F5, 0xFC30, 0x0001, 0x0000, "/dev/hidraw6"),
+        ];
+        let (found, conflicts) = select_targets(&entries, &HashMap::new());
+        assert!(
+            conflicts.is_empty(),
+            "同一台设备的不同集合不是冲突：{conflicts:?}"
+        );
+        let target = found.get("hid:19f5:fc30").expect("必须选中一台设备");
+        assert_eq!(
+            path_of(target),
+            "/dev/hidraw6",
+            "厂商私有集合（usage=0）优先于键盘集合"
+        );
     }
 
     /// hidraw 会把同一节点的多个 Usage 展开成多条记录（共用同一 path）：那是同一物理集合，不是冲突。
