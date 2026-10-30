@@ -298,7 +298,7 @@
       "name": null,
       "deviceType": "keyboard",
       "driver": "glw",
-      "mode": "2.4G",
+      "mode": "upgrade",
       "ambiguous": true,
       "receiverMatch": "contains",
       "candidates": [
