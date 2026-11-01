@@ -1,9 +1,9 @@
 {
-  "config_version": "2026-10-27T08",
+  "config_version": "2026-11-01T10",
   "source": {
     "file": "",
     "url": "https://www.mchose.com.cn/",
-    "web_version": "v3.16.35"
+    "web_version": "v3.17.3"
   },
   "devices": {
     "0E6A:0111": {
@@ -219,7 +219,7 @@
       "mode": "2.4G"
     },
     "3837:101D": {
-      "name": "G3",
+      "name": "G3 S",
       "deviceType": "mouse",
       "mode": "2.4G",
       "ambiguous": true,
@@ -528,6 +528,18 @@
       "driver": "dje",
       "mode": "USB"
     },
+    "3837:302D": {
+      "name": "GT 75",
+      "deviceType": "keyboard",
+      "driver": "glw",
+      "mode": "USB"
+    },
+    "3837:302F": {
+      "name": "GT 75",
+      "deviceType": "keyboard",
+      "driver": "dje",
+      "mode": "USB"
+    },
     "3837:3033": {
       "name": null,
       "deviceType": "keyboard",
@@ -722,7 +734,7 @@
       "mode": "2.4G"
     },
     "3837:4041": {
-      "name": "G3",
+      "name": "G3 S",
       "deviceType": "mouse",
       "mode": "2.4G"
     },
