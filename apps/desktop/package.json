@@ -22,7 +22,7 @@
     "tauri": "tauri"
   },
   "dependencies": {
-    "@lucide/vue": "^1.60.0",
+    "@lucide/vue": "^1.62.0",
     "@tauri-apps/api": "^2.1.1",
     "@vueuse/core": "^15.0.0",
     "class-variance-authority": "^0.7.1",
