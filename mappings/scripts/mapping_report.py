@@ -3,7 +3,7 @@
 """
 mapping_report.py
 
-校验一份型号码表并输出 Markdown 摘要行（含与旧表的条目差异）。
+校验一份型号码表并输出单行摘要（每品牌一行，直接作为 PR 正文与 run summary）。
 校验项与 `voltnest-hid` 的 table.rs 解析口径一致，不额外收紧。
 
 用法：
@@ -85,10 +85,10 @@ def main() -> int:
             delta = "，条目数不变但内容有变化"
 
     if same:
-        print(f"- `{args.new.name}`：{len(keys)} 台，devices 无变化，跳过")
+        print(f"{args.new.stem}：{len(keys)} 台，devices 无变化，跳过")
         return 3 if args.require_change else 0
 
-    print(f"- `{args.new.name}`：{len(keys)} 台{delta}（版本 {new['version']}）")
+    print(f"{args.new.stem}：{len(keys)} 台{delta}（版本 {new['version']}）")
     return 0
 
 

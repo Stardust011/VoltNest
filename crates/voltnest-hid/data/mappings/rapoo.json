@@ -1,9 +1,9 @@
 {
-  "config_version": "2026-10-27T08",
+  "config_version": "2026-11-01T10",
   "source": {
     "file": "",
     "url": "https://hub.rapoo.cn/",
-    "web_version": "3ShGzFuu"
+    "web_version": "BNoOd8Jm"
   },
   "devices": {
     "24AE:1410": {
@@ -349,6 +349,13 @@
       "driver": "VT_nrf54L",
       "channels": ["china_game", "global"]
     },
+    "24AE:1872": {
+      "name": "MT560",
+      "deviceType": "mouse",
+      "mode": "2.4G",
+      "driver": "Telink8273_Mouse",
+      "channels": ["china_game", "china_office"]
+    },
     "24AE:1905": {
       "name": "V700diy-98",
       "deviceType": "keyboard",
@@ -389,14 +396,14 @@
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_CH584",
-      "channels": ["global"]
+      "channels": ["china_game", "global"]
     },
     "24AE:1A11": {
       "name": "VT1 SE",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_CH584",
-      "channels": ["global"]
+      "channels": ["china_game", "global"]
     },
     "24AE:1B01": {
       "name": "VT9S MAX V2",
@@ -558,6 +565,20 @@
       "mode": "2.4G",
       "driver": "LM20RT",
       "channels": ["china_game", "global"]
+    },
+    "24AE:1C00": {
+      "name": "MT770L",
+      "deviceType": "mouse",
+      "mode": "2.4G",
+      "driver": "Telink8273_Mouse",
+      "channels": ["china_game", "china_office"]
+    },
+    "24AE:4504": {
+      "name": "MT560",
+      "deviceType": "mouse",
+      "mode": "2.4G",
+      "driver": "Telink8273_Mouse",
+      "channels": ["china_game", "china_office"]
     },
     "24AE:4610": {
       "name": "VT0",
@@ -1026,14 +1047,14 @@
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_CH584",
-      "channels": ["global"]
+      "channels": ["china_game", "global"]
     },
     "24AE:4A11": {
       "name": "VT1 SE",
       "deviceType": "mouse",
       "mode": "2.4G",
       "driver": "VT_CH584",
-      "channels": ["global"]
+      "channels": ["china_game", "global"]
     },
     "24AE:4B01": {
       "name": "VT9S MAX V2",
@@ -1195,6 +1216,13 @@
       "mode": "2.4G",
       "driver": "LM20RT",
       "channels": ["china_game", "global"]
+    },
+    "24AE:4C00": {
+      "name": "MT770L",
+      "deviceType": "mouse",
+      "mode": "2.4G",
+      "driver": "Telink8273_Mouse",
+      "channels": ["china_game", "china_office"]
     },
     "2E3C:5745": {
       "name": "ESK800-75RT",
