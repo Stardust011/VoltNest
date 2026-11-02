@@ -44,15 +44,19 @@ jobs:
       - name: Install libudev
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libudev-dev
 
+      # PR 正文直接读这个文件，先建空文件避免 action 因文件缺失报错。
+      - name: Prepare report file
+        run: truncate -s 0 "$RUNNER_TEMP/report.md"
+
       # 单品牌失败只跳过该品牌：旧表留着也比没有表强，失败率由最后一步汇总暴露。
       # 只有 devices 内容变化才落盘；仅 config_version / source 变化不算，不会开 PR。
+      # 报告每品牌一行，原样进 PR 正文与 run summary，不写任何其它说明。
       - name: Fetch mappings
         id: fetch
         shell: bash
         run: |
           set -u
           report="$RUNNER_TEMP/report.md"
-          echo "### 型号码表抓取（仅 devices 有差异才提交）" > "$report"
           brands="${{ inputs.brand }}"
           if [ -z "$brands" ] || [ "$brands" = "all" ]; then
             brands="dareu mchose rapoo"
@@ -64,7 +68,7 @@ jobs:
             tmp="$RUNNER_TEMP/${brand}.json"
             if ! timeout 600 python "mappings/scripts/${brand}_device_map.py" -q -o "$tmp"; then
               echo "::warning title=${brand} 抓取失败::沿用仓库内旧表"
-              echo "- \`${brand}.json\`：抓取失败，未更新" >> "$report"
+              echo "${brand}：抓取失败，未更新" >> "$report"
               failed=1
               continue
             fi
@@ -102,6 +106,17 @@ jobs:
         continue-on-error: true
         run: cargo test -p voltnest-hid
 
+      # 上次检测的 PR 可能一直没合并，旧分支上的表会挡在本次结果前面。
+      # 先把分支强推回当前基线，让本次抓取整体覆盖旧内容，而不是叠在旧提交上。
+      - name: Force-reset pull request branch
+        if: steps.fetch.outputs.changed == '1'
+        run: |
+          set -euo pipefail
+          branch=chore/mappings-refresh
+          if git ls-remote --exit-code --heads origin "$branch" >/dev/null; then
+            git push --force origin "HEAD:refs/heads/$branch"
+          fi
+
       - name: Create pull request
         if: always()
         uses: peter-evans/create-pull-request@v8
@@ -111,16 +126,11 @@ jobs:
           add-paths: crates/voltnest-hid/data/mappings/
           commit-message: "chore(mappings): 同步厂商型号表"
           title: "chore(mappings): 同步厂商型号表"
-          body: |
-            定时抓取 DAREU / MCHOSE / RAPOO 网页驱动的型号表，逐条对比见本次 run 的 Summary。
-
-            **只在 `devices` 内容有差异时提交**（仅 `config_version` / `source` 变化不会开 PR）。
-            改动只落在 `crates/voltnest-hid/data/mappings/`。合并前请确认：
-            - [ ] 新增型号的 VID:PID 没有与其它品牌重复登记
-            - [ ] 消失的型号是厂商下架，而不是抓取口径变化
+          # 正文就是逐品牌摘要，不加任何其它说明。
+          body-path: ${{ runner.temp }}/report.md
           labels: dependencies
-          # 用 GITHUB_TOKEN 建的 PR 不会触发 CI；配了 MAPPINGS_TOKEN（PAT）才会自动跑。
-          token: ${{ secrets.MAPPINGS_TOKEN || secrets.GITHUB_TOKEN }}
+          sign-commits: true
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Fail on partial refresh
         if: always() && (steps.fetch.outputs.failed == '1' || steps.verify.outcome == 'failure')
