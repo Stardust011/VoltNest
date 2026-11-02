@@ -14,7 +14,7 @@
 //! - 图标要有菜单才稳定显现（Tauri 文档）：这里每张图标都挂同一份菜单，正好满足。
 //!
 //! # 基础图标（应用图标）何时显现
-//! 窗口关掉只剩托盘时，**一张图标都没有等于进程失联**（打不开面板也无法退出），故托盘必须始终至少有一张可用图标。占位图标即**应用图标本身**（与任务栏/开始菜单同 PNG）：无设备时用户看到「应用在跑」而非需解读的小图形；手绘蓝环只留给「设备已在列表、还没拿到读数」那一种状态。它仅在「没有设备图标」时现身：有设备图标就让位（电量环本身就是入口，再挂一个会像第二台设备）；设备全拔或全被隐藏时再回来。每张图标右键菜单一致（打开面板 / 退出 VoltNest），任意一张都能退出。
+//! 窗口关掉只剩托盘时，**一张图标都没有等于进程失联**（打不开面板也无法退出），故托盘必须始终至少有一张可用图标。占位图标即**应用图标本身**（与任务栏/开始菜单同 PNG）：无设备时用户看到「应用在跑」而非需解读的小图形；手绘蓝环只留给「设备已在列表、还没拿到读数」那一种状态。它仅在「没有设备图标」时现身：有设备图标就让位（电量环本身就是入口，再挂一个会像第二台设备）；设备全拔、全被隐藏或**全部离线**时再回来。全离线也让位 —— 一串灰环加横线既读不出电量也读不出「线还插着」，不如回到认得出的应用图标。每张图标右键菜单一致（打开面板 / 退出 VoltNest），任意一张都能退出。
 
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -115,7 +115,12 @@ fn quit(app: &AppHandle) {
 /// 按快照同步设备托盘图标：增、改、删。
 pub fn sync_tray_icons(app: &AppHandle, shared: &Arc<HostState>, snap: &Snapshot) {
     let mut known = lock(&shared.tray_ids);
-    let visible = &snap.tray.visible_device_ids;
+    // 全部离线时设备图标整体退位，托盘只剩应用图标。
+    let visible: &[String] = if all_devices_offline(snap) {
+        &[]
+    } else {
+        &snap.tray.visible_device_ids
+    };
     // 被上限截断的设备数：基础图标退位之后，「还有 N 台」只能挂在最后一张设备图标上。
     let truncated = snap.devices.len().saturating_sub(visible.len());
     let mut wanted: Vec<String> = Vec::with_capacity(visible.len());
@@ -162,6 +167,14 @@ pub fn sync_tray_icons(app: &AppHandle, shared: &Arc<HostState>, snap: &Snapshot
     drop(known);
 
     update_base(app, snap, has_device_icons);
+}
+
+/// 全部设备都在 `Offline`：此时托盘不画电量环，改由应用图标占位。
+///
+/// 空列表不算：没有设备时本来就是应用图标。`Unknown`/`Unavailable` 也不算 ——
+/// 那些状态各有自己的环，「等待读数」与「读取失败」都要能一眼看出来。
+fn all_devices_offline(snap: &Snapshot) -> bool {
+    !snap.devices.is_empty() && snap.devices.iter().all(|d| d.state == DeviceState::Offline)
 }
 
 /// 基础图标显隐：有设备图标就隐身让位，没有就出来占位。只切可见性不重建：重建会让图标跳到托盘末尾甚至溢出区，比多看一眼占位图标更难受。
@@ -321,6 +334,10 @@ fn summary_tooltip(snap: &Snapshot) -> String {
     let total = snap.devices.len();
     if total == 0 {
         return "VoltNest".to_string();
+    }
+    // 应用图标顶替了整排设备图标：得说清设备还在，只是全都断了。
+    if all_devices_offline(snap) {
+        return format!("VoltNest · {total} 台设备（全部离线）");
     }
     // 有设备却一张图标都没有：只可能是用户把它们全隐藏了。
     if snap.tray.visible_device_ids.is_empty() {
@@ -654,6 +671,33 @@ mod tests {
             "设备被全部隐藏时，基础图标要说明设备还在"
         );
         assert_eq!(summary_tooltip(&snapshot(6, 6)), "VoltNest · 6 台设备");
+    }
+
+    #[test]
+    fn all_offline_yields_only_the_app_icon() {
+        let mut snap = snapshot(2, 2);
+        assert!(!all_devices_offline(&snap));
+        for d in &mut snap.devices {
+            d.state = DeviceState::Offline;
+            d.battery = None;
+        }
+        assert!(all_devices_offline(&snap), "全离线时设备图标要整体退位");
+        assert_eq!(
+            summary_tooltip(&snap),
+            "VoltNest · 2 台设备（全部离线）",
+            "应用图标顶替之后，tooltip 得说明设备还在、只是断了"
+        );
+    }
+
+    #[test]
+    fn all_offline_needs_every_device_and_at_least_one() {
+        assert!(!all_devices_offline(&snapshot(0, 0)), "没有设备不算全离线");
+        let mut mixed = snapshot(2, 2);
+        mixed.devices[1].state = DeviceState::Offline;
+        assert!(!all_devices_offline(&mixed), "还有在线设备就保留电量环");
+        let mut waiting = snapshot(1, 1);
+        waiting.devices[0].state = DeviceState::Unknown;
+        assert!(!all_devices_offline(&waiting), "等待读数仍要画蓝环");
     }
 
     #[test]
