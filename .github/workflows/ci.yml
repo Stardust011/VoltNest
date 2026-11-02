@@ -27,6 +27,10 @@ jobs:
   # --------------------------------------------------
   changes:
     name: detect changes
+    # paths-filter 在 pull_request 事件下走 REST 接口列改动文件。
+    permissions:
+      contents: read
+      pull-requests: read
     if: |
       github.event_name != 'pull_request'
       || (
