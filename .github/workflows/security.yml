@@ -1,6 +1,5 @@
 name: Security
 
-# 每周扫一次依赖与工具链漂移。
 on:
   schedule:
     - cron: "0 3 * * 1"
@@ -28,7 +27,6 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
-      # 复用 CI 缓存，只读。
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: linux-test
