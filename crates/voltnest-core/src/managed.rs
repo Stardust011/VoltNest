@@ -24,6 +24,8 @@ pub struct ManagedDevices {
     pub removed: Vec<String>,
     /// 用户合并组。
     pub merges: Vec<ManagedMerge>,
+    /// 已分离的自动合并卡（`cardId`）。
+    pub separated: Vec<String>,
 }
 
 impl ManagedDevices {
@@ -39,6 +41,11 @@ impl ManagedDevices {
     /// 是否被用户删除。
     pub fn is_removed(&self, stable_id: &str) -> bool {
         self.removed.iter().any(|id| id == stable_id)
+    }
+
+    /// 某自动合并卡是否已被用户分离。
+    pub fn is_separated(&self, card_id: &str) -> bool {
+        self.separated.iter().any(|id| id == card_id)
     }
 
     /// 某设备所在的合并组。

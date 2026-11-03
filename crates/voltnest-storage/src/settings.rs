@@ -86,6 +86,8 @@ pub struct DeviceSettings {
     pub removed: Vec<String>,
     /// 用户合并组。
     pub merges: Vec<MergeGroup>,
+    /// 用户已分离的自动合并卡（`cardId`）：不再自动并成一张卡。
+    pub separated: Vec<String>,
     /// 未知字段。
     #[serde(flatten)]
     pub extra: Map<String, Value>,
@@ -121,6 +123,27 @@ impl DeviceSettings {
         } else {
             self.aliases.insert(id.to_string(), trimmed.to_string());
         }
+    }
+
+    /// 某自动合并卡是否已被用户分离。
+    pub fn is_separated(&self, card_id: &str) -> bool {
+        self.separated.iter().any(|id| id == card_id)
+    }
+
+    /// 分离一张自动合并卡；返回它此前是否还并着。
+    pub fn separate_auto(&mut self, card_id: &str) -> bool {
+        if card_id.is_empty() || self.is_separated(card_id) {
+            return false;
+        }
+        self.separated.push(card_id.to_string());
+        true
+    }
+
+    /// 取消分离：让自动分组重新生效。
+    pub fn reunite(&mut self, card_id: &str) -> bool {
+        let before = self.separated.len();
+        self.separated.retain(|id| id != card_id);
+        self.separated.len() != before
     }
 
     /// 从删除列表恢复；返回它此前是否真的被删除。
@@ -229,6 +252,15 @@ impl DeviceSettings {
             groups.push(group);
         }
         self.merges = groups;
+
+        let mut separated: Vec<String> = Vec::new();
+        self.separated.retain(|id| {
+            let unique = !id.is_empty() && !separated.contains(id);
+            if unique {
+                separated.push(id.clone());
+            }
+            unique
+        });
     }
 }
 
@@ -635,6 +667,27 @@ mod tests {
             "改名要 trim"
         );
         assert!(loaded.devices.is_removed("ble:01:00:00:23:04:35"));
+    }
+
+    #[test]
+    fn auto_merge_separation_round_trip() {
+        let (s, dir) = store();
+        let mut settings = Settings::default();
+        assert!(settings.devices.separate_auto("aj159 nl"));
+        assert!(
+            !settings.devices.separate_auto("aj159 nl"),
+            "重复分离不重复记"
+        );
+        assert!(settings.devices.is_separated("aj159 nl"));
+        s.save(&settings).unwrap();
+
+        let text = fs::read_to_string(dir.join("settings.json")).unwrap();
+        assert!(text.contains("\"separated\""), "{text}");
+        assert!(s.load(T).settings.devices.is_separated("aj159 nl"));
+
+        let mut settings = s.load(T).settings;
+        assert!(settings.devices.reunite("aj159 nl"));
+        assert!(!settings.devices.is_separated("aj159 nl"));
     }
 
     #[test]

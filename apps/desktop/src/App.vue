@@ -230,6 +230,18 @@ async function separateRow(row: Row) {
   }
 }
 
+/**
+ * 关闭删除确认框：只关弹窗，不清目标。
+ *
+ * `AlertDialogAction` 点击时会先触发 reka 的关闭，若在这里清掉目标，
+ * 随后执行的确认逻辑拿到的就是 `null` —— 表现是「点了删除什么都没发生」。
+ */
+function closeDelete(open: boolean) {
+  if (!open) {
+    deleteOpen.value = false;
+  }
+}
+
 async function confirmDelete() {
   const target = deleteTarget.value;
   deleteTarget.value = null;
@@ -546,17 +558,7 @@ onBeforeUnmount(() => {
       </AlertDialogContent>
     </AlertDialog>
 
-    <AlertDialog
-      :open="deleteOpen"
-      @update:open="
-        (open) => {
-          if (!open) {
-            deleteOpen = false;
-            deleteTarget = null;
-          }
-        }
-      "
-    >
+    <AlertDialog :open="deleteOpen" @update:open="closeDelete">
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>删除「{{ deleteTarget?.name }}」？</AlertDialogTitle>

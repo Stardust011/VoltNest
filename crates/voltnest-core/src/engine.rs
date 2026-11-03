@@ -862,7 +862,7 @@ impl Engine {
             }
         }
         for (key, members) in groups {
-            if members.len() != 2 {
+            if members.len() != 2 || self.managed.is_separated(&key) {
                 continue;
             }
             let (a, b) = (members[0], members[1]);

@@ -187,20 +187,41 @@ pub fn merge_devices(
     Ok(())
 }
 
-/// 分离合并：`card_id` 传版本卡片 ID（`user:<主设备>`），也接受裸主设备 ID。
+/// 分离：`card_id` 为 `user:<主设备>` 时拆散用户合并组，否则按自动合并卡 ID 处理。
 #[tauri::command]
 pub fn separate_merge(card_id: String, shared: State<'_, Arc<HostState>>) -> Result<(), String> {
-    let primary = card_id
-        .strip_prefix(CARD_PREFIX)
-        .unwrap_or(&card_id)
-        .to_string();
-    commit_try(&shared, |devices| {
-        if devices.separate(&primary) {
-            Ok(())
-        } else {
-            Err("该设备没有合并记录".to_string())
+    if card_id.is_empty() {
+        return Err("没有指定要分离的卡片".to_string());
+    }
+    let auto = card_id.strip_prefix(CARD_PREFIX).is_none();
+    if auto {
+        let exists = {
+            let engine = lock(&shared.engine);
+            engine
+                .records()
+                .iter()
+                .any(|r| r.model_key.as_deref() == Some(card_id.as_str()))
+        };
+        if !exists {
+            return Err("未找到该合并卡片".to_string());
         }
-    })?;
+        commit_try(&shared, |devices| {
+            if devices.separate_auto(&card_id) {
+                Ok(())
+            } else {
+                Err("该卡片已经被分离".to_string())
+            }
+        })?;
+    } else {
+        let primary = card_id[CARD_PREFIX.len()..].to_string();
+        commit_try(&shared, |devices| {
+            if devices.separate(&primary) {
+                Ok(())
+            } else {
+                Err("该设备没有合并记录".to_string())
+            }
+        })?;
+    }
     notify_wake(&shared);
     Ok(())
 }

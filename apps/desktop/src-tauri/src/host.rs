@@ -288,6 +288,7 @@ pub fn managed_devices(settings: &Settings) -> ManagedDevices {
                 name: group.name.clone(),
             })
             .collect(),
+        separated: settings.devices.separated.clone(),
     }
 }
 

@@ -32,6 +32,7 @@ fn managed(
             .collect(),
         removed: removed.iter().map(|id| id.to_string()).collect(),
         merges,
+        separated: Vec::new(),
     }
 }
 
@@ -223,4 +224,32 @@ fn same_name_same_transport_gets_sequence_suffix() {
         .collect();
     assert!(names.contains(&"同名耳机 · 蓝牙"), "{names:?}");
     assert!(names.contains(&"同名耳机 · 蓝牙 (2)"), "{names:?}");
+}
+
+/// HID 活跃、BLE 只登记：构成一张自动合并卡。
+fn auto_merged() -> Engine {
+    let mut e = engine();
+    feed(&mut e, &hid_arrived(), Transport::Hid, T0);
+    feed(&mut e, &ble_arrived(), Transport::Ble, T0);
+    feed(&mut e, &hid_reading(90), Transport::Hid, T0 + 10);
+    e
+}
+
+#[test]
+fn separating_auto_merge_restores_two_rows() {
+    let mut e = auto_merged();
+    let before = e.snapshot(T0 + 20);
+    assert_eq!(before.cards.len(), 1, "同型号一活跃一非活跃应自动合并");
+    let card_id = before.cards[0].card_id.clone();
+    assert!(!before.cards[0].user_merged);
+
+    e.set_managed(ManagedDevices {
+        separated: vec![card_id],
+        ..managed(&[], &[], vec![])
+    });
+
+    let after = e.snapshot(T0 + 21);
+    assert!(after.cards.is_empty(), "分离后不再自动并卡");
+    assert_eq!(after.devices.len(), 2, "两台设备各自成行");
+    assert_eq!(after.tray.present, 2, "托盘按呈现单元计数");
 }
