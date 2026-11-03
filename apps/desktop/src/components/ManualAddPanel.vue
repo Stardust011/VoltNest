@@ -461,11 +461,11 @@ onBeforeUnmount(() => {
 
 <template>
   <div
-    class="fixed inset-x-0 top-10 bottom-0 z-40 flex overflow-y-auto bg-background/95 px-3 py-3 backdrop-blur-[2px]"
+    class="fixed inset-x-0 top-10 bottom-0 z-40 flex overflow-y-auto bg-background/95 px-4 py-4 backdrop-blur-[2px]"
     role="dialog"
     aria-labelledby="manual-add-title"
   >
-    <Card class="m-auto w-full max-w-[460px] gap-0 overflow-hidden py-0 shadow-lg">
+    <Card class="m-auto w-full max-w-[512px] gap-0 overflow-hidden py-0 shadow-lg">
       <CardHeader class="gap-0 border-b px-4 py-3">
         <div class="flex items-center justify-between gap-2">
           <CardTitle id="manual-add-title" class="text-sm font-semibold">生成上报数据</CardTitle>

@@ -3,6 +3,7 @@
 #![deny(clippy::disallowed_types)]
 
 mod commands;
+mod devices;
 mod dto;
 mod host;
 mod logger;
@@ -111,6 +112,12 @@ fn main() {
             commands::show_panel,
             commands::hide_to_tray,
             commands::quit_app,
+            devices::list_device_candidates,
+            devices::add_device,
+            devices::remove_devices,
+            devices::merge_devices,
+            devices::separate_merge,
+            devices::rename_device,
             probe::list_hid_targets,
             probe::start_hid_capture,
             probe::stop_hid_capture,
