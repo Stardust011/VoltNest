@@ -1,15 +1,9 @@
 //! 品牌注册表：`hid-vbas` 家族下的所有已知品牌。
 //!
-//! **新增品牌 = 新增一个模块 + 在 [`BRANDS`] 里加一项**，运行时只按传输类型分派：
-//! 1. `src/brands/<brand>.rs` 声明 BrandSpec；2. `data/mappings/<brand>.json` 型号表；3. `BRANDS` 加一行（唯一要改的既有代码）。
-//!
-//! 型号表不再是编译期常量：注册表在首次枚举前建立一次（[`Registry::embedded`]），建立时
-//! 从型号表目录**运行时加载**全部 `*.json`（定位规则见 [`crate::mappings`]），逐个跑
-//! [`BrandSpec::validate`]，写错字段下标即 panic —— 早于任何设备 I/O。
-//!
-//! 型号表缺失 / 损坏按**品牌粒度跳过**：该品牌不参与匹配，但跳过项留在 [`Registry::skipped`]
-//! 并在 [`Registry::try_embedded`] 里打一条诊断，其余品牌照常采集。只有「一个品牌都不可用」才
-//! 升级为错误（[`RegistryError::NoUsableBrand`]）。
+//! 新增品牌 = 新增 `src/brands/<brand>.rs` 声明 [`BrandSpec`] + 在 `data/mappings/` 放型号表 +
+//! 在 [`BRANDS`] 里加一项。型号表在首次枚举前由 [`Registry::embedded`] 运行时加载并逐份
+//! [`BrandSpec::validate`]；缺失 / 损坏按品牌粒度跳过并记入 [`Registry::skipped`]，
+//! 只有全部品牌不可用才报 [`RegistryError::NoUsableBrand`]。
 
 pub mod ajazz;
 pub mod dareu;
@@ -28,7 +22,7 @@ use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 use voltnest_provider::ProviderProfile;
 
-/// 全部已知品牌（编译期常量数组）。顺序无关匹配结果：同一 VID:PID 被两品牌同时登记属配置错误，[`Registry::embedded`] 会 panic。
+/// 全部已知品牌。同一 VID:PID 被两个品牌同时登记属配置错误，[`Registry::embedded`] 会 panic。
 pub static BRANDS: &[&BrandSpec] = &[&ajazz::SPEC, &rapoo::SPEC, &dareu::SPEC, &mchose::SPEC];
 
 /// 一个品牌：协议描述 + 已加载的型号表。
@@ -40,10 +34,7 @@ pub struct Brand {
     pub table: DeviceTable,
 }
 
-/// 被跳过的品牌：型号表缺失 / 损坏，因而本次运行不参与匹配。
-///
-/// 跳过是**允许**的（一份坏表不该让其它品牌的设备全消失），但绝不静默：
-/// 每一项都留在 [`Registry::skipped`] 里，由宿主日志 / 诊断页展示。
+/// 被跳过的品牌：型号表缺失 / 损坏，本次运行不参与匹配；跳过项一律保留在 [`Registry::skipped`]。
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SkippedBrand {
     /// 品牌标识（[`BrandSpec::id`]）。
@@ -64,14 +55,14 @@ impl fmt::Display for SkippedBrand {
     }
 }
 
-/// 注册表建立失败：协议描述非法、型号表目录不可用，或**所有**品牌都被跳过。
+/// 注册表建立失败：协议描述非法、型号表目录不可用，或所有品牌都被跳过。
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum RegistryError {
     /// 品牌协议描述非法。
     Spec(SpecError),
     /// 型号表目录无法定位 / 读取。
     Mappings(MappingError),
-    /// 每个品牌的型号表都不可用：一个能服务的品牌都没有，属部署事故而非局部损坏。
+    /// 每个品牌的型号表都不可用：一个能服务的品牌都没有。
     NoUsableBrand {
         /// 被跳过的品牌（按声明顺序）。
         skipped: Vec<SkippedBrand>,
@@ -150,10 +141,8 @@ pub struct Registry {
 impl Registry {
     /// 建立注册表：从型号表目录加载全部型号表，并校验每份品牌描述。
     ///
-    /// 型号表缺失 / 损坏的品牌会被跳过并记入 [`Registry::skipped`]，不会拖垮其它品牌；
-    /// panic 只发生在「目录不可用」或「一个品牌都不可用」这类部署事故上 —— 必须在第一次枚举前
-    /// 暴露，而不是运行几小时后才表现为「一个设备都看不到」。需要优雅处理时用
-    /// [`Registry::try_embedded`]。
+    /// 型号表不可用的品牌被跳过并记入 [`Registry::skipped`]；目录不可用或一个品牌都不可用时
+    /// panic。需要优雅处理时用 [`Registry::try_embedded`]。
     pub fn embedded() -> &'static Self {
         match Self::try_embedded() {
             Ok(registry) => registry,
@@ -161,10 +150,9 @@ impl Registry {
         }
     }
 
-    /// [`Registry::embedded`] 的可失败版本：成功才缓存，失败可在下次调用时重试（例如目录稍后才就位）。
+    /// [`Registry::embedded`] 的可失败版本：成功才缓存，失败可在下次调用时重试。
     ///
-    /// 建立成功但**有品牌被跳过**时，跳过项在这里打一条诊断并保留在 [`Registry::skipped`]：
-    /// 静默跳过会让「某品牌设备不见了」变成无从下手的玄学问题。
+    /// 有品牌被跳过时打一条诊断并保留在 [`Registry::skipped`]。
     pub fn try_embedded() -> Result<&'static Self, RegistryError> {
         static REGISTRY: OnceLock<Registry> = OnceLock::new();
         if let Some(registry) = REGISTRY.get() {
@@ -187,14 +175,12 @@ impl Registry {
 
     /// 用给定品牌列表建立注册表：型号表从默认目录加载。
     ///
-    /// 除顶层描述外，每个品牌的 [`BrandSpec::variants`] 也会逐份校验：变体只在 `route` 里用到，
-    /// 少写一份单测就没人管它的下标越界 —— 而这类错误的表现是「读不出电量」，
-    /// 比启动失败难查一个数量级。
+    /// 每个品牌的 [`BrandSpec::variants`] 也会逐份校验。
     pub fn build(specs: &'static [&'static BrandSpec]) -> Result<Self, RegistryError> {
         Self::build_with(specs, &MappingSet::load()?)
     }
 
-    /// 用给定品牌列表与**已加载**的型号表集合建立注册表（测试注入 / 复用同一次目录扫描）。
+    /// 用给定品牌列表与已加载的型号表集合建立注册表（测试注入 / 复用同一次目录扫描）。
     pub fn build_with(
         specs: &'static [&'static BrandSpec],
         mappings: &MappingSet,
@@ -209,12 +195,10 @@ impl Registry {
             }
             for variant in spec.variants {
                 variant.validate()?;
-                // 品牌标识不参与匹配，但它是日志与诊断的唯一线索：重复即分不清是哪套协议出的问题。
                 if !seen_ids.insert(variant.id) {
                     return Err(SpecError::DuplicateBrandId { brand: variant.id }.into());
                 }
             }
-            // 型号表不可用只跳过这个品牌：同一份表常被多套协议共用，缺一份不该殃及其它品牌。
             let table = match mappings.table(spec.device_table_file) {
                 Ok(table) => table,
                 Err(error) => {
@@ -226,7 +210,6 @@ impl Registry {
                     continue;
                 }
             };
-            // 精确匹配必须唯一：同一 VID:PID 落到两品牌时型号名与字段位置会随枚举顺序漂移，属配置错误，不能拖到运行期。
             for other in &brands {
                 let other: &Brand = other;
                 for ((vid, pid), _) in other.table.entries() {
@@ -244,7 +227,6 @@ impl Registry {
             brands.push(Brand { spec, table });
         }
         if brands.is_empty() {
-            // 一个能服务的品牌都没有 = 装包 / 数据事故，必须显式失败，而不是「静默零品牌」。
             return Err(RegistryError::NoUsableBrand { skipped });
         }
         Ok(Self {
@@ -359,6 +341,7 @@ mod tests {
         static BROKEN: BrandSpec = BrandSpec {
             id: "broken",
             label: "Broken",
+            name_from_product: false,
             usage_page: 0xFFB4,
             usage_page_alt: None,
             usage: None,
@@ -371,7 +354,6 @@ mod tests {
                 report_id: None,
                 cmd_index: 1,
                 len_index: None,
-                // 头体重叠：cmd_index 落在 payload 内。
                 payload_offset: 1,
                 fixed_payload_len: 4,
             },
@@ -405,7 +387,7 @@ mod tests {
         static BAD_VARIANT: BrandSpec = BrandSpec {
             id: "bad-variant",
             label: "坏变体",
-            // 头体重叠：命令字落在 payload 内（payload 从 cmd_index 处开始）。
+            name_from_product: false,
             frame: crate::spec::FrameLayout {
                 payload_offset: 1,
                 ..ajazz::SPEC.frame
@@ -415,6 +397,7 @@ mod tests {
         static WITH_BAD: BrandSpec = BrandSpec {
             id: "with-bad-variant",
             label: "带坏变体的品牌",
+            name_from_product: false,
             variants: &[&BAD_VARIANT],
             ..ajazz::SPEC
         };
@@ -436,11 +419,13 @@ mod tests {
         static CLONE: BrandSpec = BrandSpec {
             id: "dup-brand",
             label: "同名变体",
+            name_from_product: false,
             ..ajazz::SPEC
         };
         static WITH_DUP: BrandSpec = BrandSpec {
             id: "dup-brand",
             label: "重名品牌",
+            name_from_product: false,
             variants: &[&CLONE],
             ..ajazz::SPEC
         };
@@ -480,7 +465,6 @@ mod tests {
         let dir =
             std::env::temp_dir().join(format!("voltnest-hid-registry-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
-        // 键位换成一个内置表里不存在的 PID：若仍读编译期常量，这条必然查不到。
         let json = r#"{
             "config_version": "9.9.9",
             "source": { "file": "swap.xml" },
@@ -504,6 +488,7 @@ mod tests {
         static NO_FILE: BrandSpec = BrandSpec {
             id: "no-file",
             label: "缺表品牌",
+            name_from_product: false,
             block_offset: None,
             profile_probe: None,
             device_table_file: "nope.json",
@@ -522,12 +507,10 @@ mod tests {
             matches!(&skip.error, MappingError::MissingTable { file, .. } if file == "nope.json"),
             "{skip:?}"
         );
-        // 记录必须说清「缺哪份、现有哪几份」。
         assert!(
             skip.to_string().contains("ajazz.json"),
             "须列出实际存在的表：{skip}"
         );
-        // 跳过的品牌不得凭空出现设备。
         assert!(reg.lookup(0x7768, 0x6426).is_some(), "ajazz 必须仍可查表");
     }
 
@@ -537,6 +520,7 @@ mod tests {
         static NO_FILE: BrandSpec = BrandSpec {
             id: "no-file",
             label: "缺表品牌",
+            name_from_product: false,
             block_offset: None,
             profile_probe: None,
             device_table_file: "nope.json",
@@ -613,7 +597,6 @@ mod tests {
         .to_string();
         assert!(text.contains("没有任何可用品牌"), "{text}");
         assert!(text.contains("dareu") && text.contains("rapoo"), "{text}");
-        // 多个跳过项必须分隔，否则两个品牌会连成一串。
         assert!(text.contains('；'), "{text}");
 
         assert!(

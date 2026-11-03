@@ -67,7 +67,7 @@ const error = ref<string | null>(null);
 /**
  * 调试重放开关：诊断页点「重现首次引导」时置 true，只让遮罩重新出现。
  *
- * 这是纯 UI 状态，**不碰** `settings.onboardingCompleted` —— 关掉遮罩后
+ * 这是纯 UI 状态，不碰 `settings.onboardingCompleted` —— 关掉遮罩后
  * 首次引导的生命周期判定仍与磁盘上的设置一致。
  */
 const replayOnboarding = ref(false);
@@ -219,7 +219,7 @@ function scheduleDiagnosticsRefresh() {
 /**
  * 建立诊断订阅并拉取首帧。
  *
- * 顺序与快照一致：**先订阅 → 再拉全量**。反过来写会漏掉
+ * 顺序与快照一致：先订阅 → 再拉全量。反过来写会漏掉
  * 「拉取已返回、订阅尚未建立」这段时间内发生的线程组变化。
  */
 async function startDiagnosticsFeed() {
@@ -306,7 +306,6 @@ function onOnboardingDone(choice: OnboardingChoice) {
 
 watch(view, (next) => {
   if (next !== "diagnostics") return;
-  // 进页时立即拉一次全量，同时取消已排队的合并刷新，避免接连两次请求。
   if (diagnosticsTimer !== undefined) {
     window.clearTimeout(diagnosticsTimer);
     diagnosticsTimer = undefined;
@@ -361,7 +360,6 @@ onBeforeUnmount(() => {
             />
           </template>
 
-          <!-- 空态只做说明：数据上报属于诊断页的职责，入口统一放在底部提示行。 -->
           <div v-else class="flex flex-col items-center justify-center gap-2 py-10 text-center">
             <div class="size-3 rounded-full border-2 border-muted-foreground/40" />
             <p class="text-sm font-medium">还没有发现设备</p>
@@ -370,7 +368,6 @@ onBeforeUnmount(() => {
             </p>
           </div>
 
-          <!-- 兜底提示：纯文字，不占卡片，也不做按钮。 -->
           <p class="text-center text-xs leading-relaxed text-muted-foreground">
             若未自动识别，请切换为蓝牙模式或前往「诊断页」生成上报数据。
           </p>
@@ -399,7 +396,6 @@ onBeforeUnmount(() => {
       <div v-else class="py-16 text-center text-sm text-muted-foreground">正在读取…</div>
     </main>
 
-    <!-- 移除确认：用 shadcn AlertDialog，不用浏览器原生 confirm（WebView 里原生弹窗样式不可控）。 -->
     <AlertDialog :open="removeOpen" @update:open="setRemoveOpen">
       <AlertDialogContent>
         <AlertDialogHeader>
@@ -420,7 +416,6 @@ onBeforeUnmount(() => {
       </AlertDialogContent>
     </AlertDialog>
 
-    <!-- 生成上报数据：遮罩自标题栏下方起，抓包期间标题栏仍可用。 -->
     <ManualAddPanel v-if="addingDevice" @close="addingDevice = false" @saved="onManualSaved" />
 
     <OnboardingFlow

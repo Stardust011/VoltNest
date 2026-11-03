@@ -1,10 +1,7 @@
-//! 断连事件探针：验证 `Adapter::events()` 的 `DeviceDisconnected` 是否在链路断开的当帧到达。
+//! 断连事件探针：验证 `Adapter::events()` 的 `DeviceDisconnected` 何时到达。
 //!
-//! 用法：
-//! - `cargo run -p voltnest-ble --example disconnect_probe -- self` 建链后 3s 主动 `disconnect()`，
-//!   验证事件通路与时延（不需要人动手）。
-//! - `cargo run -p voltnest-ble --example disconnect_probe -- wait` 建链后只等，直到把外设电源关掉，
-//!   用于验证真实的物理断开（Windows 的 ConnectionStatusChanged 回调）。
+//! `cargo run -p voltnest-ble --example disconnect_probe -- self`：建链后 3s 主动 `disconnect()`；
+//! `-- wait`：建链后只等，直到把外设电源关掉，验证真实的物理断开。
 
 use btleplug::api::{Central, Manager as _, Peripheral as _, RetrievePeripheralsOptions};
 use btleplug::platform::Manager;
@@ -23,7 +20,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let adapter = manager.adapters().await?.into_iter().next().unwrap();
     let start = Instant::now();
 
-    // 订阅事件必须在建链**之前**：事件来自 adapter 上的 broadcast，订阅晚了会漏掉。
     let mut events = adapter.events().await?;
 
     let peripherals = adapter
@@ -38,7 +34,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         peripherals.len()
     );
     let Some(p) = peripherals.into_iter().next() else {
-        // 没有「已连接」设备：退化为扫描，确认外设是否在广播（鼠标休眠/关机时不会广播）。
         println!("[{}ms] 尝试扫描 6s ...", start.elapsed().as_millis());
         adapter.start_scan(Default::default()).await?;
         tokio::time::sleep(Duration::from_secs(6)).await;

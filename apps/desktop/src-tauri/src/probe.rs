@@ -1,16 +1,6 @@
-//! 生成上报数据：枚举候选集合、录制原始 HID 报告、把数据整理成可直接贴进 issue 的报告。
+//! 生成上报数据：枚举候选集合、录制原始 HID 报告、整理成可直接贴进 issue 的报告。
 //!
-//! # 为什么这条链路独立于采集线程
-//! 采集线程只处理型号表里的设备（`voltnest_hid::runtime`）。手动添加面对的恰恰是**表里没有**
-//! 的设备，且动作是「逐个集合试、录一段原始字节」，与采集的分享句柄、节奏、错误码都不兼容。
-//! 因此这里自己开临时句柄：抓包结束即关闭，不影响正在跑的采集线程（hidapi 允许共享打开）。
-//!
-//! # 数据完整性
-//! 报告是用户自己的证据，不能「看起来完整、其实少一半」：
-//! - 帧数有上限（[`CAPTURE_MAX_FRAMES`]），撞上限时报告里必须明写「已截断」；
-//! - 报告正文有字符预算（[`REPORT_MAX_CHARS`]，对齐 GitHub issue 正文上限），超出时明写
-//!   「只列出前 N 组」并给出完整文件的路径，让用户改走附件；
-//! - 报告同时落盘：界面复制的是正文，文件才是完整数据。
+//! 抓包自成临时句柄，独立于采集线程。帧数上限 [`CAPTURE_MAX_FRAMES`]、正文字符预算 [`REPORT_MAX_CHARS`]，超限时在报告中明示；复制的是正文，落盘文件才是完整数据。
 
 use std::collections::HashMap;
 use std::fmt::Write as _;
@@ -65,10 +55,7 @@ struct Session {
     finished_at_ms: Mutex<Option<u64>>,
 }
 
-/// 生成上报数据相关的跨命令状态。
-///
-/// 与 `HostState` 分开挂：抓包是「用户手工触发的临时诊断」，不参与采集生命周期，
-/// 也不需要被 `Engine` 看到。
+/// 生成上报数据相关的跨命令状态（不参与采集生命周期）。
 pub struct ProbeState {
     paths: DataPaths,
     store: ManualDeviceStore,
@@ -118,9 +105,7 @@ impl ProbeState {
     }
 }
 
-/// 列出设备（按 VID:PID 聚合后的集合组）—— 生成上报数据的第一步。
-///
-/// **枚举为空不是错误**：界面据此提示「没有检测到 HID 设备」并给出排查建议。
+/// 列出设备（按 VID:PID 聚合的集合组）。枚举为空不是错误。
 #[tauri::command]
 pub fn list_hid_targets() -> Result<Vec<HidTargetDto>, String> {
     let devices = probe::enumerate().map_err(|err| err.to_string())?;
@@ -138,7 +123,6 @@ pub fn start_hid_capture(
     state: State<'_, Arc<ProbeState>>,
 ) -> Result<CaptureStartResultDto, String> {
     let write_frames = parse_write_frames(&request.write_frames)?;
-    // 重新枚举一次再打开：界面上的列表可能已经过期（用户刚把接收器挪到别的口）。
     let device = probe::enumerate()
         .map_err(|err| err.to_string())?
         .into_iter()
@@ -206,8 +190,6 @@ pub fn generate_issue_report(
     state: State<'_, Arc<ProbeState>>,
 ) -> Result<ReportDto, String> {
     let (device, samples) = collect_samples(&state, &form.samples)?;
-    // 预览**不落盘**：只想复制一段文本的人不该在磁盘上留下一堆报告文件。
-    // 文件只在 `save_manual_device` 里写，那是用户明确选择「保存」的时刻。
     let markdown = build_report(&device, &samples, &form, clock::now_utc_ms(), None);
     Ok(ReportDto { markdown })
 }
@@ -284,13 +266,7 @@ pub fn list_manual_devices(state: State<'_, Arc<ProbeState>>) -> Vec<ManualDevic
     list
 }
 
-/// 删除一条手动设备记录，并把它的报告文件一并删掉。
-///
-/// 先落盘记录、后删文件：文件删失败只记日志，不回滚记录——否则会出现「列表里还在、
-/// 文件已经没了」的记录，用户点开只会看到读文件失败。
-///
-/// 路径必须落在 `reports/` 且是 `.md`：`manual_devices.json` 可被手工编辑，
-/// 不能让一条记录指到 `C://Windows` 之类的地方，删记录就等于删任意文件。
+/// 报告文件是否可删：必须在 `reports/` 下且为 `.md`（记录可被手工编辑，防删任意文件）。
 fn removable_report_path(reports: &Path, stored: Option<&str>) -> Option<PathBuf> {
     let path = PathBuf::from(stored?);
     let under_reports = path.starts_with(reports);
@@ -323,7 +299,6 @@ pub fn remove_manual_device(id: String, state: State<'_, Arc<ProbeState>>) -> Re
     };
     match std::fs::remove_file(&path) {
         Ok(()) => log::info!("已删除报告文件 {}", path.display()),
-        // 文件早就被手动删掉是正常情况，不打扰用户。
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
         Err(err) => log::warn!("删除报告文件失败（{}）：{err}", path.display()),
     }
@@ -345,7 +320,6 @@ pub fn get_manual_report(id: String, state: State<'_, Arc<ProbeState>>) -> Resul
         return Err("这条记录没有报告文件（可能只保存了设备信息）".to_string());
     };
     let path = PathBuf::from(&stored);
-    // 数据文件是可被手工编辑的：只允许读取 reports/ 下的文件，避免被改成任意路径读取。
     if !path.starts_with(&reports) {
         return Err("报告路径不在数据目录内，已拒绝读取".to_string());
     }
@@ -357,10 +331,8 @@ fn run_capture(app: AppHandle, session_id: u64, request: CaptureRequest, session
     let mut pending: Vec<CaptureFrameDto> = Vec::new();
     let mut last_emit = Instant::now();
 
-    // 先发一条空的 running 事件：界面据此确认「真的开始录了」，而不是等第一帧。
     flush(&app, session_id, &mut pending, 0, "running", None, None);
 
-    // 帧缓冲挂在会话上：事件线程与宿主命令共读同一份，报告生成时不必回放事件。
     let session_for_sink = Arc::clone(&session);
     let result = probe::capture(&request, &session.stop, |frame| {
         let dto = CaptureFrameDto::from(&frame);
@@ -382,7 +354,6 @@ fn run_capture(app: AppHandle, session_id: u64, request: CaptureRequest, session
     *lock(&session.finished_at_ms) = Some(clock::now_utc_ms());
     match result {
         Ok(summary) => {
-            // 用户点了停止 → `stopped`；自然到点 → `done`。两者都有完整统计。
             let status = if session.stop.load(Ordering::Relaxed) {
                 "stopped"
             } else {
@@ -402,7 +373,6 @@ fn run_capture(app: AppHandle, session_id: u64, request: CaptureRequest, session
         Err(err) => {
             let message = err.to_string();
             log::warn!("手动抓包结束（{message}），已录 {total} 帧");
-            // 失败也要发收尾事件：已录到的帧照样能出报告，用户不必从头再来。
             flush(
                 &app,
                 session_id,
@@ -467,10 +437,7 @@ struct SampleInput {
     captured_at_ms: u64,
 }
 
-/// 取出全部采样，并挡住「一帧都没有」「多次采样却不是同一个集合」这类必然出错的报告。
-///
-/// 集合一致性必须在这里挡住：两次采样来自不同集合，字节对照就毫无意义，
-/// 而用户会以为「数据对不上是设备的问题」。
+/// 取出全部采样，并挡住「一帧都没有」「多次采样不是同一集合」这类必然出错的报告。
 fn collect_samples(
     state: &ProbeState,
     requests: &[ReportSampleDto],
@@ -493,7 +460,6 @@ fn collect_samples(
         seen.push(request.session_id);
 
         let session = state.session(request.session_id)?;
-        // 会话可能还在录：先停再取快照，避免报告里少掉最后几帧却说「已结束」。
         session.stop.store(true, Ordering::Relaxed);
         let frames = lock(&session.frames).clone();
         if frames.is_empty() {
@@ -513,7 +479,6 @@ fn collect_samples(
         samples.push(SampleInput {
             summary: lock(&session.summary).clone(),
             battery: request.battery_percent.map(|percent| percent.min(100)),
-            // 抓取没正常结束（打开失败）时退回「现在」：宁可近似，也不编一个精确时刻。
             captured_at_ms: lock(&session.finished_at_ms).unwrap_or(now_ms),
             frames,
         });
@@ -542,11 +507,6 @@ fn display_name(form: &ReportFormDto, device: &CollectionInfo) -> String {
         typed.to_string()
     }
 }
-
-// ---- 报告渲染 ----
-//
-// 纯函数：输入设备 + 帧 + 表单，输出 Markdown。不读时钟、不写文件，便于逐条断言格式。
-// 报告的读者是「没摸过这台设备」的维护者，因此每个数字都要能自证来源（帧数、时长、截断与否）。
 
 fn build_report(
     device: &CollectionInfo,
@@ -615,7 +575,6 @@ fn build_report(
         let _ = writeln!(out);
     }
 
-    // 采样记录：先给一张对照表，维护者一眼能看出「两次采样分别在什么电量下录的」。
     let _ = writeln!(out, "**采样记录**");
     let _ = writeln!(out);
     let _ = writeln!(
@@ -693,7 +652,6 @@ fn build_report(
         let _ = writeln!(out);
     }
 
-    // 原始数据：按样本分节，行数预算在所有样本之间共享，避免一份报告把 issue 撑爆。
     let mut budget = REPORT_MAX_FRAME_GROUPS;
     for (index, sample) in samples.iter().enumerate() {
         let groups = probe::group_frames(&sample.frames);
@@ -766,9 +724,7 @@ fn battery_text(battery: Option<u8>) -> String {
     }
 }
 
-/// 采集方式一行：听 / 发分别说清，别让维护者猜。
-///
-/// 「发了但全失败」必须与「本来就没发」区分开：两者的排查方向完全不同。
+/// 采集方式一行：纯监听 / 主动查询，并区分「发了但全失败」。
 fn capture_mode(summary: Option<&CaptureSummary>) -> String {
     match summary {
         Some(summary) if summary.output_frames > 0 => format!(
@@ -780,14 +736,11 @@ fn capture_mode(summary: Option<&CaptureSummary>) -> String {
             "主动查询（报文全部发送失败，见下表「发送失败」）".to_string()
         }
         Some(_) => "纯监听（未向设备发任何报文）".to_string(),
-        // 没有统计 = 抓取中途失败：不假装知道当时发没发报文。
         None => "未知（抓取未正常结束）".to_string(),
     }
 }
 
-/// 「异常」列：把截断与发送失败合并成一句话，没问题就写 `—`。
-///
-/// 两者都是「数据可能不完整」的信号，分两列会让表格过宽，而空单元格又会被误读成「没查」。
+/// 「异常」列：合并截断与发送失败，无问题时为 `—`。
 fn anomaly_text(summary: Option<&CaptureSummary>) -> String {
     let Some(summary) = summary else {
         return "未知（抓取未正常结束）".to_string();
@@ -813,7 +766,6 @@ fn anomaly_text(summary: Option<&CaptureSummary>) -> String {
 fn attachment_hint(report_path: Option<&str>) -> String {
     match report_path {
         Some(path) => format!("完整数据见报告文件，可把它作为附件上传：\n> `{path}`"),
-        // 预览阶段没有文件可指：告诉用户哪一步才会生成，别让他去找一个不存在的路径。
         None => "需要完整数据时点「保存到本地」，报告文件会写到数据目录并显示路径。".to_string(),
     }
 }
@@ -842,7 +794,6 @@ fn truncate_to_chars(text: String, limit: usize, report_path: Option<&str>) -> S
         return text;
     }
     let cut: String = text.chars().take(limit).collect();
-    // 保留到最后一个换行，避免把一行数据切成半行。
     let cut = match cut.rfind('\n') {
         Some(index) => cut[..index + 1].to_string(),
         None => cut,
@@ -853,10 +804,7 @@ fn truncate_to_chars(text: String, limit: usize, report_path: Option<&str>) -> S
     )
 }
 
-/// UTC 时间戳：`2026-10-29 03:10:44 UTC`。
-///
-/// 手写日历换算而不是引入 `chrono`：这里只需要一个给人看的 UTC 时间，
-/// 为一行格式化拉一个依赖不划算，且时钟来源必须仍是 `voltnest_provider::clock`。
+/// UTC 时间戳：`2026-10-29 03:10:44 UTC`。手写日历换算，不引入日期库。
 fn utc_stamp(ms: u64) -> String {
     let (year, month, day, hour, minute, second) = civil(ms);
     format!("{year:04}-{month:02}-{day:02} {hour:02}:{minute:02}:{second:02} UTC")
@@ -992,7 +940,6 @@ mod tests {
 
         assert!(text.contains("### 设备无法识别：AJ159 NL"), "{text}");
         assert!(text.contains("| VID:PID | `0x7768:0x6426` |"), "{text}");
-        // 代表 Usage 取私有页，而不是标准鼠标页。
         assert!(
             text.contains("| UsagePage / Usage | `0xFFB2/0x0001` |"),
             "{text}"
@@ -1002,7 +949,6 @@ mod tests {
         assert!(text.contains("设备出现在列表里"), "{text}");
         assert!(text.contains("电量一直显示不出来"), "{text}");
 
-        // 采样表：两次采样各自带电量，谁在什么电量下录的一目了然。
         assert!(
             text.contains(
                 "| 1 | 80% | 纯监听（未向设备发任何报文） | 20.0 s | 3 / 0（共 3） | — |"
@@ -1016,7 +962,6 @@ mod tests {
             "{text}"
         );
 
-        // 每个样本一段原始数据，首帧十六进制 + 折叠计数。
         assert!(
             text.contains("**原始 HID 数据 — 样本 1（80%，2023-11-14 22:13:20 UTC）**"),
             "{text}"
@@ -1030,7 +975,6 @@ mod tests {
         assert!(text.contains("2023-11-14 22:13:20 UTC"), "{text}");
         assert!(text.contains("请对照各样本的原始数据"), "{text}");
 
-        // 字节分布分析已按需求移除：不得再出现任何自动统计。
         assert!(!text.contains("字节分布"), "{text}");
         assert!(!text.contains("变化最明显"), "{text}");
     }
@@ -1130,12 +1074,10 @@ mod tests {
             )
         };
         let text = build_report(&device(), &[make(0), make(7)], &form(), 0, None);
-        // 第一样本拿走 300 行，第二样本只剩 200 行。
         assert!(
             text.contains("本样本共 300 组，受报告长度限制只列出前 200 组"),
             "{text}"
         );
-        // 数据行形如 `     123  IN   4     06 00 …`：第二列是方向。
         let rows = text
             .lines()
             .filter(|line| matches!(line.split_whitespace().nth(1), Some("IN") | Some("OUT")))
@@ -1152,7 +1094,6 @@ mod tests {
         assert!(cut.contains("已截断"));
         assert!(cut.contains("p.md"));
         assert_eq!(truncate_to_chars("abc".to_string(), 100, None), "abc");
-        // 预览没有文件可指：截断说明必须把用户导向「保存到本地」，而不是让他去找不存在的路径。
         let preview = truncate_to_chars("长".repeat(400), 100, None);
         assert!(preview.contains("保存到本地"), "{preview}");
     }
@@ -1165,7 +1106,6 @@ mod tests {
             removable_report_path(reports, Some("C:/data/voltnest/reports/hid-7768-6426.md")),
             Some(PathBuf::from("C:/data/voltnest/reports/hid-7768-6426.md"))
         );
-        // 目录外一律拒绝（含大小写不同的盘符写法不在此断言：Path 比较按字面组件）。
         assert_eq!(
             removable_report_path(reports, Some("C:/Windows/System32/ntoskrnl.exe")),
             None
@@ -1218,9 +1158,6 @@ mod tests {
     }
 
     /// 打包隔离：发布产物只允许带型号表，不得把测试/样例数据卷进去。
-    ///
-    /// 这是可执行的守卫而不是注释：`bundle.resources` 一旦写成目录通配（`data/**`）或
-    /// 加进 `tests/`，这条就会红。
     #[test]
     fn bundle_resources_exclude_test_assets() {
         let config_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tauri.conf.json");
@@ -1260,7 +1197,6 @@ mod tests {
             !entry.contains("tests/") && !entry.contains(".spec."),
             "入口文件不得引用测试：{entry}"
         );
-        // 报告渲染里也不允许出现样例数据兜底（生产路径只吃真实抓包）。
         let this = include_str!("probe.rs");
         let report_fn = this
             .split("fn build_report(")

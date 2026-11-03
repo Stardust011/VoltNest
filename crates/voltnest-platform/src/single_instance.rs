@@ -1,14 +1,7 @@
 //! 单实例：二次启动唤醒首实例，不新建窗口。
 //!
-//! Windows 用当前用户 Local 命名空间的互斥体 + 命名事件：第二个进程给命名事件发信号后立即退出，
-//! 首实例里等待该事件的线程把已有窗口 show + unminimize + 抢焦点。
-//! 用 Local 而非 Global：多用户同时登录时各自应有一个实例。
-//!
-//! Linux 用 Unix domain socket：首实例 bind + listen（$XDG_RUNTIME_DIR/voltnest.sock，
-//! 缺省 /tmp/voltnest-<uid>.sock），第二个进程 connect 成功后直接退出，首实例的监听线程
-//! 收到连接即触发 activation 回调。
-//!
-//! 两平台一致：拿不到锁一律降级为 Unavailable 而不是阻塞启动——宁可多开一个窗口，也不要打不开。
+//! Windows 用当前用户 Local 命名空间的互斥体 + 命名事件；Linux 用 Unix domain socket。
+//! 两平台一致：拿不到锁一律降级为 `Unavailable`，不阻塞启动。
 
 #[cfg(windows)]
 mod imp {
@@ -33,8 +26,8 @@ mod imp {
         s.encode_utf16().chain(std::iter::once(0)).collect()
     }
 
-    /// windows-sys 0.61 起 HANDLE 是裸指针，默认不 Send；内核句柄实际可跨线程用于
-    /// SetEvent / WaitForSingleObject / CloseHandle，故在此显式承担该保证，仅限本模块使用。
+    /// `windows-sys` 的 `HANDLE` 是裸指针，默认不 `Send`；内核句柄实际可跨线程用于
+    /// `SetEvent` / `WaitForSingleObject` / `CloseHandle`，故在此显式承担该保证，仅限本模块。
     #[derive(Clone, Copy)]
     struct Handle(HANDLE);
 
@@ -86,7 +79,6 @@ mod imp {
                 .spawn(move || {
                     while !stop.load(Ordering::Relaxed) {
                         if event.is_null() {
-                            // 无事件对象可等，退出避免空转。
                             return;
                         }
                         // SAFETY: event 在 Guard 存活期间有效；退出流程先置 stop，最坏多循环一次。
@@ -138,10 +130,8 @@ mod imp {
         }
 
         let event_name = wide(EVENT_NAME);
-        // 手动复位事件：首实例创建，二次启动只 SetEvent。
         // SAFETY: 名称以 NUL 结尾 UTF-16；句柄由 Guard 关闭。
         let event = Handle(unsafe { CreateEventW(std::ptr::null(), 1, 0, event_name.as_ptr()) });
-        // 事件创建失败不影响单实例语义，只是二次启动无法唤醒窗口。
         Instance::First(Guard { mutex, event })
     }
 
@@ -179,7 +169,7 @@ mod imp_linux {
     pub const SOCKET_FILE_NAME: &str = "voltnest.sock";
     /// XDG_RUNTIME_DIR 不可用时的回退目录。
     pub const FALLBACK_SOCKET_DIR: &str = "/tmp";
-    /// 监听线程的轮询间隔：非阻塞 accept + 小睡，既能及时响应，又不会空转烧 CPU。
+    /// 监听线程的轮询间隔：非阻塞 accept + 小睡，避免空转。
     const POLL_INTERVAL: Duration = Duration::from_millis(50);
 
     /// 单实例判定结果。
@@ -210,8 +200,6 @@ mod imp_linux {
             stop: Arc<AtomicBool>,
             on_activate: impl Fn() + Send + 'static,
         ) -> JoinHandle<()> {
-            // fd 复制失败或切不到非阻塞模式时，退化成立刻结束的线程：
-            // 唤醒不可用，但启动流程不受影响（与 Windows 事件创建失败同等对待）。
             let Ok(listener) = self.listener.try_clone() else {
                 return std::thread::spawn(|| {});
             };
@@ -228,11 +216,9 @@ mod imp_linux {
                                     on_activate();
                                 }
                             }
-                            // 非阻塞 accept 当前无待处理连接。
                             Err(err) if err.kind() == std::io::ErrorKind::WouldBlock => {
                                 std::thread::sleep(POLL_INTERVAL);
                             }
-                            // 监听 socket 出现意外状况：退避重试，不空转。
                             Err(_) => std::thread::sleep(POLL_INTERVAL),
                         }
                     }
@@ -243,7 +229,6 @@ mod imp_linux {
 
     impl Drop for Guard {
         fn drop(&mut self) {
-            // 主动清理，避免下次启动多走一次「残留清理 + 重绑」；只删自己绑定的路径。
             let _ = std::fs::remove_file(&self.path);
         }
     }
@@ -255,8 +240,6 @@ mod imp_linux {
             _ => {
                 let name = match uid {
                     Some(uid) => format!("voltnest-{uid}.sock"),
-                    // 连 uid 都拿不到时退回不带 uid 的名字：可能被别的用户占用，
-                    // 那时的属主检查会给出 Unavailable，不会误判成 Second。
                     None => "voltnest-anon.sock".to_string(),
                 };
                 Path::new(FALLBACK_SOCKET_DIR).join(name)
@@ -286,7 +269,6 @@ mod imp_linux {
     fn notify(path: &Path) -> bool {
         match UnixStream::connect(path) {
             Ok(mut stream) => {
-                // 写入失败不影响判定：连上就说明首实例在跑。
                 let _ = stream.write_all(b"\n");
                 true
             }
@@ -304,7 +286,6 @@ mod imp_linux {
         if notify(path) {
             return Instance::Second;
         }
-        // 连不上：要么首次启动，要么上次异常退出留下了残留 socket 文件（无监听 → ECONNREFUSED）。
         match std::fs::metadata(path) {
             Ok(meta) => {
                 if foreign_owner(&meta) {
@@ -328,7 +309,6 @@ mod imp_linux {
                 listener,
             }),
             Err(err) => {
-                // 清理与 bind 之间可能有另一个实例抢先绑定：再连一次就当第二实例。
                 if notify(path) {
                     return Instance::Second;
                 }
@@ -339,8 +319,7 @@ mod imp_linux {
 
     /// bind + listen，并把文件权限收紧到属主可读写。
     ///
-    /// /tmp 回退路径上没有 0700 目录兜底，收紧权限让别的用户连不进来（只能造成拒绝服务，
-    /// 泄漏不了数据，但能收紧就收紧）。
+    /// `/tmp` 回退目录没有 0700 兜底，收紧权限避免其它用户连接。
     fn bind(path: &Path) -> std::io::Result<UnixListener> {
         let listener = UnixListener::bind(path)?;
         let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
@@ -414,7 +393,6 @@ mod imp_linux {
         #[test]
         fn stale_socket_file_self_heals() {
             let path = temp_socket("stale");
-            // 绑定后立刻释放：文件留着但没有监听者，等价于上次崩溃留下的残留。
             let _ = UnixListener::bind(&path).expect("绑定测试 socket 失败");
             assert!(path.exists(), "残留文件应仍在");
 
@@ -429,7 +407,6 @@ mod imp_linux {
 
         #[test]
         fn bind_failure_degrades_to_unavailable() {
-            // 父目录不存在 → bind 必然失败；必须降级成 Unavailable，不能 panic 也不能阻塞。
             let path = std::env::temp_dir()
                 .join("voltnest-test-missing-dir")
                 .join("nested.sock");
@@ -454,8 +431,6 @@ mod imp_linux {
                 let _ = tx.send(());
             });
 
-            // 监听 socket 在 acquire 时就已 listen，连接会排在 backlog 里，
-            // 因此不依赖「监听线程先进入循环」的调度先后。
             assert!(
                 matches!(acquire_with(&path), Instance::Second),
                 "第二实例应成功"
@@ -530,7 +505,6 @@ mod tests {
             Instance::Second => panic!("首次获取不应是 Second"),
             Instance::Unavailable(e) => panic!("首次获取失败: {e}"),
         };
-        // 同进程再次获取：互斥体已存在 → Second。
         assert!(matches!(acquire(), Instance::Second));
         assert!(first.activate_existing(), "置位命名事件应成功");
         drop(first);

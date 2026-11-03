@@ -1,23 +1,19 @@
-//! HID Provider 运行时：1 枚举线程 + N 读取线程。
+//! HID Provider 运行时：1 个枚举线程 + N 个读取线程。
 //!
-//! **品牌无关**：设备匹配、帧解析、充电标志全部来自 [`BrandSpec`] 与 [`Registry`]，无品牌分支，新增品牌不改这里。
+//! 品牌无关：设备匹配、帧解析、充电标志全部来自 [`BrandSpec`] 与 [`Registry`]。
+//! 隔离靠读超时上界而非线程池，一个接收器挂死只会拖慢自己的读取线程。
+//! 只按「VID/PID 精确 → 品牌声明的 UsagePage」两步选集合，不使用 `open(vid, pid)`。
 //!
-//! 隔离靠**时间上界**而非线程池：`read_timeout = 120ms`，实测拔线后句柄立刻失效，故一个接收器挂死只会拖慢自己的读取线程。
+//! 设备类型识别只用枚举字段（纯函数 [`voltnest_provider::classify`]），不额外开句柄、
+//! 不发报文；证据不足时结论为 `Unknown`。
 //!
-//! 三条实测结论：1. **禁止** `open(vid, pid)`：会静默打开错误集合（枚举顺序里第一个 `0x0C/0x01` 集合），拿到「成功但读不到」的句柄；2. 集合选择须「VID/PID 精确 → 品牌声明的 UsagePage」两步，型号表只按 `VID:PID` 提供型号，不含接口号；3. 只写通道不得用读句柄打开，主动查询（若品牌声明）走写通道。
-//!
-//! # 设备类型识别（与电量采集解耦）
-//! 分类只用枚举结果里的字段（`usage_page` / `usage` / `VID` / `PID`），不额外开句柄、不发光报文、不改读取线程，对采集节奏与续航零影响。判定是纯函数（[`voltnest_provider::classify`]),本文件只做：1. 把同一 `VID:PID` 的全部接口集合聚合成证据（多接口≠多设备）；2. 从型号表取「有出处」的厂商声明（`deviceType` 恰为规范类型词时）。枚举不到标准 Usage 且型号表无类型声明时结论 `Unknown`——这就是「不猜」的全部承诺。
-//!
-//! # Linux（hidraw 后端）
-//! Linux 走 hidapi 的静态 hidraw 后端（特性 `linux-static-hidraw`），集合路径形如 `/dev/hidraw3`：
-//! 1. **权限**：读写 `/dev/hidraw*` 需要当前用户被放行，发行版通常靠 `plugdev` 组或 udev 规则做到。**本实现不安装任何 udev 规则**；权限缺失时 `open_path` 失败并上报 `access_denied`，不会静默。
-//! 2. **能力**：hidraw 从报告描述符解析出真实 `usage_page`/`usage`（只有 libusb 后端恒为 0）；这两项是集合选择的唯一判据，`interface_number` 不再参与匹配。
-//! 3. **无设备**：机器上没有 `/dev/hidraw*` 时枚举为空——不报错、不 panic、不阻塞，只打一条诊断后继续按 [`PRESENCE_POLL_MS`] 轮询。
-//! 4. **构建期依赖**：hidapi 的 hidraw 后端用 pkg-config 探测 `libudev`，故构建机须装 libudev 开发文件（Debian / Ubuntu `libudev-dev`，Fedora `systemd-devel`）；运行期只用到系统已装的 `libudev.so.1`。
+//! Linux 走 hidraw 后端：读写 `/dev/hidraw*` 需当前用户被放行（本实现不安装 udev 规则），
+//! 权限缺失时 `open_path` 失败并上报 `access_denied`；无设备时枚举为空并按
+//! [`PRESENCE_POLL_MS`] 轮询。构建期需 libudev 开发文件。
 
 use crate::brands::{Brand, Registry};
 use crate::spec::{BrandSpec, ReplyTransport, RequestTemplate};
+use crate::table::Entry;
 use crate::{
     LISTEN_READ_TIMEOUT_MS, PRESENCE_POLL_MS, READ_BUFFER_LEN, READ_TIMEOUT_MS, RETRY_GAP_MS, frame,
 };
@@ -73,11 +69,9 @@ impl Provider for HidProvider {
 
         let mut sessions: HashMap<String, SessionHandle> = HashMap::new();
         let mut announced: HashSet<String> = HashSet::new();
-        // 只在「空 → 非空 / 非空 → 空」切换时打诊断，避免每 5s 刷屏。
         let mut empty_reported = false;
 
         while !stop.load(Ordering::Relaxed) {
-            // 重新枚举（hidapi 重读设备列表），打在接收器上、不经 2.4G 链路，不影响鼠标续航——别为「怕唤醒鼠标」改成事件订阅，那是后续升级路径而非 v1 修复。
             if let Err(e) = api.refresh_devices() {
                 let _ = tx.send(ProviderEvent::TransportDown {
                     code: ErrorCode::Internal,
@@ -89,9 +83,6 @@ impl Provider for HidProvider {
                 continue;
             }
 
-            // 枚举为空不是错误：Linux 上常见于「没有 /dev/hidraw*」或「当前用户不可读」。这里只打一条状态
-            // 切换诊断，**不**派发 TransportDown（那会让上层误判传输层坏了、把既有设备全转 Offline），
-            // 也不提前退出——继续按 PRESENCE_POLL_MS 轮询，插上设备即恢复。
             let enumeration_empty = api.device_list().next().is_none();
             if enumeration_empty && !empty_reported {
                 eprintln!(
@@ -113,7 +104,6 @@ impl Provider for HidProvider {
                 }
             }
 
-            // 1) 新出现的设备：先上报事实，再尝试打开
             for (key, target) in &found {
                 if announced.insert(key.clone()) {
                     let fact = DeviceFact::new(
@@ -121,7 +111,7 @@ impl Provider for HidProvider {
                         Transport::Hid,
                         FAMILY_HID_VBAS,
                         target.display_name.clone(),
-                        target.display_name.clone(),
+                        target.model_name_raw.clone(),
                     )
                     .with_path(target.path.to_string_lossy().into_owned())
                     .with_classification(target.classification.clone());
@@ -161,7 +151,6 @@ impl Provider for HidProvider {
                         }
                     }
                     Err(e) => {
-                        // 官方驱动运行时共享打开可行（实测）；失败多是被独占。hidapi 原文进诊断：`access_denied` 不足以区分「被独占」与「系统权限策略拦截」。
                         let _ = tx.send(ProviderEvent::Unreadable {
                             stable_id: target.stable_id.clone(),
                             code: open_error_code(&e),
@@ -171,7 +160,6 @@ impl Provider for HidProvider {
                 }
             }
 
-            // 2) 物理消失：枚举不再返回 → 关闭句柄 + Removed（唯一销毁路径）
             let gone: Vec<String> = sessions
                 .keys()
                 .filter(|k| !found.contains_key(*k))
@@ -180,7 +168,6 @@ impl Provider for HidProvider {
             for key in gone {
                 if let Some(session) = sessions.remove(&key) {
                     session.stop.store(true, Ordering::Relaxed);
-                    // 读取线程最多阻塞 READ_TIMEOUT_MS，join 上界由此保证。
                     let _ = session.join.join();
                     announced.remove(&key);
                     if let Some(id) = StableId::parse(&key) {
@@ -192,7 +179,6 @@ impl Provider for HidProvider {
                 }
             }
 
-            // 3) 读线程已自行退出（错误已上报）：丢弃会话，下一轮重开
             let dead: Vec<String> = sessions
                 .iter()
                 .filter(|(_, s)| s.join.is_finished())
@@ -209,7 +195,6 @@ impl Provider for HidProvider {
             }
         }
 
-        // 退出：先置位再 join，保证不泄漏句柄与线程。
         for (_, session) in sessions.drain() {
             session.stop.store(true, Ordering::Relaxed);
             let _ = session.join.join();
@@ -218,8 +203,6 @@ impl Provider for HidProvider {
 }
 
 /// 一条采集会话的句柄：停止标志 + 线程句柄。
-///
-/// 与 `voltnest_ble::runtime::SessionHandle` 职责一致（曾名 `Session`）。
 struct SessionHandle {
     stop: Arc<AtomicBool>,
     join: JoinHandle<()>,
@@ -229,17 +212,18 @@ struct HidTarget {
     stable_id: StableId,
     path: CString,
     display_name: String,
+    /// 未经品牌前缀修饰的型号原文（`modelKey` 来源）。
+    model_name_raw: String,
     /// 命中的品牌（决定字段位置与查询方式）。
     brand: &'static BrandSpec,
     /// 类型识别结果（来自枚举元数据 + 型号表声明）。
     classification: DeviceClassification,
 }
 
-/// 把**同一 VID:PID 的全部接口**的 Usage 聚合成一份证据。
+/// 把同一 `VID:PID` 全部接口的 Usage 聚合成一份证据。
 ///
-/// 遍历整张枚举表而非只看命中的集合：设备可能是复合 HID（厂商私有集合在 MI_01、标准鼠标集合在 MI_00），只看一个接口会漏标准证据。聚合键是 `VID:PID`（= `stableId` 粒度），故**多接口不会被当成多台设备**。
-///
-/// `usage_page()` / `usage()` 在 Linux **libusb** 后端恒为 0（hidapi 官方文档）；Windows 的 hid.dll 与 Linux 的 **hidraw** 后端都从报告描述符解析出真实值，故这两类平台的 Usage 规则必须照常生效。字段到底可不可用由 [`HidEvidence::push_collection`] 判定（`usage_page == 0` 即不可用），平台差异不在这里分支。
+/// 聚合键是 `VID:PID`，故多接口不会被当成多台设备。Usage 字段是否可用由
+/// [`HidEvidence::push_collection`] 判定，平台差异不在这里分支。
 fn usage_index(api: &HidApi) -> HashMap<(u16, u16), HidEvidence> {
     let mut index: HashMap<(u16, u16), HidEvidence> = HashMap::new();
     for info in api.device_list() {
@@ -252,7 +236,7 @@ fn usage_index(api: &HidApi) -> HashMap<(u16, u16), HidEvidence> {
     index
 }
 
-/// 生成一台设备的分类：先收集 Usage 候选，再叠加**有出处**的厂商声明。型号表映射仅当 `deviceType` 恰好是规范类型词时生效（见 [`crate::table::Entry::declared_device_type`]），来源串写进证据便于事后核对。
+/// 生成一台设备的分类：Usage 证据 + 有出处的厂商声明（`deviceType` 恰为规范类型词时生效）。
 fn classify_target(
     brand: &Brand,
     spec: &'static BrandSpec,
@@ -277,17 +261,20 @@ fn classify_target(
     classify_hid(evidence, verified.as_ref())
 }
 
-/// 枚举结果里的一条**集合记录**。
+/// 枚举结果里的一条集合记录。
 ///
-/// `device_list()` 的每一项对应一个 HID 集合，但两个后端的展开方式不同：Windows 上每个集合是独立设备记录；
-/// Linux hidraw 上同一个 `/dev/hidraw*` 节点里的多个 Usage 会展开成多条记录、**共用同一 `path`**。
-/// 先把枚举收敛成这个平台无关的最小结构，集合选择才能写成可测的纯函数。
+/// 同一平台节点在 hidraw 上会展开成多条共用 `path` 的记录，收敛成这个平台无关结构后
+/// 集合选择才能写成可测的纯函数。
 struct EnumeratedCollection {
     vid: u16,
     pid: u16,
     usage_page: u16,
     usage: u16,
     path: CString,
+    /// 设备自报的产品名（展示名与型号来源之一）。
+    product: Option<String>,
+    /// 设备自报的厂商名（展示名的品牌前缀）。
+    manufacturer: Option<String>,
 }
 
 /// 把 hidapi 的枚举结果收敛成 [`EnumeratedCollection`] 列表。
@@ -299,6 +286,8 @@ fn enum_entries(api: &HidApi) -> Vec<EnumeratedCollection> {
             usage_page: info.usage_page(),
             usage: info.usage(),
             path: info.path().to_owned(),
+            product: info.product_string().map(str::to_string),
+            manufacturer: info.manufacturer_string().map(str::to_string),
         })
         .collect()
 }
@@ -311,9 +300,10 @@ fn collect_targets(
     select_targets(&enum_entries(api), usages)
 }
 
-/// 按「VID/PID 精确 → 品牌声明的 UsagePage（+ 可选 Usage）」筛选候选集合。返回 `(本轮候选, 冲突告警)`：同一轮出现两个相同 `stableId`（两只同型号接收器）时只保留先发现的一条并上报 `BindingConflict`。
+/// 按「VID/PID 精确 → 品牌声明的 UsagePage（+ 可选 Usage）」筛选候选集合。
 ///
-/// 平台差异在这里收口：`stableId` 相同但 `path` 相同 = 同一物理集合的多条 Usage 记录（hidraw 特性），不算冲突；只有 `path` 不同才是真的两只同型号接收器。
+/// 返回 `(本轮候选, 冲突告警)`：同一轮出现两个相同 `stableId` 但 `path` 不同时只保留先发现的
+/// 一条并上报冲突；`path` 相同是同一物理集合的多条 Usage 记录，不算冲突。
 fn select_targets(
     entries: &[EnumeratedCollection],
     usages: &HashMap<(u16, u16), HidEvidence>,
@@ -323,8 +313,6 @@ fn select_targets(
     let mut conflicts: Vec<(String, String)> = Vec::new();
 
     // 两遍：先按主页面，再按备用页面补「主页面零命中」的型号。
-    // 分遍是为了让「两个页面都存在」的设备稳定选主页面 —— 单遍的话结果取决于枚举顺序，
-    // 先枚举到备用页面就会把它当主页面，还会把真正的主页面报成「同 VID:PID 冲突」。
     for alt in [false, true] {
         for info in entries {
             consider_target(info, alt, registry, usages, &mut found, &mut conflicts);
@@ -335,7 +323,7 @@ fn select_targets(
 
 /// 单条枚举记录参与一次候选筛选。
 ///
-/// `alt = true` 表示这一遍只认品牌声明的**备用** UsagePage，且不得覆盖已选中的集合。
+/// `alt = true` 表示这一遍只认品牌声明的备用 UsagePage，且不得覆盖已选中的集合。
 fn consider_target(
     info: &EnumeratedCollection,
     alt: bool,
@@ -355,13 +343,9 @@ fn consider_target(
     let Some(entry) = brand.table.lookup(vid, pid) else {
         return;
     };
-    // 品牌可声明「按型号表字段选协议」的钩子（达尔优按 `fwType`、雷柏按 `driver` 分派）；
-    // 没有钩子的品牌原样返回自己的 spec，判定与引入钩子前完全一致。
     let Some(spec) = brand.spec.for_device(entry) else {
         return;
     };
-    // `usage_page == 0` 是通配：官方按「集合实现了哪个报告 ID」选，而 hidapi 枚举拿不到
-    // 报告描述符里的报告 ID 列表，故这类设备只能接受任意集合。
     let page_ok = if alt {
         spec.usage_page_alt == Some(info.usage_page)
     } else {
@@ -370,23 +354,18 @@ fn consider_target(
     if !page_ok {
         return;
     }
-    // 品牌声明了 Usage 就只在它上面打开，避免同一页面下并列多个集合时按枚举顺序随机选中；
-    // 只作用于主页面，备用页面按页面兜底。
     if !alt && spec.usage.is_some_and(|usage| usage != info.usage) {
         return;
     }
     let stable_id = StableId::hid(vid, pid);
     let key = stable_id.as_str().to_string();
     if let Some(existing) = found.get(&key) {
-        // 备用页面这一遍永远让位给主页面。
         if alt {
             return;
         }
         if existing.path == info.path {
             return;
         }
-        // 通配 UsagePage 的品牌（迈从音频）本来就不知道哪个集合是对的：同一台设备的多个集合
-        // 逐个枚举是常态，不是「两只同型号接收器」，不报冲突。
         if spec.usage_page == 0 {
             return;
         }
@@ -401,33 +380,64 @@ fn consider_target(
         }
         return;
     }
+    let model = model_name(spec, info, entry);
     found.insert(
         key,
         HidTarget {
             stable_id,
             path: info.path.clone(),
-            display_name: entry
-                .name
-                .clone()
-                .map(|n| n.trim().to_string())
-                .filter(|n| !n.is_empty())
-                .unwrap_or_else(|| format!("0x{vid:04X}:0x{pid:04X}")),
+            display_name: compose_display_name(
+                clean(info.manufacturer.as_deref()),
+                model.as_deref(),
+                vid,
+                pid,
+            ),
+            model_name_raw: model.unwrap_or_default(),
             brand: spec,
             classification: classify_target(brand, spec, vid, pid, usages),
         },
     );
 }
 
+/// 去掉首尾空白；空白串视为没有。
+fn clean(value: Option<&str>) -> Option<&str> {
+    value.map(str::trim).filter(|s| !s.is_empty())
+}
+
+/// 型号名：品牌声明优先产品名时用设备自报的产品名，否则用型号表型号；两者都缺失为 `None`。
+fn model_name(spec: &BrandSpec, info: &EnumeratedCollection, entry: &Entry) -> Option<String> {
+    let table = clean(entry.name.as_deref());
+    let product = clean(info.product.as_deref());
+    let picked = if spec.name_from_product {
+        product.or(table)
+    } else {
+        table
+    };
+    picked.map(str::to_string)
+}
+
+/// 展示名：品牌名 + 型号；型号已含品牌时不重复。只有型号缺失才回落到 `VVVV:PPPP`。
+fn compose_display_name(brand: Option<&str>, model: Option<&str>, vid: u16, pid: u16) -> String {
+    let Some(model) = model else {
+        return format!("{vid:04X}:{pid:04X}");
+    };
+    match brand {
+        Some(brand) if !model.to_lowercase().starts_with(&brand.to_lowercase()) => {
+            format!("{brand} {model}")
+        }
+        _ => model.to_string(),
+    }
+}
+
 /// 换报告 ID 后的等待（毫秒）。
 const REPORT_ID_SWITCH_GAP_MS: u64 = 50;
 
-/// 档位探测最多听几帧：够容纳「一条无关推送 + 一条 base 应答」，再多就是在等一个不会来的应答。
+/// 档位探测最多听几帧：够容纳「一条无关推送 + 一条 base 应答」。
 const PROFILE_PROBE_FRAMES: usize = 4;
 
 /// 在报告里找出命令字为 `cmd` 的应答，返回它的 payload。
 ///
-/// 偏移容错同 [`frame::decode_listen`]：带报告 ID 的集合里 `cmd` 在 `cmd_index`，
-/// 无编号报告的集合可能被平台补了一个 ID 槽。
+/// 偏移容错同 [`frame::decode_listen`]。
 fn probe_payload<'a>(brand: &BrandSpec, cmd: u8, report: &'a [u8]) -> Option<&'a [u8]> {
     let layout = &brand.frame;
     let bases: &[usize] = if layout.report_id.is_some() {
@@ -471,11 +481,7 @@ type Flow = Result<(), Exit>;
 /// 推送为主的协议：多久没拿到有效读数，就值得主动问一次。
 ///
 /// 锚点取「上次有效读数」与「上次探活」里较晚的那个：设备持续推送时永远不到这里；
-/// 一旦静默超过 `expected_interval_ms` 就探一次，探完再静默同样的时长才探下一次 ——
-/// 否则读数一直不来时会变成每轮都发报文，又回到了轮询。
-///
-/// **探活失败不自行判死**：读数不更新，老化照常推进，`stale` / `unavailable` 由引擎按阈值链
-/// 判定。本端只负责「再问一次」，不负责「猜设备还活着」。
+/// 静默超过 `expected_interval_ms` 才探一次。探活失败不自行判死，状态由引擎按阈值链判定。
 fn lazy_probe_due(
     expected_interval_ms: u64,
     last_reading: Option<Instant>,
@@ -497,8 +503,7 @@ fn lazy_probe_due(
 
 /// 一台设备的读取会话：句柄 + 身份 + 事件出口 + 停止标志。
 ///
-/// 四种 [`ReplyTransport`] 各对应一个 `run_*` 方法，分派只在 [`Reader::run`] 一处；
-/// 收发原语、事件上报、可打断等待各只有一份，四个循环不再各自重复样板。
+/// 四种 [`ReplyTransport`] 各对应一个 `run_*` 方法，分派只在 [`Reader::run`] 一处。
 struct Reader {
     dev: HidDevice,
     stable_id: StableId,
@@ -509,7 +514,7 @@ struct Reader {
     buf: [u8; READ_BUFFER_LEN],
     /// 多包应答拼接器：只有声明了 `reassembly` 的品牌会用到。
     reassembler: frame::Reassembler,
-    /// 最近一次**有效读数**的时刻：推送型协议据此判断「要不要主动问一次」。
+    /// 最近一次有效读数的时刻：推送型协议据此判断「要不要主动问一次」。
     last_reading: Option<Instant>,
     /// 最近一次主动探活的时刻：读数一直不来时避免每轮都发报文。
     last_probe: Option<Instant>,
@@ -564,11 +569,8 @@ impl Reader {
 
     /// `InterruptQuery`：会话建立时先问一次，之后按协议声明的节奏补问。
     ///
-    /// 两种节奏：
-    /// - `interval_ms: Some(..)` —— 周期轮询，节奏由宿主决定（老族键鼠都是这种）。
-    /// - `interval_ms: None` —— **推送为主**：不按固定节奏打扰设备，只在「读数快过期」时
-    ///   探活问一次（[`Self::probe_due`]）。键盘处理一条电量命令要唤醒固件，而推送由设备
-    ///   自己决定何时发 —— 常态下零查询，故障时才多发几条，这是省电的关键。
+    /// 两种节奏：`interval_ms: Some(..)` 为周期轮询；`None` 为推送为主，只在读数快过期时
+    /// 探活问一次（[`Self::probe_due`]）。
     fn run_interrupt_query(&mut self) -> Flow {
         let mut next = Instant::now();
         while !self.halted() {
@@ -579,7 +581,6 @@ impl Reader {
                     None => self.probe_due(now),
                 };
                 if due {
-                    // 新一次查询前先丢半包：半包拼出来的电量不可信。
                     self.reassembler.reset();
                     self.ensure_profile()?;
                     let _ = self.dev.write(&req.build_at(
@@ -611,9 +612,7 @@ impl Reader {
 
     /// 读一次 base，解出当前板载档位。
     ///
-    /// 官方 `getBase()` 是「发一问、收一答」，答帧与电量应答共用同一个头、靠命令字区分。
-    /// 每次探活都重读：用户切换板载档位后设备不会主动告诉我们，而 `0x05` 是按档位偏移读的，
-    /// 沿用旧档位会一直读同一块。探活本身是低频兜底（常态零查询），多一问可以接受。
+    /// 每次探活都重读：用户切换档位后设备不会主动告知，而查询按档位偏移构造。
     fn ensure_profile(&mut self) -> Flow {
         let Some(probe) = self.brand.profile_probe else {
             return Ok(());
@@ -644,21 +643,14 @@ impl Reader {
             return Ok(());
         };
         let mut reply = vec![0u8; self.reply_len()];
-        // 同一固件家族在不同连接方式下报告 ID 不同（有线 `0x00` / 2.4G `0x07`），枚举拿不到该标志，
-        // 故按「主 → 备」尝试，任一 ID 读出有效帧即锁定。
         let mut report_id = primary;
         let mut next_query = Instant::now();
         while !self.halted() {
             let now = Instant::now();
-            // `interval_ms: Some` = 周期查询；`None` = 推送为主，只在读数快过期时探活。
-            //
-            // 不能把 `None` 当成「保持 next_query 不变」——那样条件恒假，会每轮都发一条查询，
-            // 等于把设备当靶子打。两种节奏必须显式分支。
             let due = match req.interval_ms {
                 Some(_) => now >= next_query,
                 None => self.probe_due(now),
             };
-            // 连上时查询一次拿权威值，之后靠输入报告实时刷新，不到点不打扰设备。
             if self.brand.listen.is_some() && !due {
                 self.listen_once(LISTEN_READ_TIMEOUT_MS)?;
                 continue;
@@ -667,7 +659,6 @@ impl Reader {
             self.query_round(&req, &mut reply, &mut report_id)?;
             let gap = req.interval_ms.unwrap_or(self.brand.expected_interval_ms);
             next_query = now + Duration::from_millis(gap);
-            // 纯查询通道在这里等间隔；有实时上报的通道由上面的读分支自然阻塞。
             if self.brand.listen.is_none() {
                 self.pause(gap)?;
             }
@@ -681,7 +672,6 @@ impl Reader {
             if attempt > 0 {
                 self.pause(RETRY_GAP_MS)?;
             }
-            // 报告 ID 不被该集合接受时发送会直接失败（不是「回了个空帧」）：有备用 ID 就先换过去试。
             if self
                 .dev
                 .send_feature_report(&req.build(Some(*report_id)))
@@ -698,7 +688,6 @@ impl Reader {
             };
             let event = reading_event(&self.stable_id, self.brand, &reply[..n]);
             if matches!(event, ProviderEvent::Unreadable { .. }) {
-                // 换 ID 消耗一次尝试次数，避免「主备都不应答」时无限重问。
                 if let Some(alt) = self.alternate(*report_id) {
                     *report_id = alt;
                     continue;
@@ -729,7 +718,7 @@ impl Reader {
     }
 
     /// 一帧输入报告 → 最多一条事件。四条通道按声明优先级互斥：
-    /// 无头上报 → 推送帧 → 多包重组（命令字过滤 + 拼包）→ 单帧应答（查询通道再看命令字）。
+    /// 无头上报 → 推送帧 → 多包重组 → 单帧应答。
     fn on_input(&mut self, n: usize) -> Flow {
         let report = &self.buf[..n];
         if self.brand.listen.is_some()
@@ -737,8 +726,6 @@ impl Reader {
         {
             return self.on_listen(event);
         }
-        // 推送帧与应答共用帧头，靠命令字区分（[`crate::spec::NotifySpec`]）；
-        // 认不出来就继续往下走，不吞掉可能是应答的那一帧。
         if self.brand.notify.is_some()
             && let Some(reading) = frame::decode_notify(self.brand, report)
         {
@@ -760,7 +747,7 @@ impl Reader {
         self.send(reading_event(&self.stable_id, self.brand, report))
     }
 
-    /// 上报一条**有效读数**，并记下时刻 —— 推送型协议据此判断「要不要探活」。
+    /// 上报一条有效读数，并记下时刻 —— 推送型协议据此判断「要不要探活」。
     fn emit_reading(&mut self, reading: frame::BatteryReading) -> Flow {
         self.last_reading = Some(Instant::now());
         self.last_percent = Some(reading.percent);
@@ -769,8 +756,7 @@ impl Reader {
 
     /// 监听帧 → 事件。
     ///
-    /// 只通报充电状态的帧（迈从 GLW `FA FB FF`）沿用上一次电量：还没有任何电量时丢掉，
-    /// 因为「充电中」配一个编出来的百分比比不显示更糟。
+    /// 只通报充电状态的帧沿用上一次电量；还没有任何电量时直接丢弃。
     fn on_listen(&mut self, event: frame::ListenEvent) -> Flow {
         match event {
             frame::ListenEvent::Reading(reading) => self.emit_reading(reading),
@@ -918,8 +904,6 @@ mod tests {
 
     #[test]
     fn standard_usage_from_another_interface_wins_over_mapping() {
-        // 复合 HID：厂商私有集合是命中的那个，但同 VID:PID 的另一个接口声明了
-        // 标准鼠标集合 —— 聚合后被采纳为更高优先级的证据。
         let reg = Registry::embedded();
         let (brand, _) = reg.lookup(0x7768, 0x6426).unwrap();
         let mut evidence = HidEvidence::new(0x7768, 0x6426);
@@ -935,7 +919,6 @@ mod tests {
 
     #[test]
     fn unlisted_vendor_usage_is_unknown() {
-        // 只有厂商自定义 UsagePage：标准里没有定义，不得猜成 Mouse。
         let reg = Registry::embedded();
         let (brand, _) = reg.lookup(0x7768, 0x6426).unwrap();
         let mut evidence = HidEvidence::new(0x7768, 0x6426);
@@ -943,7 +926,6 @@ mod tests {
         let mut usages = HashMap::new();
         usages.insert((0x7768, 0x6426), evidence);
         let c = classify_target(brand, brand.spec, 0x7768, 0x6426, &usages);
-        // 型号表仍声明 mouse，所以结论仍成立，但未命中的 Usage 只留在 skipped 里。
         assert_eq!(c.device_type, DeviceType::Mouse);
         assert_eq!(c.method, ClassificationMethod::VerifiedDeviceMapping);
         assert!(
@@ -954,9 +936,7 @@ mod tests {
         assert!(c.skipped.iter().any(|e| e.contains("未支持")));
     }
 
-    /// 真实设备端到端：`DeviceInfo` 枚举 → Usage 聚合 → 分类。
-    ///
-    /// `#[ignore]`：需插着已验证接收器，默认不跑。手动：`cargo test -p voltnest-hid -- --ignored real_receiver`。断言「枚举到的真实集合」而非写死期望值：该接收器同时声明鼠标与键盘集合，必走「复合集合 + 可核验映射」路径。
+    /// 真实设备端到端：枚举 → Usage 聚合 → 分类。`#[ignore]`，需插着已验证接收器。
     #[test]
     #[ignore = "需要接上已验证的 AJAZZ 2.4G 接收器"]
     fn real_receiver_classifies_from_live_enumeration() {
@@ -974,8 +954,6 @@ mod tests {
 
         // 枚举证据本身必须真实存在：至少一个标准鼠标集合 + 一个标准键盘集合。
         let ev = usages.get(&(0x7768, 0x6426)).expect("聚合证据缺失");
-        // Windows 的 hid.dll 与 Linux 的 hidraw 后端都从报告描述符解析 Usage（只有 libusb 后端恒为 0），
-        // 故「有 Usage 字段」这条断言在两个受支持后端上都成立，不因平台放宽。
         assert!(
             ev.usage_available,
             "受支持后端（Windows hid.dll / Linux hidraw）必须提供 usage 字段"
@@ -1004,6 +982,8 @@ mod tests {
             usage_page,
             usage,
             path: CString::new(path).expect("路径不含 NUL"),
+            product: None,
+            manufacturer: None,
         }
     }
 
@@ -1031,8 +1011,7 @@ mod tests {
     }
 
     /// 迈从 CZ/GLW 族键盘正常挂在标准页 `0x0001`，官方过滤器里还有一条 `0xFF00`（boot 模式）：
-    /// 主页面零命中时必须降级到备用页面，否则这批设备会「枚举得到但一个候选都没有」——
-    /// 静默消失，比读不到更难查。
+    /// 主页面零命中时必须降级到备用页面。
     #[test]
     fn alt_usage_page_covers_devices_with_only_the_secondary_page() {
         let entries = vec![entry(0x19F5, 0xFC30, 0xFF00, 0x0001, "/dev/hidraw7")];
@@ -1045,7 +1024,6 @@ mod tests {
     /// 两个页面都在时稳定选主页面（与枚举顺序无关），且不得把同一个 VID:PID 报成冲突。
     #[test]
     fn primary_usage_page_wins_over_secondary() {
-        // 备用页面先被枚举：单遍实现会把它当成主页面，还会把真正的主页面报成冲突。
         let entries = vec![
             entry(0x19F5, 0xFC30, 0xFF00, 0x0001, "/dev/hidraw5"),
             entry(0x19F5, 0xFC30, 0x0001, 0x0000, "/dev/hidraw6"),
@@ -1108,37 +1086,66 @@ mod tests {
     /// 型号表只按 `VID:PID` 命中，不再带接口号：集合选择唯一判据是品牌声明的 UsagePage。
     #[test]
     fn collection_selection_uses_usage_page_only() {
-        // 命中型号表但 UsagePage 不是本品牌的：不得注册（否则会打开标准鼠标集合，读到「成功但无数据」的句柄）。
         let entries = vec![entry(0x7768, 0x6426, 0x0001, 0x0002, "/dev/hidraw8")];
         let (found, conflicts) = select_targets(&entries, &HashMap::new());
         assert!(found.is_empty(), "非品牌 UsagePage 不得注册");
         assert!(conflicts.is_empty());
 
-        // 品牌 UsagePage 命中即注册，无论它挂在哪个接口上。
         let entries = vec![entry(0x7768, 0x6426, 0xFFB2, 0x0002, "/dev/hidraw9")];
         let (found, _) = select_targets(&entries, &HashMap::new());
         assert!(found.contains_key("hid:7768:6426"));
+    }
+
+    /// 展示名 = 品牌名 + 型号表型号；型号原文留给 `modelKey`，不带品牌前缀。
+    #[test]
+    fn display_name_combines_brand_and_table_model() {
+        let mut e = entry(0x7768, 0x6426, 0xFFB2, 0x0001, "/dev/hidraw3");
+        e.manufacturer = Some("AJAZZ".into());
+        e.product = Some("AJAZZ Receiver".into());
+        let (found, _) = select_targets(&[e], &HashMap::new());
+        let target = found.get("hid:7768:6426").unwrap();
+        assert_eq!(target.display_name, "AJAZZ AJ159 NL");
+        assert_eq!(target.model_name_raw, "AJ159 NL");
+    }
+
+    /// 迈从型号表只能给候选（共用 PID），改用设备自报的产品名；产品名已含品牌时不重复。
+    #[test]
+    fn mchose_display_name_prefers_product_string() {
+        let mut e = entry(0x3837, 0x1015, 0xFF80, 0x0001, "/dev/hidraw4");
+        e.product = Some("MCHOSE G98 V3 2.4G".into());
+        e.manufacturer = Some("MCHOSE".into());
+        let (found, _) = select_targets(&[e], &HashMap::new());
+        let target = found.get("hid:3837:1015").unwrap();
+        assert_eq!(target.display_name, "MCHOSE G98 V3 2.4G");
+        assert_eq!(target.model_name_raw, "MCHOSE G98 V3 2.4G");
+    }
+
+    /// 产品名与型号都拿不到时用 `VVVV:PPPP`：大写、不带 `0x`。
+    #[test]
+    fn display_name_falls_back_to_bare_vid_pid() {
+        let entries = vec![entry(0x3837, 0x1015, 0xFF80, 0x0001, "/dev/hidraw4")];
+        let (found, _) = select_targets(&entries, &HashMap::new());
+        let target = found.get("hid:3837:1015").unwrap();
+        assert_eq!(target.display_name, "3837:1015");
+        assert!(target.model_name_raw.is_empty());
     }
 
     /// 达尔优按型号表 `fwType` 分派：同一 VID 下匠盟设备只认 `0xFF02`，自研设备只认 `0x0C`。
     /// 分派失败的家族（这里用未接入的 `0x04` 表示）不注册 —— 不拿别的家族指令去猜。
     #[test]
     fn dareu_dispatches_protocol_by_fw_type() {
-        // A950 PRO Mg（fwType 0x02）= 匠盟：0xFF02 命中。
         let entries = vec![entry(0x260D, 0x1117, 0xFF02, 0x0002, "/dev/hidraw4")];
         let (found, _) = select_targets(&entries, &HashMap::new());
         let target = found.get("hid:260d:1117").expect("匠盟设备必须被选中");
         assert_eq!(target.brand.id, "dareu-jm");
         assert_eq!(target.brand.usage_page, 0xFF02);
 
-        // Z82（fwType 0x00）= 自研 Tg：走 0x0C 通道，绝不能落到匠盟那套 0xFF02 上。
         let entries = vec![entry(0x260D, 0x0030, 0x000C, 0x0001, "/dev/hidraw5")];
         let (found, _) = select_targets(&entries, &HashMap::new());
         let target = found.get("hid:260d:0030").expect("自研设备必须被选中");
         assert_eq!(target.brand.id, "dareu-tg");
         assert_eq!(target.brand.usage_page, 0x000C);
 
-        // 同一台 Tg 设备出现在匠盟的 UsagePage 上：不是它的通道，不得注册。
         let entries = vec![entry(0x260D, 0x0030, 0xFF02, 0x0002, "/dev/hidraw6")];
         let (found, _) = select_targets(&entries, &HashMap::new());
         assert!(found.is_empty(), "协议与 UsagePage 必须同时对上");
@@ -1155,7 +1162,6 @@ mod tests {
         ev.push_collection(0xFF00, 0x000E);
         usages.insert((0x24AE, 0x1410), ev);
 
-        // 升级页先被枚举：仍必须选中配置页。
         let entries = vec![
             entry(0x24AE, 0x1410, 0xFF00, 0x0001, "/dev/hidraw11"),
             entry(0x24AE, 0x1410, 0xFF00, 0x0002, "/dev/hidraw12"),
@@ -1166,7 +1172,6 @@ mod tests {
         assert_eq!(path_of(target), "/dev/hidraw12");
         assert_eq!(target.brand.id, "rapoo-nrf54l");
 
-        // 只有升级页：不注册（打开它也读不到电量，等于「成功但无数据」）。
         let entries = vec![entry(0x24AE, 0x1410, 0xFF00, 0x000E, "/dev/hidraw13")];
         let (found, _) = select_targets(&entries, &usages);
         assert!(found.is_empty(), "升级接口不得当成电量通道");
@@ -1192,8 +1197,7 @@ mod tests {
         }
     }
 
-    /// `run()` 在无设备机器上必须立刻可用：收到 stop 后按 backoff 步长返回，不 panic、不阻塞、
-    /// 也不把「没有设备」当成传输层故障（`TransportDown` 会让上层把既有设备全转 Offline）。
+    /// `run()` 在无设备机器上必须立刻可用：收到 stop 后按 backoff 步长返回，不 panic、不阻塞。
     #[test]
     fn run_returns_promptly_without_devices() {
         if HidApi::new().is_err() {
@@ -1224,10 +1228,7 @@ mod tests {
 
     // ---- 推送型协议：惰性探活 ----
 
-    /// 连上先探一次，之后**只有在读数静默超过期望间隔时才再探**。
-    ///
-    /// qhw 族的查询不按节奏发：键盘处理一条电量命令要唤醒固件，常态下应当零查询，
-    /// 由设备自己推送。这条判据是「省电」与「别让读数烂在那里」之间的唯一开关。
+    /// 连上先探一次，之后只有在读数静默超过期望间隔时才再探。
     #[test]
     fn lazy_probe_waits_for_silence_before_asking_again() {
         let t0 = Instant::now();
@@ -1236,7 +1237,6 @@ mod tests {
         // 还没拿到任何读数：连上就问。
         assert!(lazy_probe_due(expected, None, None, t0));
 
-        // 刚拿到读数：安静等着，不打扰设备。
         assert!(!lazy_probe_due(
             expected,
             Some(t0),
@@ -1251,7 +1251,6 @@ mod tests {
             t0 + Duration::from_secs(30)
         ));
 
-        // 探过但没回：不能每轮都问（那就退回轮询了），再等一个间隔。
         let probe = t0 + Duration::from_secs(30);
         assert!(!lazy_probe_due(
             expected,
@@ -1266,7 +1265,6 @@ mod tests {
             probe + Duration::from_secs(30)
         ));
 
-        // 探活之后设备又开始推：以「读数」为准，重新计时。
         let reading = probe + Duration::from_secs(5);
         assert!(!lazy_probe_due(
             expected,

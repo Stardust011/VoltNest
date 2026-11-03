@@ -194,10 +194,6 @@ function onCheckbox(value: boolean | "indeterminate", apply: (checked: boolean) 
           </Select>
         </div>
 
-        <!--
-          两档各占一行，不各占一张卡片：同一张 Card 里保持纵向列表，
-          左侧是图标 + 名称/说明，右侧是百分比输入框 + 外置的 %。
-        -->
         <div v-for="row in thresholdRows" :key="row.id" class="flex flex-col gap-1">
           <div class="flex items-start justify-between gap-3">
             <div class="flex min-w-0 flex-1 items-center gap-2">
@@ -232,7 +228,6 @@ function onCheckbox(value: boolean | "indeterminate", apply: (checked: boolean) 
               <span class="text-xs text-muted-foreground" aria-hidden="true">%</span>
             </div>
           </div>
-          <!-- 错误行常驻占位，出现/消失不会让上下内容跳动。 -->
           <div class="flex min-h-4 justify-end">
             <p
               v-if="thresholdErrors[row.index]"

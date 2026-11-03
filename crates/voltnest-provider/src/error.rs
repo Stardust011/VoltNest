@@ -2,8 +2,7 @@
 
 use std::fmt;
 
-/// Provider 上报的结构化错误码。宿主只做分类（`Unreadable` / `LinkLost` / `TransportDown`），
-/// 不重新校验数据，故错误码须足够细以支撑诊断页二分排查。
+/// Provider 上报的结构化错误码。宿主只做分类，不重新校验数据。
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum ErrorCode {
     /// HID 句柄失效 / 设备从系统移除。

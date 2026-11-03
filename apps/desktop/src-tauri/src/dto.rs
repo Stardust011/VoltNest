@@ -1,4 +1,4 @@
-//! 宿主 → 前端的 DTO。快照直接复用 `Snapshot`（本身就是传输格式）；设置与诊断另建 DTO 是因为：磁盘类型带 `extra`（未知字段保留）属于磁盘格式，不该进 IPC，诊断页还要拼装运行时状态（线程组/自启/AUMID），而这些不在任何 crate 里。
+//! 宿主 → 前端的 DTO。快照直接复用 `Snapshot`；设置与诊断另建 DTO（磁盘类型带 `extra`，且诊断要拼装运行时状态）。
 
 use serde::{Deserialize, Serialize};
 use voltnest_core::{DiagEvent, NotificationNode};
@@ -65,7 +65,7 @@ impl SettingsDto {
         }
     }
 
-    /// 写回磁盘设置。**只覆盖已知字段**：`schemaVersion`/`extra`/未来新增字段沿用磁盘值，否则「读-改-写保留未知字段」会在 IPC 层被悄悄破坏。
+    /// 写回磁盘设置，只覆盖已知字段：`schemaVersion`/`extra`/未来字段沿用磁盘值。
     pub fn apply_to(&self, target: &mut Settings) {
         if let Some(sensitivity) = voltnest_provider::Sensitivity::parse(&self.sensitivity) {
             target.set_sensitivity(sensitivity);
@@ -84,7 +84,7 @@ impl SettingsDto {
     }
 }
 
-/// 阈值必须是一对 `0..=95` 且严格递减的整数。IPC 是不可信边界：越界值若落盘，`NotificationConfig::normalized()` 下次启动会静默改值，用户会看到「设置自己变了」。下界取 `0` 而非 `5`，须与设置页输入框的 `THRESHOLD_MIN`（`lib/thresholds.ts`）一致，否则用户填的 0 会在保存瞬间被改成 5。
+/// 阈值必须是一对 `0..=95` 且严格递减的整数。IPC 是不可信边界，越界值落盘后会被 `normalized()` 静默改写；下界须与前端 `THRESHOLD_MIN` 一致。
 fn clamp_low_battery_levels(pair: [u8; 2]) -> [u8; 2] {
     let a = pair[0].clamp(0, 95);
     let b = pair[1].clamp(0, 95);
@@ -93,12 +93,7 @@ fn clamp_low_battery_levels(pair: [u8; 2]) -> [u8; 2] {
     } else {
         (a.max(b), a.min(b))
     };
-    if high > low {
-        [high, low]
-    } else {
-        // 只可能是 a == b == 0：抬高高阈值而不是压低低阈值，避免出现负数。
-        [1, 0]
-    }
+    if high > low { [high, low] } else { [1, 0] }
 }
 
 /// 诊断 DTO。
@@ -244,15 +239,7 @@ impl TransportHealth {
     }
 }
 
-// ---- 生成上报数据（HID 抓包）----
-//
-// 这一组 DTO 的边界与前面一致：只做「结构搬运 + 展示字符串组装」。十六进制串在这里就拼好，
-// 免得前端再实现一份格式化逻辑（两份实现迟早会漂移，而用户会拿界面上的字节去对 issue）。
-
-/// 一台设备（同一 VID:PID 的全部集合）。
-///
-/// 交互先按 VID:PID 收敛，再让用户挑集合：复合 HID 会把标准鼠标集合与厂商私有集合
-/// 一起列出来，直接铺平会让用户面对几十条 `0xFF00/0x0001` 无从下手。
+/// 一台设备（同一 VID:PID 的全部集合，按 VID:PID 收敛后再让用户选集合）。
 #[derive(Clone, PartialEq, Eq, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HidTargetDto {
@@ -328,7 +315,6 @@ pub struct HidCollectionDto {
 
 impl From<voltnest_hid::probe::CollectionInfo> for HidCollectionDto {
     fn from(info: voltnest_hid::probe::CollectionInfo) -> Self {
-        // 展示串先算好再搬字段：`path`/`serial` 一旦被移动就没法再借用 `info`。
         let vid_pid = info.vid_pid();
         let display_name = info.display_name();
         let usage_summary = info.usage_summary();
@@ -438,10 +424,7 @@ impl From<&voltnest_hid::probe::CaptureSummary> for CaptureSummaryDto {
     }
 }
 
-/// 抓取进度事件（事件名 `probe://capture`）。
-///
-/// 批量下发而不是一帧一个事件：鼠标 1kHz 上报时逐帧发事件会把 IPC 打满，
-/// 反而让界面卡住。
+/// 抓取进度事件（事件名 `probe://capture`），批量下发而非一帧一个事件。
 #[derive(Clone, PartialEq, Eq, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CaptureEventDto {
@@ -459,10 +442,7 @@ pub struct CaptureEventDto {
     pub summary: Option<CaptureSummaryDto>,
 }
 
-/// 一次采样：会话号 + 当时驱动显示的电量。
-///
-/// 电量与采样绑在一起（而不是设备级字段）：同一台设备在不同电量下各录一段，
-/// 两段的字节差异才是定位电量字段的依据。
+/// 一次采样：会话号 + 当时驱动显示的电量（电量绑在采样上，便于跨电量对照字节）。
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ReportSampleDto {
@@ -496,9 +476,7 @@ pub struct ReportFormDto {
 #[derive(Clone, PartialEq, Eq, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ReportDto {
-    /// 完整 Markdown（用户可直接复制进 issue）。
-    ///
-    /// 只有正文：预览不落盘，报告文件由 `save_manual_device` 在用户选择保存时写。
+    /// 完整 Markdown（用户可直接复制进 issue），不落盘。
     pub markdown: String,
 }
 
@@ -581,17 +559,12 @@ mod tests {
     #[test]
     fn thresholds_are_kept_strictly_descending() {
         assert_eq!(clamp_low_battery_levels([20, 10]), [20, 10]);
-        // 逆序：以数值大小重排，高阈值在前。
         assert_eq!(clamp_low_battery_levels([10, 20]), [20, 10]);
-        // 相等：拆开一位，避免同一档重复触发。
         assert_eq!(clamp_low_battery_levels([15, 15]), [15, 14]);
-        // 下界 0 合法：设置页允许填 0%。
         assert_eq!(clamp_low_battery_levels([0, 0]), [1, 0]);
         assert_eq!(clamp_low_battery_levels([1, 0]), [1, 0]);
-        // 越界：夹到 0..=95 后重排。
         assert_eq!(clamp_low_battery_levels([200, 5]), [95, 5]);
         assert_eq!(clamp_low_battery_levels([5, 250]), [95, 5]);
-        // 上界修正不能把值推出区间。
         assert_eq!(clamp_low_battery_levels([95, 95]), [95, 94]);
     }
 
