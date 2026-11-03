@@ -99,6 +99,7 @@ const AUDIO_REQUEST_PAYLOAD: [u8; 62] = {
 pub const MOUSE_WIRED: BrandSpec = BrandSpec {
     id: "mchose-mouse-wired",
     label: "MCHOSE（鼠标 · 有线）",
+    name_from_product: true,
     usage_page: 0xFF01,
     // 官方 WebHID 过滤器对同一型号同时声明 `0xFF01` / `0xFF0B`（`R1e`）。
     usage_page_alt: Some(0xFF0B),
@@ -173,6 +174,7 @@ pub const MOUSE_WIRED: BrandSpec = BrandSpec {
 pub const MOUSE_WIRELESS: BrandSpec = BrandSpec {
     id: "mchose-mouse-wireless",
     label: "MCHOSE（鼠标 · 2.4G）",
+    name_from_product: true,
     listen: Some(&[ListenSpec {
         cmd: 0x0A,
         cmd2: None,
@@ -194,6 +196,7 @@ pub const MOUSE_WIRELESS: BrandSpec = BrandSpec {
 pub const AUDIO: BrandSpec = BrandSpec {
     id: "mchose-audio",
     label: "MCHOSE（耳机 / 音箱）",
+    name_from_product: true,
     usage_page: 0,
     usage_page_alt: None,
     usage: None,
@@ -297,6 +300,7 @@ const ALT_AUDIO_MODELS: [&str; 2] = ["V9 PRO 2", "R9"];
 pub const KEYBOARD_GLW: BrandSpec = BrandSpec {
     id: "mchose-keyboard-glw",
     label: "MCHOSE（键盘 · CZ/GLW 族）",
+    name_from_product: true,
     usage_page: 0x0001,
     // 官方过滤器第二条：`0xFF00/0x0001`。正常模式用不到，但 boot 模式下设备只在它上面有集合。
     usage_page_alt: Some(0xFF00),
@@ -496,6 +500,7 @@ const KEYBOARD_FUNC_BLOCK_STRIDE: u16 = 64;
 pub const KEYBOARD_QHW: BrandSpec = BrandSpec {
     id: "mchose-keyboard-qhw",
     label: "MCHOSE（键盘 · CZ/QHW 族）",
+    name_from_product: true,
     usage_page: 0xFF80,
     // 官方过滤器两条都是 0xFF80，只是 `usage:1` 与 `usage:1, boot:true` 之分 —— 同一个页面。
     usage_page_alt: None,
@@ -601,6 +606,7 @@ const KEYBOARD_QHW_PAYLOAD: [u8; 3] = {
 pub const KEYBOARD_DJE_WIRED: BrandSpec = BrandSpec {
     id: "mchose-keyboard-dje-wired",
     label: "MCHOSE（键盘 · 有线）",
+    name_from_product: true,
     usage_page: 0xFF01,
     usage_page_alt: Some(0xFF0B),
     usage: None,
@@ -678,6 +684,7 @@ pub const KEYBOARD_DJE_WIRED: BrandSpec = BrandSpec {
 pub const KEYBOARD_DJE_WIRELESS: BrandSpec = BrandSpec {
     id: "mchose-keyboard-dje-wireless",
     label: "MCHOSE（键盘 · 2.4G）",
+    name_from_product: true,
     usage_page: 0xFF01,
     usage_page_alt: Some(0xFF0B),
     usage: None,
@@ -816,6 +823,7 @@ fn route(entry: &Entry) -> Option<&'static BrandSpec> {
 pub const SPEC: BrandSpec = BrandSpec {
     id: "mchose",
     label: "MCHOSE（按设备类型分派）",
+    name_from_product: true,
     variants: &[
         &MOUSE_WIRED,
         &MOUSE_WIRELESS,

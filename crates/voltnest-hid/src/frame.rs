@@ -681,6 +681,7 @@ mod tests {
     const SYNTHETIC: BrandSpec = BrandSpec {
         id: "synthetic",
         label: "合成品牌",
+        name_from_product: false,
         usage_page: 0xFFC0,
         usage_page_alt: None,
         usage: None,
@@ -736,6 +737,7 @@ mod tests {
     const REASSEMBLED: BrandSpec = BrandSpec {
         id: "synthetic-reasm",
         label: "合成多包品牌",
+        name_from_product: false,
         transport: ReplyTransport::InterruptQuery,
         reassembly: Some(crate::spec::Reassembly {
             cmd: 0x4A,

@@ -18,6 +18,7 @@
 
 use crate::brands::{Brand, Registry};
 use crate::spec::{BrandSpec, ReplyTransport, RequestTemplate};
+use crate::table::Entry;
 use crate::{
     LISTEN_READ_TIMEOUT_MS, PRESENCE_POLL_MS, READ_BUFFER_LEN, READ_TIMEOUT_MS, RETRY_GAP_MS, frame,
 };
@@ -121,7 +122,7 @@ impl Provider for HidProvider {
                         Transport::Hid,
                         FAMILY_HID_VBAS,
                         target.display_name.clone(),
-                        target.display_name.clone(),
+                        target.model_name_raw.clone(),
                     )
                     .with_path(target.path.to_string_lossy().into_owned())
                     .with_classification(target.classification.clone());
@@ -229,6 +230,8 @@ struct HidTarget {
     stable_id: StableId,
     path: CString,
     display_name: String,
+    /// 未经品牌前缀修饰的型号原文（`modelKey` 来源）。
+    model_name_raw: String,
     /// 命中的品牌（决定字段位置与查询方式）。
     brand: &'static BrandSpec,
     /// 类型识别结果（来自枚举元数据 + 型号表声明）。
@@ -288,6 +291,10 @@ struct EnumeratedCollection {
     usage_page: u16,
     usage: u16,
     path: CString,
+    /// 设备自报的产品名（展示名与型号来源之一）。
+    product: Option<String>,
+    /// 设备自报的厂商名（展示名的品牌前缀）。
+    manufacturer: Option<String>,
 }
 
 /// 把 hidapi 的枚举结果收敛成 [`EnumeratedCollection`] 列表。
@@ -299,6 +306,8 @@ fn enum_entries(api: &HidApi) -> Vec<EnumeratedCollection> {
             usage_page: info.usage_page(),
             usage: info.usage(),
             path: info.path().to_owned(),
+            product: info.product_string().map(str::to_string),
+            manufacturer: info.manufacturer_string().map(str::to_string),
         })
         .collect()
 }
@@ -401,21 +410,53 @@ fn consider_target(
         }
         return;
     }
+    let model = model_name(spec, info, entry);
     found.insert(
         key,
         HidTarget {
             stable_id,
             path: info.path.clone(),
-            display_name: entry
-                .name
-                .clone()
-                .map(|n| n.trim().to_string())
-                .filter(|n| !n.is_empty())
-                .unwrap_or_else(|| format!("0x{vid:04X}:0x{pid:04X}")),
+            display_name: compose_display_name(
+                clean(info.manufacturer.as_deref()),
+                model.as_deref(),
+                vid,
+                pid,
+            ),
+            model_name_raw: model.unwrap_or_default(),
             brand: spec,
             classification: classify_target(brand, spec, vid, pid, usages),
         },
     );
+}
+
+/// 去掉首尾空白；空白串视为没有。
+fn clean(value: Option<&str>) -> Option<&str> {
+    value.map(str::trim).filter(|s| !s.is_empty())
+}
+
+/// 型号名：品牌声明优先产品名时用设备自报的产品名，否则用型号表型号；两者都缺失为 `None`。
+fn model_name(spec: &BrandSpec, info: &EnumeratedCollection, entry: &Entry) -> Option<String> {
+    let table = clean(entry.name.as_deref());
+    let product = clean(info.product.as_deref());
+    let picked = if spec.name_from_product {
+        product.or(table)
+    } else {
+        table
+    };
+    picked.map(str::to_string)
+}
+
+/// 展示名：品牌名 + 型号；型号已含品牌时不重复。只有型号缺失才回落到 `VVVV:PPPP`。
+fn compose_display_name(brand: Option<&str>, model: Option<&str>, vid: u16, pid: u16) -> String {
+    let Some(model) = model else {
+        return format!("{vid:04X}:{pid:04X}");
+    };
+    match brand {
+        Some(brand) if !model.to_lowercase().starts_with(&brand.to_lowercase()) => {
+            format!("{brand} {model}")
+        }
+        _ => model.to_string(),
+    }
 }
 
 /// 换报告 ID 后的等待（毫秒）。
@@ -1004,6 +1045,8 @@ mod tests {
             usage_page,
             usage,
             path: CString::new(path).expect("路径不含 NUL"),
+            product: None,
+            manufacturer: None,
         }
     }
 
@@ -1118,6 +1161,40 @@ mod tests {
         let entries = vec![entry(0x7768, 0x6426, 0xFFB2, 0x0002, "/dev/hidraw9")];
         let (found, _) = select_targets(&entries, &HashMap::new());
         assert!(found.contains_key("hid:7768:6426"));
+    }
+
+    /// 展示名 = 品牌名 + 型号表型号；型号原文留给 `modelKey`，不带品牌前缀。
+    #[test]
+    fn display_name_combines_brand_and_table_model() {
+        let mut e = entry(0x7768, 0x6426, 0xFFB2, 0x0001, "/dev/hidraw3");
+        e.manufacturer = Some("AJAZZ".into());
+        e.product = Some("AJAZZ Receiver".into());
+        let (found, _) = select_targets(&[e], &HashMap::new());
+        let target = found.get("hid:7768:6426").unwrap();
+        assert_eq!(target.display_name, "AJAZZ AJ159 NL");
+        assert_eq!(target.model_name_raw, "AJ159 NL");
+    }
+
+    /// 迈从型号表只能给候选（共用 PID），改用设备自报的产品名；产品名已含品牌时不重复。
+    #[test]
+    fn mchose_display_name_prefers_product_string() {
+        let mut e = entry(0x3837, 0x1015, 0xFF80, 0x0001, "/dev/hidraw4");
+        e.product = Some("MCHOSE G98 V3 2.4G".into());
+        e.manufacturer = Some("MCHOSE".into());
+        let (found, _) = select_targets(&[e], &HashMap::new());
+        let target = found.get("hid:3837:1015").unwrap();
+        assert_eq!(target.display_name, "MCHOSE G98 V3 2.4G");
+        assert_eq!(target.model_name_raw, "MCHOSE G98 V3 2.4G");
+    }
+
+    /// 产品名与型号都拿不到时用 `VVVV:PPPP`：大写、不带 `0x`。
+    #[test]
+    fn display_name_falls_back_to_bare_vid_pid() {
+        let entries = vec![entry(0x3837, 0x1015, 0xFF80, 0x0001, "/dev/hidraw4")];
+        let (found, _) = select_targets(&entries, &HashMap::new());
+        let target = found.get("hid:3837:1015").unwrap();
+        assert_eq!(target.display_name, "3837:1015");
+        assert!(target.model_name_raw.is_empty());
     }
 
     /// 达尔优按型号表 `fwType` 分派：同一 VID 下匠盟设备只认 `0xFF02`，自研设备只认 `0x0C`。

@@ -567,6 +567,11 @@ pub struct BrandSpec {
     pub id: &'static str,
     /// 人类可读的品牌 / 代际名。例如 `AJAZZ（W1 / 星闪代）`。
     pub label: &'static str,
+    /// 展示名是否优先用设备自报的产品名（ProductString），而不是型号表型号。
+    ///
+    /// 型号表对共用 PID 的型号只能给出「候选之一」（迈从多款共用 `3837:xxxx`），此时设备自报的
+    /// 产品名才是这台设备自己的型号。型号与产品名都缺失时仍回落到 `VID:PID`。
+    pub name_from_product: bool,
     /// 读取通道的 UsagePage。`0` = **通配**：该 VID:PID 的任意集合都接受。
     ///
     /// 只有「官方按报告 ID 能力选集合、而 hidapi 拿不到报告描述符里的报告 ID 列表」时才用

@@ -21,8 +21,8 @@ pub struct DeviceFact {
     ///
     /// 曾名 `provider`，会与「采集线程 trait `Provider`」混淆，故改名为 `family_id`。
     pub family_id: &'static str,
-    /// 表查得的型号名（HID）/ GAP `0x2A00` 原文（BLE）。必须是可读型号名；
-    /// HID 不得直接回填 ProductString（8 型号全同，无法区分）。
+    /// 展示名（HID 为「品牌名 + 型号」，迈从改用设备自报产品名；BLE 为 GAP `0x2A00` 原文）。
+    /// 必须是可读名称；两者都拿不到时回落 `VVVV:PPPP`。
     pub display_name: String,
     /// 未经归一化的型号原文。宿主用 `normalize()` 算 `modelKey`（D4）。
     pub model_name_raw: String,

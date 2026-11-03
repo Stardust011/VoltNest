@@ -39,6 +39,7 @@ const JM_QUERY_PAYLOAD: [u8; 15] = {
 pub const JM: BrandSpec = BrandSpec {
     id: "dareu-jm",
     label: "达尔优 · 匠盟固件（fwType 0x02）",
+    name_from_product: false,
     usage_page: 0xFF02,
     usage_page_alt: None,
     usage: None,
@@ -108,6 +109,7 @@ pub const JM: BrandSpec = BrandSpec {
 pub const TG: BrandSpec = BrandSpec {
     id: "dareu-tg",
     label: "达尔优 · 自研固件（fwType 0x00 / 0x06）",
+    name_from_product: false,
     usage_page: 0x000C,
     usage_page_alt: None,
     usage: None,
@@ -178,6 +180,7 @@ pub const TG: BrandSpec = BrandSpec {
 pub const HS: BrandSpec = BrandSpec {
     id: "dareu-hs",
     label: "达尔优 · 海思固件（fwType 0x01）",
+    name_from_product: false,
     frame: FrameLayout {
         report_id: Some(0x0A),
         ..TG.frame
@@ -208,6 +211,7 @@ fn route(entry: &Entry) -> Option<&'static BrandSpec> {
 pub const SPEC: BrandSpec = BrandSpec {
     id: "dareu",
     label: "达尔优 Dareu（按 fwType 分派）",
+    name_from_product: false,
     variants: &[&JM, &TG, &HS],
     route: Some(route),
     ..JM

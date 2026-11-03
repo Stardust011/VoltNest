@@ -39,6 +39,7 @@ use crate::table::Entry;
 pub const NRF54L: BrandSpec = BrandSpec {
     id: "rapoo-nrf54l",
     label: "雷柏 · VT_nrf54L 固件",
+    name_from_product: false,
     usage_page: 0xFF00,
     usage_page_alt: None,
     usage: Some(0x0002),
@@ -87,6 +88,7 @@ pub const NRF54L: BrandSpec = BrandSpec {
 pub const LM20RT: BrandSpec = BrandSpec {
     id: "rapoo-lm20rt",
     label: "雷柏 · LM20RT 固件",
+    name_from_product: false,
     battery: BatteryFields {
         percent_mask: 0xFF,
         charging: None,
@@ -99,6 +101,7 @@ pub const LM20RT: BrandSpec = BrandSpec {
 pub const CH584: BrandSpec = BrandSpec {
     id: "rapoo-ch584",
     label: "雷柏 · VT_CH584 固件",
+    name_from_product: false,
     usage: Some(0x000F),
     frame: FrameLayout {
         report_id: Some(0x08),
@@ -134,6 +137,7 @@ const AP_QUERY_CHECKSUM: [u8; 2] = checksum::sum16_le(&[0xAD, 0x06]);
 pub const AP: BrandSpec = BrandSpec {
     id: "rapoo-ap",
     label: "雷柏 · 维盛 AP 固件（Telink3228C）",
+    name_from_product: false,
     usage_page: 0xFF1C,
     usage_page_alt: None,
     usage: Some(0x0092),
@@ -216,6 +220,7 @@ fn route(entry: &Entry) -> Option<&'static BrandSpec> {
 pub const SPEC: BrandSpec = BrandSpec {
     id: "rapoo",
     label: "雷柏 RAPOO（按 driver 分派）",
+    name_from_product: false,
     variants: &[&NRF54L, &CH584, &LM20RT, &AP],
     route: Some(route),
     ..NRF54L

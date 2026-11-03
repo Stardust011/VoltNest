@@ -22,6 +22,7 @@ use crate::spec::{BatteryFields, BrandSpec, ChargingField, FrameLayout, ReplyTra
 pub const SPEC: BrandSpec = BrandSpec {
     id: "ajazz",
     label: "AJAZZ（W1 / 星闪代）",
+    name_from_product: false,
     usage_page: 0xFFB2,
     usage_page_alt: None,
     usage: None,

@@ -359,6 +359,7 @@ mod tests {
         static BROKEN: BrandSpec = BrandSpec {
             id: "broken",
             label: "Broken",
+            name_from_product: false,
             usage_page: 0xFFB4,
             usage_page_alt: None,
             usage: None,
@@ -405,6 +406,7 @@ mod tests {
         static BAD_VARIANT: BrandSpec = BrandSpec {
             id: "bad-variant",
             label: "坏变体",
+            name_from_product: false,
             // 头体重叠：命令字落在 payload 内（payload 从 cmd_index 处开始）。
             frame: crate::spec::FrameLayout {
                 payload_offset: 1,
@@ -415,6 +417,7 @@ mod tests {
         static WITH_BAD: BrandSpec = BrandSpec {
             id: "with-bad-variant",
             label: "带坏变体的品牌",
+            name_from_product: false,
             variants: &[&BAD_VARIANT],
             ..ajazz::SPEC
         };
@@ -436,11 +439,13 @@ mod tests {
         static CLONE: BrandSpec = BrandSpec {
             id: "dup-brand",
             label: "同名变体",
+            name_from_product: false,
             ..ajazz::SPEC
         };
         static WITH_DUP: BrandSpec = BrandSpec {
             id: "dup-brand",
             label: "重名品牌",
+            name_from_product: false,
             variants: &[&CLONE],
             ..ajazz::SPEC
         };
@@ -504,6 +509,7 @@ mod tests {
         static NO_FILE: BrandSpec = BrandSpec {
             id: "no-file",
             label: "缺表品牌",
+            name_from_product: false,
             block_offset: None,
             profile_probe: None,
             device_table_file: "nope.json",
@@ -537,6 +543,7 @@ mod tests {
         static NO_FILE: BrandSpec = BrandSpec {
             id: "no-file",
             label: "缺表品牌",
+            name_from_product: false,
             block_offset: None,
             profile_probe: None,
             device_table_file: "nope.json",
