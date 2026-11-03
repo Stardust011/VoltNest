@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, State};
 
 use voltnest_core::{DiagLevel, Snapshot};
 use voltnest_provider::{Transport, clock};
@@ -14,7 +14,7 @@ use crate::dto::{
 };
 use crate::host::{self, HostEvent, HostState, lock};
 use crate::supervisor::SupervisorCmd;
-use crate::{notification, tray};
+use crate::{notification, panel};
 
 /// 当前全量快照。
 #[tauri::command]
@@ -146,16 +146,13 @@ pub fn complete_onboarding(
 /// 打开主面板（托盘菜单之外的入口，例如引导完成后的跳转）。
 #[tauri::command]
 pub fn show_panel(app: AppHandle) {
-    tray::show_main(&app);
+    panel::show(&app);
 }
 
 /// 收进托盘：隐藏主窗口并落盘，进程与采集线程照旧。
 #[tauri::command]
 pub fn hide_to_tray(app: AppHandle, shared: State<'_, Arc<HostState>>) -> Result<(), String> {
-    let Some(window) = app.get_webview_window("main") else {
-        return Err("主窗口不存在".to_string());
-    };
-    window.hide().map_err(|e| format!("隐藏窗口失败：{e}"))?;
+    panel::hide(&app);
     host::persist_state(&shared, clock::now_utc_ms(), true);
     Ok(())
 }

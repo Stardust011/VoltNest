@@ -7,6 +7,7 @@ mod dto;
 mod host;
 mod logger;
 mod notification;
+mod panel;
 mod probe;
 mod supervisor;
 mod toast_icon;
@@ -143,16 +144,15 @@ fn main() {
                 let stop = Arc::new(AtomicBool::new(false));
                 let activation_handle = handle.clone();
                 let _ = guard.listen_activation(stop, move || {
-                    tray::show_main(&activation_handle);
+                    panel::show(&activation_handle);
                 });
                 app.manage(guard);
             }
 
-            if let Some(window) = app.get_webview_window("main")
-                && !start_minimized
-            {
-                let _ = window.show();
-                let _ = window.set_focus();
+            if start_minimized {
+                panel::hide(&handle);
+            } else {
+                panel::show(&handle);
             }
 
             Ok(())
@@ -160,7 +160,7 @@ fn main() {
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { api, .. } = event {
                 api.prevent_close();
-                let _ = window.hide();
+                panel::hide(window.app_handle());
                 let shared = window.app_handle().state::<Arc<HostState>>();
                 host::persist_state(&shared, clock::now_utc_ms(), true);
             }
@@ -168,8 +168,12 @@ fn main() {
         .build(tauri::generate_context!())
         .expect("VoltNest 初始化失败");
 
-    app.run(move |app, event| {
-        if let RunEvent::Exit = event {
+    app.run(move |app, event| match event {
+        // 主窗口可能在隐藏满 1 分钟后被回收，窗口全关不等于退出：进程继续留在托盘。
+        RunEvent::ExitRequested {
+            code: None, api, ..
+        } => api.prevent_exit(),
+        RunEvent::Exit => {
             log::info!("VoltNest 退出");
             shared_for_exit
                 .shutting_down
@@ -180,5 +184,6 @@ fn main() {
             host::persist_state(&shared_for_exit, clock::now_utc_ms(), true);
             let _ = app;
         }
+        _ => {}
     });
 }

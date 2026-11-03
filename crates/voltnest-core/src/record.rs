@@ -98,9 +98,9 @@ impl DeviceRecord {
         self.last_valid_at_ms.map(|t| now_ms.saturating_sub(t))
     }
 
-    /// 该记录是否还该有托盘图标（只由物理存在决定）。
+    /// 该记录是否还该有托盘图标：物理存在、未被用户隐藏、且不是 `Offline`。
     pub fn has_tray_icon(&self, hidden: bool) -> bool {
-        self.present && !hidden
+        self.present && !hidden && self.state != DeviceState::Offline
     }
 }
 
@@ -138,11 +138,19 @@ mod tests {
     }
 
     #[test]
-    fn tray_icon_follows_presence_not_state() {
+    fn tray_icon_needs_presence_and_live_state() {
         let mut r = rec();
+        r.state = DeviceState::Online;
+        assert!(r.has_tray_icon(false));
+        assert!(!r.has_tray_icon(true), "用户隐藏的设备不留图标");
+
         r.state = DeviceState::Offline;
-        assert!(r.has_tray_icon(false), "Offline 但物理存在仍保留图标");
-        assert!(!r.has_tray_icon(true));
+        assert!(!r.has_tray_icon(false), "离线设备收起图标");
+        assert!(r.present, "离线只是状态，物理仍在");
+
+        r.state = DeviceState::Stale;
+        assert!(r.has_tray_icon(false), "Stale / Unavailable 仍要有图标");
+
         r.present = false;
         assert!(!r.has_tray_icon(false), "物理消失才销毁");
     }

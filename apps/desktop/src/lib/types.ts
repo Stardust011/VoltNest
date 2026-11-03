@@ -32,7 +32,12 @@ export interface Snapshot {
   serverNowMs: number;
   devices: DeviceDto[];
   cards: CardDto[];
-  tray: { visibleDeviceIds: string[] };
+  tray: {
+    visibleDeviceIds: string[];
+    present: number;
+    live: number;
+    overflow: number;
+  };
 }
 
 export type NotificationMode = "system" | "trayBubble" | "off";
