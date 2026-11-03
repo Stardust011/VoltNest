@@ -1,17 +1,13 @@
 name: Release
 
-# v1 不做签名与自动更新（见 README 已知限制 5），故只出安装包并挂到 Draft Release。
+# 版本号、tag 与 Release 正文由 release-please 生成；本工作流只做双平台打包。
 on:
   push:
-    tags: ["v*"]
-  workflow_dispatch:
-    inputs:
-      tag:
-        description: 手动打包时使用的 tag 名（如 v0.1.0）
-        required: true
+    branches: [master]
 
 permissions:
   contents: write
+  pull-requests: write
 
 env:
   CARGO_TERM_COLOR: always
@@ -21,8 +17,50 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  release-please:
+    name: release-please
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      released: ${{ steps.release.outputs.release_created }}
+      tag: ${{ steps.release.outputs.tag_name }}
+    steps:
+      - uses: googleapis/release-please-action@v4
+        id: release
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+      # release-please 不改 Cargo.lock，这里把版本对齐后 amend 进 release PR 提交。
+      - uses: actions/checkout@v7
+        if: steps.release.outputs.release_created != 'true'
+        with:
+          fetch-depth: 0
+
+      - name: Align Cargo.lock and amend the release commit
+        if: steps.release.outputs.release_created != 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          branch="release-please--branches--master"
+          if ! git ls-remote --exit-code --heads origin "$branch" >/dev/null; then
+            echo "No pending release branch, skipping."
+            exit 0
+          fi
+          git fetch origin "$branch"
+          git checkout -B "$branch" "origin/$branch"
+          python3 scripts/sync-cargo-lock-version.py
+          if git diff --quiet -- Cargo.lock; then
+            echo "Cargo.lock already in sync, skipping."
+            exit 0
+          fi
+          python3 scripts/amend-release-commit.py "$branch" Cargo.lock
+
   bundle:
     name: bundle (${{ matrix.target }})
+    needs: release-please
+    if: needs.release-please.outputs.released == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -30,7 +68,6 @@ jobs:
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             platform: windows
-          # 固定 22.04：24.04 的 t64 库重命名会让 deb 运行期依赖名变化。
           - os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
             platform: linux
@@ -57,7 +94,7 @@ jobs:
           cache-dependency-path: pnpm-lock.yaml
           install: false
 
-      # Tauri 打包期依赖：webkit2gtk / gtk3 / libsoup3、托盘、bluez、libudev。
+      # Tauri 打包期依赖。
       - name: Install Linux bundling dependencies
         if: matrix.platform == 'linux'
         working-directory: .
@@ -67,22 +104,17 @@ jobs:
             libudev-dev libdbus-1-dev libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev \
             libayatana-appindicator3-dev patchelf
 
-      # 锁文件在仓库根，安装必须在根跑；beforeBuildCommand 由 tauri-action 在 apps/desktop 执行。
+      # 锁文件在仓库根，安装需在根目录执行。
       - run: pnpm install --frozen-lockfile
         working-directory: .
 
-      # beforeBuildCommand（npm run build）由 tauri-action 负责执行。
-      # v1 起 releaseDraft 为 true 时，若同名 tag 的 release 已发布（非 draft）会直接失败。
       - uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           projectPath: apps/desktop
           args: --target ${{ matrix.target }}
-          tagName: ${{ inputs.tag || github.ref_name }}
-          releaseName: VoltNest ${{ inputs.tag || github.ref_name }}
-          releaseBody: |
-            安装包见下方 Assets。Windows 为 NSIS（当前用户安装），Linux 为 deb + AppImage。
+          tagName: ${{ needs.release-please.outputs.tag }}
           releaseDraft: true
           prerelease: false
 

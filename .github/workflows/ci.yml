@@ -23,11 +23,10 @@ concurrency:
 jobs:
   # --------------------------------------------------
   # Change detection
-  # 只有受影响的区域才跑对应 job；workflow_dispatch 全部视为 true。
   # --------------------------------------------------
   changes:
     name: detect changes
-    # paths-filter 在 pull_request 事件下走 REST 接口列改动文件。
+    # 需读 PR 改动文件列表。
     permissions:
       contents: read
       pull-requests: read
@@ -83,7 +82,6 @@ jobs:
 
   # --------------------------------------------------
   # Windows Clippy
-  # 全 workspace 的唯一 lint 入口，覆盖 cfg(windows) 分支。
   # --------------------------------------------------
   clippy-windows:
     name: clippy (windows)
@@ -100,10 +98,9 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
         with:
-          # 与测试分开：clippy 只产出 check 口径的依赖产物，和 cargo test 的 build 产物不可互换。
           shared-key: windows-clippy
           cache-on-failure: true
-          # PR 上只读不写。
+          # 仅 master 写缓存。
           save-if: ${{ github.ref == 'refs/heads/master' }}
 
       - name: Run Clippy
@@ -111,9 +108,6 @@ jobs:
 
   # --------------------------------------------------
   # Windows package tests
-  # 只测平台相关 crate；voltnest-core / -provider / -storage 由 Linux
-  # 的 cargo test --workspace 覆盖，不重复跑。
-  # 合成单个 job：计费是各 job 时长之和，拆矩阵等于每条腿各重编一遍依赖。
   # --------------------------------------------------
   test-windows:
     name: cargo test (windows)
@@ -131,7 +125,7 @@ jobs:
         with:
           shared-key: windows-test
           cache-on-failure: true
-          # PR 上只读不写。
+          # 仅 master 写缓存。
           save-if: ${{ github.ref == 'refs/heads/master' }}
 
       - name: Run package tests
@@ -144,7 +138,6 @@ jobs:
 
   # --------------------------------------------------
   # Linux 格式 + Clippy + 测试
-  # 格式检查是秒级，挂在这个 job 里：计费按 job 计，单开一个 job 等于多付一分钟。
   # --------------------------------------------------
   clippy-test-linux:
     name: lint + test (linux)
@@ -165,7 +158,7 @@ jobs:
         if: needs.changes.outputs.rust == 'true'
         run: cargo fmt --all --check
 
-      # rust-toolchain.toml 锁定 stable 通道，最低版本在这里断言。
+      # 最低 rustc 版本断言。
       - name: Assert rustc >= 1.98
         if: needs.changes.outputs.rust == 'true'
         shell: bash
@@ -190,7 +183,7 @@ jobs:
 
       - name: Check Python formatting
         if: needs.changes.outputs.python == 'true'
-        # 与本地 `pnpm run format:py` 同范围：全仓 Python，而不是只查脚本目录。
+        # 全仓 Python。
         run: ruff format --check .
 
       - uses: Swatinem/rust-cache@v2
@@ -200,8 +193,7 @@ jobs:
           cache-on-failure: true
           save-if: ${{ github.ref == 'refs/heads/master' }}
 
-      # Native dependencies required by Tauri, hidapi, tray,
-      # Bluetooth and notification backends.
+      # Tauri / hidapi / 托盘 / 蓝牙的本地依赖。
       - name: Install Linux build dependencies
         if: needs.changes.outputs.rust == 'true'
         run: |
@@ -235,12 +227,12 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # pnpm 版本取自 package.json 的 packageManager 字段；Node 由同一步安装。
+      # pnpm 版本取自 package.json 的 packageManager 字段。
       - uses: pnpm/setup@v3
         with:
           runtime: node@24
           cache: true
-          # PR 写的缓存作用域是 refs/pull/N/merge，其它 PR 与 master 都读不到，只在 master 落盘。
+          # 仅 master 写缓存。
           save-cache: ${{ github.ref == 'refs/heads/master' }}
           cache-dependency-path: pnpm-lock.yaml
           install: false
@@ -262,8 +254,6 @@ jobs:
 
   # --------------------------------------------------
   # 单一必过检查
-  # job 会按改动区域跳过，分支保护无法用 skipped 的 job 兜底，
-  # 因此统一由这里汇总。
   # --------------------------------------------------
   ci-status:
     name: ci
