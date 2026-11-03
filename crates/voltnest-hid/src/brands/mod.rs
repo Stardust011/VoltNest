@@ -180,7 +180,7 @@ impl Registry {
         Self::build_with(specs, &MappingSet::load()?)
     }
 
-    /// 用给定品牌列表与**已加载**的型号表集合建立注册表（测试注入 / 复用同一次目录扫描）。
+    /// 用给定品牌列表与已加载的型号表集合建立注册表（测试注入 / 复用同一次目录扫描）。
     pub fn build_with(
         specs: &'static [&'static BrandSpec],
         mappings: &MappingSet,

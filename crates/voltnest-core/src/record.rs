@@ -27,7 +27,7 @@ pub struct DeviceRecord {
     pub model_key: Option<String>,
     /// 设备类型识别结果（含证据）。默认 `Unknown`，不参与状态判定，只影响展示与诊断。
     pub classification: DeviceClassification,
-    /// 当前有效电量。`None` 表示当前无有效读数，**绝不**用 0 代替。
+    /// 当前有效电量。`None` 表示当前无有效读数，绝不用 0 代替。
     pub battery: Option<Percent>,
     /// 上次已知电量，仅用于启动后的副行展示。
     pub last_known_battery: Option<Percent>,

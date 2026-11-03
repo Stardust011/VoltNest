@@ -1,6 +1,6 @@
 //! 诊断探针：打印本机 BLE 后端的枚举结果，并对检索到的设备做一次真实读取。
 //!
-//! 运行：`cargo run -p voltnest-ble --example probe`。探针**永不 panic**：
+//! 运行：`cargo run -p voltnest-ble --example probe`。探针永不 panic：
 //! 无适配器 / bluetoothd 未运行 / 权限不足时打印诊断结论并正常退出。
 
 use btleplug::api::{Central, Manager as _, Peripheral as _, RetrievePeripheralsOptions};

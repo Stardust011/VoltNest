@@ -1029,7 +1029,7 @@ mod tests {
         }
     }
 
-    /// 低字节相同、高字节不同的是**别的命令**：只比低字节会把「读信息」的应答当电量解析。
+    /// 低字节相同、高字节不同的是别的命令：只比低字节会把「读信息」的应答当电量解析。
     #[test]
     fn qhw_rejects_foreign_command_sharing_the_low_byte() {
         let mut report = qhw_reply(1, 50);

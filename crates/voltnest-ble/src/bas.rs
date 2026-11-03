@@ -10,9 +10,9 @@ pub const CHAR_BATTERY_LEVEL: u16 = 0x2A19;
 pub const SERVICE_GENERIC_ACCESS: u16 = 0x1800;
 /// GAP Device Name。
 pub const CHAR_GAP_DEVICE_NAME: u16 = 0x2A00;
-/// GAP Appearance：**只用于设备类型识别**，不参与电量与状态判定。
+/// GAP Appearance：只用于设备类型识别，不参与电量与状态判定。
 pub const CHAR_GAP_APPEARANCE: u16 = 0x2A01;
-/// Battery Level Status：**只用于诊断展示**，失真，不进入状态机。
+/// Battery Level Status：只用于诊断展示，失真，不进入状态机。
 pub const CHAR_BATTERY_LEVEL_STATUS: u16 = 0x2BED;
 
 /// 解析 GAP `0x2A01` Appearance：16 位小端序（`category << 6 | subcategory`）。

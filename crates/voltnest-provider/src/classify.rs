@@ -28,7 +28,7 @@ pub enum DeviceType {
     ///
     /// 仅在确实取到标准类别而本枚举无对应项时使用；「只确认是 HID 外设」属于 [`DeviceType::Unknown`]。
     Other,
-    /// 证据不足，无法判定。**默认值**。
+    /// 证据不足，无法判定。默认值。
     #[default]
     Unknown,
 }
@@ -97,14 +97,14 @@ impl fmt::Display for ClassificationMethod {
     }
 }
 
-/// 一次识别的完整结果。**结论必须可追溯**，所以证据随结论一起走。
+/// 一次识别的完整结果。结论必须可追溯，所以证据随结论一起走。
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct DeviceClassification {
     /// 判定结果。
     pub device_type: DeviceType,
     /// 得出该结果的方法（`Unknown` 时为 [`ClassificationMethod::Unknown`]）。
     pub method: ClassificationMethod,
-    /// 逐条证据 / 未命中原因，按收集顺序。**只含参与判定（或解释未判定）的条目**。
+    /// 逐条证据 / 未命中原因，按收集顺序。只含参与判定（或解释未判定）的条目。
     pub evidence: Vec<String>,
     /// 标准字段里存在但本项目不支持、未参与判定的组合，只进 debug 级诊断。
     pub skipped: Vec<String>,

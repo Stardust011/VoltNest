@@ -249,14 +249,14 @@ fn addr_of(sessions: &HashMap<[u8; 6], SessionHandle>, id: &PeripheralId) -> Opt
         .map(|(addr, _)| *addr)
 }
 
-/// 去抖到期后的判定：只有**明确读到仍然连接**才放弃上报；读失败/超时按断链处理。
+/// 去抖到期后的判定：只有明确读到仍然连接才放弃上报；读失败/超时按断链处理。
 fn keep_link(reconnected: Option<bool>) -> bool {
     matches!(reconnected, Some(true))
 }
 
 /// 协调线程：枚举、策略裁决、事件映射，独占全部 per-device 状态。
 ///
-/// `poll_ms` 只决定**读数**节奏，`presence_ms` 决定**枚举**节奏，两者必须分开。
+/// `poll_ms` 只决定读数节奏，`presence_ms` 决定枚举节奏，两者必须分开。
 async fn coordinator(
     tx: Sender<ProviderEvent>,
     stop: Arc<AtomicBool>,
@@ -658,7 +658,7 @@ async fn cleanup_link(peripheral: &Peripheral, already_connected: bool) {
 
 /// 单设备会话：建链 → 发现服务 → 读名称 → 订阅通知 → 保底轮询。
 ///
-/// 它是**无状态执行器**：只回传结果，不写任何共享状态。
+/// 它是无状态执行器：只回传结果，不写任何共享状态。
 async fn session_task(
     peripheral: Peripheral,
     addr: [u8; 6],

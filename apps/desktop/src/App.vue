@@ -67,7 +67,7 @@ const error = ref<string | null>(null);
 /**
  * 调试重放开关：诊断页点「重现首次引导」时置 true，只让遮罩重新出现。
  *
- * 这是纯 UI 状态，**不碰** `settings.onboardingCompleted` —— 关掉遮罩后
+ * 这是纯 UI 状态，不碰 `settings.onboardingCompleted` —— 关掉遮罩后
  * 首次引导的生命周期判定仍与磁盘上的设置一致。
  */
 const replayOnboarding = ref(false);
@@ -219,7 +219,7 @@ function scheduleDiagnosticsRefresh() {
 /**
  * 建立诊断订阅并拉取首帧。
  *
- * 顺序与快照一致：**先订阅 → 再拉全量**。反过来写会漏掉
+ * 顺序与快照一致：先订阅 → 再拉全量。反过来写会漏掉
  * 「拉取已返回、订阅尚未建立」这段时间内发生的线程组变化。
  */
 async function startDiagnosticsFeed() {

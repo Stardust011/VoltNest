@@ -428,7 +428,7 @@ mod tests {
         assert!(err.to_string().contains("ajazz.json"), "{err}");
     }
 
-    /// 坏表只跳过自己并记录原因，**不**让整次加载失败：其它品牌的设备必须照常采集。
+    /// 坏表只跳过自己并记录原因，不让整次加载失败：其它品牌的设备必须照常采集。
     #[test]
     fn invalid_table_is_skipped_and_recorded() {
         let dir = temp_dir("invalid");
@@ -451,7 +451,7 @@ mod tests {
         std::fs::remove_dir_all(&dir).ok();
     }
 
-    /// 文件在盘上但解析失败：`table()` 必须报**解析失败**，不能报「缺少该文件」。
+    /// 文件在盘上但解析失败：`table()` 必须报解析失败，不能报「缺少该文件」。
     #[test]
     fn table_reports_parse_failure_not_missing() {
         let dir = temp_dir("parse-fail");
@@ -472,7 +472,7 @@ mod tests {
         std::fs::remove_dir_all(&dir).ok();
     }
 
-    /// 名为 `*.json` 的**目录**不是型号表：忽略（既不加载，也不计入跳过项）。
+    /// 名为 `*.json` 的目录不是型号表：忽略（既不加载，也不计入跳过项）。
     #[test]
     fn json_named_directory_is_ignored() {
         let dir = temp_dir("json-dir");

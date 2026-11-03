@@ -18,7 +18,7 @@ use generated::{
 pub enum ChargingSupport {
     /// 读数自带充电标志（HID：`payload[2]`，`0x01` = 充电中）。
     FromReading,
-    /// 协议层不可得（BLE）→ UI 显示 `Unknown`，**不得**显示「未充电」。
+    /// 协议层不可得（BLE）→ UI 显示 `Unknown`，不得显示「未充电」。
     Unavailable,
 }
 
@@ -36,7 +36,7 @@ pub struct DegradationThresholds {
     pub offline_ms: u64,
 }
 
-/// 用户可选的阈值档位。设置里只存档位，**不存毫秒**。
+/// 用户可选的阈值档位。设置里只存档位，不存毫秒。
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub enum Sensitivity {
     /// 快：判定过期最灵敏。

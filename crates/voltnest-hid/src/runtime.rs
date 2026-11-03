@@ -514,7 +514,7 @@ struct Reader {
     buf: [u8; READ_BUFFER_LEN],
     /// 多包应答拼接器：只有声明了 `reassembly` 的品牌会用到。
     reassembler: frame::Reassembler,
-    /// 最近一次**有效读数**的时刻：推送型协议据此判断「要不要主动问一次」。
+    /// 最近一次有效读数的时刻：推送型协议据此判断「要不要主动问一次」。
     last_reading: Option<Instant>,
     /// 最近一次主动探活的时刻：读数一直不来时避免每轮都发报文。
     last_probe: Option<Instant>,
@@ -747,7 +747,7 @@ impl Reader {
         self.send(reading_event(&self.stable_id, self.brand, report))
     }
 
-    /// 上报一条**有效读数**，并记下时刻 —— 推送型协议据此判断「要不要探活」。
+    /// 上报一条有效读数，并记下时刻 —— 推送型协议据此判断「要不要探活」。
     fn emit_reading(&mut self, reading: frame::BatteryReading) -> Flow {
         self.last_reading = Some(Instant::now());
         self.last_percent = Some(reading.percent);

@@ -7,7 +7,7 @@
 //! `ambiguous`、`driver` 等）原样保留在 [`Entry::extra`]；`devices` 的键是 `VID:PID`（大端十六进制、
 //! 无 `0x` 前缀、冒号分隔），`source` 只供展示、结构不校验。
 //!
-//! 匹配必须**精确**：`0x6425` 与 `0x6426` 只差一位却是不同型号，前缀／区间匹配会选错型号。
+//! 匹配必须精确：`0x6425` 与 `0x6426` 只差一位却是不同型号，前缀／区间匹配会选错型号。
 //!
 //! ```json
 //! {
@@ -33,7 +33,7 @@ pub struct Entry {
     /// 型号名，例如 `AJ159 NL`。作为 `display_name` 与 `model_name_raw` 的来源；缺失表示共用 PID、需靠 ProductString 消歧。
     #[serde(default)]
     pub name: Option<String>,
-    /// 厂商驱动内部的设备编号（AJAZZ 为 101..108），**不是**设备类型。
+    /// 厂商驱动内部的设备编号（AJAZZ 为 101..108），不是设备类型。
     #[serde(default)]
     pub vendor_device_id: Option<u16>,
     /// 厂商声明的设备类型词，例如 `mouse`。是否为规范类型词由 [`Entry::declared_device_type`] 判定。
@@ -166,7 +166,7 @@ impl DeviceTable {
         })
     }
 
-    /// 精确匹配。**禁止**前缀 / 区间匹配。
+    /// 精确匹配。禁止前缀 / 区间匹配。
     pub fn lookup(&self, vid: u16, pid: u16) -> Option<&Entry> {
         self.map.get(&(vid, pid))
     }

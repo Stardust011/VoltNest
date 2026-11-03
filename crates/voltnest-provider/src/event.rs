@@ -124,7 +124,7 @@ pub enum ProviderEvent {
         stable_id: StableId,
         /// 错误码。
         code: ErrorCode,
-        /// **诊断细节**：哪条校验失败 + 被拒的原始字节或失败上下文。
+        /// 诊断细节：哪条校验失败 + 被拒的原始字节或失败上下文。
         /// 只进诊断页与日志，不参与状态判定；`None` = 无可用报文。
         detail: Option<String>,
     },

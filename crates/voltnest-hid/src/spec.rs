@@ -1,4 +1,4 @@
-//! `hid-vbas` 的通用协议描述（**品牌无关**）。
+//! `hid-vbas` 的通用协议描述（品牌无关）。
 //!
 //! 一个品牌接入 = 一份 [`BrandSpec`]：怎么匹配、帧长什么样、电量与充电标志在第几个字节、是否主动
 //! 查询、应答怎么确认。解析器与运行时只读这些字段，无 `match brand_id` 分支，新增品牌不改既有代码。
@@ -10,7 +10,7 @@
 use crate::table::Entry;
 use voltnest_provider::{Cadence, ChargingSupport, ProviderProfile};
 
-/// 电量帧的收发方式（**从宿主视角命名**：本端要不要发报文、发了之后读哪里）。
+/// 电量帧的收发方式（从宿主视角命名：本端要不要发报文、发了之后读哪里）。
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum ReplyTransport {
     /// 纯监听：本端只读输入通道，不向设备发任何报文；何时上报由设备决定。
@@ -46,7 +46,7 @@ impl ReplyTransport {
 
 /// 帧头布局：把一帧切成「头部 → payload」，其余字节是填充。
 ///
-/// 头部只描述**位置**，语义在 [`BatteryFields`]。
+/// 头部只描述位置，语义在 [`BatteryFields`]。
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct FrameLayout {
     /// 报告 ID（报告首字节）。`None` = 该协议不带报告 ID / 不校验。
@@ -116,7 +116,7 @@ pub struct BatteryFields {
     ///
     /// `None` = 该协议不在应答里回显命令字，故不校验；此时 `cmd_index` 不参与匹配。
     pub cmd: Option<u8>,
-    /// 命令字的高字节：`Some` = 该协议的命令字是**双字节小端**，低字节在 `cmd_index`、
+    /// 命令字的高字节：`Some` = 该协议的命令字是双字节小端，低字节在 `cmd_index`、
     /// 高字节在 `cmd_index + 1`。
     pub cmd_high: Option<u8>,
     /// payload 内的子标签：`(下标, 期望值)`。`None` = 该协议没有子标签。
@@ -137,7 +137,7 @@ impl BatteryFields {
 
     /// 这组字段至少要占多少字节：子标签与电量里下标更靠后的那个。
     ///
-    /// 推送帧与应答帧的字段是两份（[`NotifySpec`]），故按**当前正在解析的那一份**算。
+    /// 推送帧与应答帧的字段是两份（[`NotifySpec`]），故按当前正在解析的那一份算。
     pub const fn min_payload_len(&self) -> usize {
         let percent = self.percent_index + 1;
         match self.subtag {
@@ -169,7 +169,7 @@ pub enum ListenStatus {
     },
 }
 
-/// 设备**自发上报**（宿主未提问）的电量帧布局（与应答帧布局无关，两条通道各有一套）。
+/// 设备自发上报（宿主未提问）的电量帧布局（与应答帧布局无关，两条通道各有一套）。
 ///
 /// 只描述「怎么认出监听通道上的一帧电量上报、字段在哪」；认不出来的一律静默丢弃。
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -210,7 +210,7 @@ impl ListenSpec {
     }
 }
 
-/// 设备**主动推送**的电量帧：与应答共用同一套帧头（[`BrandSpec::frame`]），但命令字与字段下标另有一套。
+/// 设备主动推送的电量帧：与应答共用同一套帧头（[`BrandSpec::frame`]），但命令字与字段下标另有一套。
 ///
 /// 与 [`ListenSpec`] 的区别在帧形状：`ListenSpec` 认「无帧头、首字节即命令字 + 子标签」的上报帧，
 /// 本结构认「与应答共用头部、只是命令字不同」的推送帧。两者不复用 [`BatteryFields`]，因为同一台设备
@@ -232,7 +232,7 @@ pub struct NotifySpec {
 impl NotifySpec {
     /// 推送帧按 [`BatteryFields`] 的形状表达，供 [`crate::frame`] 复用同一套解析器。
     ///
-    /// 不含子标签与确认位：这两项是**应答**的语义（「这条应答属于哪一问」）。
+    /// 不含子标签与确认位：这两项是应答的语义（「这条应答属于哪一问」）。
     pub const fn fields(self) -> BatteryFields {
         BatteryFields {
             cmd: Some(self.cmd),
@@ -247,7 +247,7 @@ impl NotifySpec {
 
 /// 多包应答的重组约定：一条应答被设备拆成若干条输入报告发出。
 ///
-/// 只描述**包**；组装结果里电量与状态在哪，仍由 [`BrandSpec::battery`] 说。
+/// 只描述包；组装结果里电量与状态在哪，仍由 [`BrandSpec::battery`] 说。
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Reassembly {
     /// 应答包的首字节命令字（与查询命令字不同，是设备回包的命令码）。
@@ -384,7 +384,7 @@ impl RequestTemplate {
 
     /// 按板载档位 `profile` 拼报文：偏移与折叠校验和随档位重算。
     ///
-    /// 校验和是 `size + lo + hi + 0` 的**求和**（不是异或）。
+    /// 校验和是 `size + lo + hi + 0` 的求和（不是异或）。
     /// `block` 为 `None` 时 `profile` 不参与，与 [`Self::build`] 等价。
     pub fn build_at(
         &self,
@@ -479,16 +479,16 @@ pub type RouteFn = fn(&Entry) -> Option<&'static BrandSpec>;
 /// 一套协议（一个固件家族）的完整接入描述。
 #[derive(Clone, Copy, Debug)]
 pub struct BrandSpec {
-    /// 稳定标识（日志 / 诊断用，**不参与**设备匹配）。例如 `ajazz`。
+    /// 稳定标识（日志 / 诊断用，不参与设备匹配）。例如 `ajazz`。
     pub id: &'static str,
     /// 人类可读的品牌 / 代际名。例如 `AJAZZ（W1 / 星闪代）`。
     pub label: &'static str,
     /// 展示名是否优先用设备自报的产品名（ProductString），而不是型号表型号。
     /// 两者都缺失时仍回落到 `VID:PID`。
     pub name_from_product: bool,
-    /// 读取通道的 UsagePage。`0` = **通配**：该 VID:PID 的任意集合都接受。
+    /// 读取通道的 UsagePage。`0` = 通配：该 VID:PID 的任意集合都接受。
     pub usage_page: u16,
-    /// 备用读取 UsagePage：只有当该 VID:PID **没有任何集合**落在 `usage_page` 上时才启用。
+    /// 备用读取 UsagePage：只有当该 VID:PID 没有任何集合落在 `usage_page` 上时才启用。
     ///
     /// 主页面优先：主页面零命中才降级，因此「两页都在」的设备不会变成两只设备。
     pub usage_page_alt: Option<u16>,
@@ -496,7 +496,7 @@ pub struct BrandSpec {
     pub usage: Option<u16>,
     /// 只写命令通道的 UsagePage。`None` = 该品牌不主动发报文。
     ///
-    /// **仅参与构造期校验**：运行时只用读句柄收发。声明了查询模板时写页必须等于读页
+    /// 仅参与构造期校验：运行时只用读句柄收发。声明了查询模板时写页必须等于读页
     /// （读页为 `0` 通配时除外，见 [`BrandSpec::validate`]）。
     pub usage_page_write: Option<u16>,
     /// 读取电量帧所使用的 HID 传输方式。
@@ -512,7 +512,7 @@ pub struct BrandSpec {
     /// 监听通道上「设备自发上报的电量帧」的识别模板。可声明多条（同一设备用不同帧分别报电量与
     /// 充电状态）。`None` = 该协议没有这条旁路（读数只从查询应答取）。
     pub listen: Option<&'static [ListenSpec]>,
-    /// 设备**主动推送**的电量帧（与应答共用帧头、命令字不同）。与 `listen` 是两条互斥的旁路。
+    /// 设备主动推送的电量帧（与应答共用帧头、命令字不同）。与 `listen` 是两条互斥的旁路。
     pub notify: Option<NotifySpec>,
     /// 主动查询模板。`None` = 纯监听（不向设备发任何报文）。
     pub request: Option<RequestTemplate>,
@@ -522,7 +522,7 @@ pub struct BrandSpec {
     pub profile_probe: Option<ProfileProbe>,
     /// 多包应答的重组约定。`None` = 一次查询由单条报告应答（绝大多数品牌）。
     ///
-    /// 声明后 `frame` / `battery` 描述的是**组装结果**的布局，不是单包布局。
+    /// 声明后 `frame` / `battery` 描述的是组装结果的布局，不是单包布局。
     pub reassembly: Option<Reassembly>,
     /// 应答确认位。`None` = 该协议无确认约定，不做该校验。
     pub ack: Option<AckField>,
@@ -534,7 +534,7 @@ pub struct BrandSpec {
     ///
     /// 多个协议共用一份表时各写同一个文件名。
     pub device_table_file: &'static str,
-    /// 本品牌下**其它**已接入的协议描述（不含自身）。`&[]` = 单协议品牌。
+    /// 本品牌下其它已接入的协议描述（不含自身）。`&[]` = 单协议品牌。
     ///
     /// 只给注册表用：启动时逐份 [`BrandSpec::validate`]，匹配路径不读它。
     pub variants: &'static [&'static BrandSpec],
@@ -555,7 +555,7 @@ impl BrandSpec {
 
     /// 解析一帧所必需的最短 payload：必选字段（子标签、电量）都要落在里面。
     ///
-    /// 充电标志**不计入**：它是可选字段，缺失表示「未知」。
+    /// 充电标志不计入：它是可选字段，缺失表示「未知」。
     pub const fn min_payload_len(&self) -> usize {
         self.battery.min_payload_len()
     }
@@ -1845,7 +1845,7 @@ mod tests {
         assert_eq!(spec.battery.percent_index, base().battery.percent_index);
     }
 
-    /// 一个字节装两个字段：电量与充电**可以**同下标，只要掩码互不重叠。
+    /// 一个字节装两个字段：电量与充电可以同下标，只要掩码互不重叠。
     ///
     /// 迈从 GLW 键盘就是这样（`payload[32]`：bit0..6 电量、bit7 充电）。反过来，掩码重叠时
     /// 必须照旧拒绝 —— 同一批位既是电量又是充电标志，解析结果一定是错的。

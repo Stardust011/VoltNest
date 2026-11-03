@@ -21,7 +21,7 @@ import { hideToTray, quitApp } from "@/lib/ipc";
 
 /**
  * 「按钮底色卡住」根因与解法。
- * WebView2（Chromium）`:hover`/`:active` 由**最后一次真实指针事件**算并缓存；窗口隐藏/最小化时不参与命中测试，浏览器收不到 `mouseleave`/`mouseup`，缓存的「悬停/按下」留着。窗口再现时无新指针输入→不失效，底色停在按下版；真实 `pointermove` 到达才重算。故不能指望浏览器自清，须在窗口重获焦点时主动作废：给 `<html>` 挂 `.pointer-stale`，按钮悬停/按下背景写成 `[html:not(.pointer-stale)_&]:hover:…`，挂类即失配回透明，真实 `pointerdown`/`pointermove` 到达（指针可信）再摘。
+ * WebView2（Chromium）`:hover`/`:active` 由最后一次真实指针事件算并缓存；窗口隐藏/最小化时不参与命中测试，浏览器收不到 `mouseleave`/`mouseup`，缓存的「悬停/按下」留着。窗口再现时无新指针输入→不失效，底色停在按下版；真实 `pointermove` 到达才重算。故不能指望浏览器自清，须在窗口重获焦点时主动作废：给 `<html>` 挂 `.pointer-stale`，按钮悬停/按下背景写成 `[html:not(.pointer-stale)_&]:hover:…`，挂类即失配回透明，真实 `pointerdown`/`pointermove` 到达（指针可信）再摘。
  * 注：Button ghost 变体自带 `hover:bg-accent`，须显式 `hover:bg-transparent` 抵消（tailwind-merge 去重），带守卫的工具类特异性更高压过它。
  * 用真实指针事件而非合成 `dispatchEvent`：合成事件不更新浏览器内部 hover 状态。
  */

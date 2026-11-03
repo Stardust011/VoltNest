@@ -290,7 +290,7 @@ pub fn bubble(app: &AppHandle, stable_id: &str, text: &str) -> BubbleOutcome {
     BubbleOutcome::Sent
 }
 
-/// 低电量提示挂哪张图标：优先设备自己的，其次**露在托盘里**的基础图标。
+/// 低电量提示挂哪张图标：优先设备自己的，其次露在托盘里的基础图标。
 fn notification_tray(app: &AppHandle, stable_id: &str) -> Option<TrayIcon> {
     if let Some(tray) = app.tray_by_id(&TrayIconId::new(tray_id_for(stable_id))) {
         return Some(tray);

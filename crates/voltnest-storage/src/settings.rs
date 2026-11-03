@@ -70,7 +70,7 @@ pub struct Settings {
     pub sensitivity: String,
     /// 通知设置。
     pub notifications: NotificationSettings,
-    /// 开机自启：**永不默认开启**。
+    /// 开机自启：永不默认开启。
     pub autostart: bool,
     /// 启动时最小化到托盘（手动启动与开机自启共用这一项）。
     pub start_minimized: bool,
@@ -190,7 +190,7 @@ impl SettingsStore {
         &self.paths
     }
 
-    /// 读取设置。**任何**错误都不返回 `Err`：配置坏了也必须能启动。
+    /// 读取设置。任何错误都不返回 `Err`：配置坏了也必须能启动。
     pub fn load(&self, now_ms: u64) -> LoadedSettings {
         let path = self.paths.settings_file();
         let raw = match read_optional(&path) {

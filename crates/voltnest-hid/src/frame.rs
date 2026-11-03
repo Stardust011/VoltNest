@@ -372,7 +372,7 @@ fn decode_battery_at(
     Ok(BatteryReading { percent, charging })
 }
 
-/// 成因 → 错误码。**一个 `MalformedFrame` 对应多种成因**，映射只在这里写一次。
+/// 成因 → 错误码。一个 `MalformedFrame` 对应多种成因，映射只在这里写一次。
 const fn reason_code(reason: RejectReason) -> ErrorCode {
     match reason {
         RejectReason::EmptyPayload => ErrorCode::EmptyPayload,
