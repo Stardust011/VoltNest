@@ -2,8 +2,7 @@
 import type { DialogContentEmits, DialogContentProps } from "reka-ui";
 import type { HTMLAttributes } from "vue";
 import { reactiveOmit } from "@vueuse/core";
-import { X } from "@lucide/vue";
-import { DialogClose, DialogContent, DialogOverlay, DialogPortal } from "reka-ui";
+import { DialogContent, DialogOverlay, DialogPortal } from "reka-ui";
 import { cn } from "@/lib/utils";
 
 defineOptions({
@@ -14,6 +13,11 @@ const props = defineProps<DialogContentProps & { class?: HTMLAttributes["class"]
 const emits = defineEmits<DialogContentEmits>();
 
 const delegatedProps = reactiveOmit(props, "class");
+
+/** 与 `AlertDialog` 一致：点遮罩不关闭，只认弹窗内按钮与 Esc。 */
+function blockOutside(event: Event) {
+  event.preventDefault();
+}
 </script>
 
 <template>
@@ -32,19 +36,12 @@ const delegatedProps = reactiveOmit(props, "class");
         )
       "
       @close-auto-focus="emits('closeAutoFocus', $event)"
-      @escape-key-down="emits('escapeKeyDown', $event)"
-      @interact-outside="emits('interactOutside', $event)"
       @open-auto-focus="emits('openAutoFocus', $event)"
-      @pointer-down-outside="emits('pointerDownOutside', $event)"
+      @escape-key-down="emits('escapeKeyDown', $event)"
+      @pointer-down-outside="blockOutside"
+      @interact-outside="blockOutside"
     >
       <slot />
-
-      <DialogClose
-        class="absolute top-4 right-4 rounded-xs opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none"
-        aria-label="关闭"
-      >
-        <X class="size-4" />
-      </DialogClose>
     </DialogContent>
   </DialogPortal>
 </template>

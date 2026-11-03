@@ -63,7 +63,7 @@ async function confirm() {
 
 <template>
   <Dialog :open="true" @update:open="(open: boolean) => !open && emit('close')">
-    <DialogContent class="max-w-[440px]">
+    <DialogContent>
       <DialogHeader>
         <DialogTitle>合并设备</DialogTitle>
         <DialogDescription>
@@ -72,7 +72,7 @@ async function confirm() {
       </DialogHeader>
 
       <div class="flex flex-col gap-4">
-        <div class="flex flex-col gap-1.5">
+        <div class="flex flex-col gap-2">
           <Label for="merge-target">合并到</Label>
           <Select v-model="target">
             <SelectTrigger id="merge-target" aria-label="合并目标设备" class="w-full">
@@ -86,7 +86,7 @@ async function confirm() {
           </Select>
         </div>
 
-        <div class="flex flex-col gap-1.5">
+        <div class="flex flex-col gap-2">
           <Label for="merge-name">合并后的名称</Label>
           <Input id="merge-name" v-model="name" maxlength="60" @keyup.enter="confirm" />
         </div>
@@ -95,10 +95,10 @@ async function confirm() {
       </div>
 
       <DialogFooter>
-        <Button variant="outline" size="sm" type="button" :disabled="busy" @click="emit('close')">
+        <Button variant="outline" type="button" :disabled="busy" @click="emit('close')">
           取消
         </Button>
-        <Button size="sm" type="button" :disabled="busy" @click="confirm">合并</Button>
+        <Button type="button" :disabled="busy" @click="confirm">合并</Button>
       </DialogFooter>
     </DialogContent>
   </Dialog>

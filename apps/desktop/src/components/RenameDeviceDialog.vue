@@ -53,7 +53,7 @@ async function confirm() {
 
 <template>
   <Dialog :open="true" @update:open="(open: boolean) => !open && emit('close')">
-    <DialogContent class="max-w-[440px]">
+    <DialogContent>
       <DialogHeader>
         <DialogTitle>{{ merged ? "重命名合并卡" : "设备改名" }}</DialogTitle>
         <DialogDescription>
@@ -65,17 +65,17 @@ async function confirm() {
         </DialogDescription>
       </DialogHeader>
 
-      <div class="flex flex-col gap-1.5">
+      <div class="flex flex-col gap-2">
         <Label for="rename-input">名称</Label>
         <Input id="rename-input" v-model="name" maxlength="60" @keyup.enter="confirm" />
         <p v-if="error" class="text-xs text-destructive">{{ error }}</p>
       </div>
 
       <DialogFooter>
-        <Button variant="outline" size="sm" type="button" :disabled="busy" @click="emit('close')">
+        <Button variant="outline" type="button" :disabled="busy" @click="emit('close')">
           取消
         </Button>
-        <Button size="sm" type="button" :disabled="busy" @click="confirm">保存</Button>
+        <Button type="button" :disabled="busy" @click="confirm">保存</Button>
       </DialogFooter>
     </DialogContent>
   </Dialog>

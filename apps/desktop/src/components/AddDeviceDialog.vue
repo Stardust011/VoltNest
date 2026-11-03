@@ -67,19 +67,17 @@ onMounted(load);
 
 <template>
   <Dialog :open="true" @update:open="(open: boolean) => !open && emit('close')">
-    <DialogContent class="max-w-[520px]">
+    <DialogContent>
       <DialogHeader>
         <DialogTitle>添加设备</DialogTitle>
-        <DialogDescription>
-          列出的设备与自动识别使用同一套筛选条件（型号表 → 协议 → UsagePage），不会列出无关设备。
-        </DialogDescription>
+        <DialogDescription>暂未适配的设备请去诊断页上报请求支持。</DialogDescription>
       </DialogHeader>
 
-      <div v-if="loading" class="py-8 text-center text-sm text-muted-foreground">正在枚举设备…</div>
+      <div v-if="loading" class="py-6 text-center text-sm text-muted-foreground">正在枚举设备…</div>
 
       <ul
         v-else-if="candidates.length > 0"
-        class="flex max-h-[320px] flex-col gap-1.5 overflow-y-auto"
+        class="flex max-h-[320px] flex-col gap-2 overflow-y-auto"
       >
         <li
           v-for="candidate in candidates"
@@ -88,7 +86,7 @@ onMounted(load);
         >
           <div class="min-w-0 flex-1">
             <p class="truncate text-sm font-medium">{{ candidate.displayName }}</p>
-            <p class="truncate font-mono text-[11px] text-muted-foreground">
+            <p class="truncate font-mono text-xs text-muted-foreground">
               {{ candidate.vidPid ?? candidate.stableId }}
             </p>
           </div>
@@ -112,17 +110,17 @@ onMounted(load);
         </li>
       </ul>
 
-      <div v-else class="flex flex-col items-center gap-1 py-8 text-center">
+      <div v-else class="flex flex-col items-center gap-1 py-6 text-center">
         <p class="text-sm font-medium">没有可添加的设备</p>
         <p class="max-w-[320px] text-xs leading-relaxed text-muted-foreground">
-          请先接入设备，或在诊断页为未识别的设备生成上报数据。
+          请先接入设备并保持通电，然后重新打开这个窗口。
         </p>
       </div>
 
       <p v-if="error" class="text-xs text-destructive">{{ error }}</p>
 
       <DialogFooter>
-        <Button variant="outline" size="sm" type="button" @click="emit('close')">关闭</Button>
+        <Button variant="outline" type="button" @click="emit('close')">关闭</Button>
       </DialogFooter>
     </DialogContent>
   </Dialog>
