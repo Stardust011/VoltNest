@@ -8,16 +8,17 @@ use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
+use tauri::AppHandle;
 use tauri::image::Image;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{
     MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent, TrayIconId,
 };
-use tauri::{AppHandle, Manager};
 
 use voltnest_core::{DeviceDto, DeviceState, Snapshot};
 
 use crate::host::{HostState, lock};
+use crate::panel;
 
 /// 基础托盘图标的 id（没有设备图标时占位，点它打开面板）。
 pub const BASE_TRAY_ID: &str = "voltnest";
@@ -77,21 +78,12 @@ fn app_icon() -> Image<'static> {
 /// 安装托盘：菜单事件处理器 + 基础图标。
 pub fn install(app: &AppHandle) -> tauri::Result<()> {
     app.on_menu_event(|app, event| match event.id.as_ref() {
-        MENU_OPEN => show_main(app),
+        MENU_OPEN => panel::show(app),
         MENU_QUIT => quit(app),
         _ => {}
     });
 
     build_tray(app, BASE_TRAY_ID, app_icon(), "VoltNest")
-}
-
-/// 显示并聚焦主窗口（二次启动、托盘点击、菜单项都走这里）。
-pub fn show_main(app: &AppHandle) {
-    if let Some(window) = app.get_webview_window("main") {
-        let _ = window.show();
-        let _ = window.unminimize();
-        let _ = window.set_focus();
-    }
 }
 
 /// 退出进程：任意一张图标的右键菜单都能到这儿。
@@ -215,7 +207,7 @@ fn build_tray(
                     | TrayIconEvent::DoubleClick {
                         button: MouseButton::Left,
                         ..
-                    } => show_main(tray.app_handle()),
+                    } => panel::show(tray.app_handle()),
                     _ => {}
                 })
                 .build(&handle)
