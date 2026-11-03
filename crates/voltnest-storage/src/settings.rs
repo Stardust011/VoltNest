@@ -8,6 +8,7 @@ use crate::atomic::{archive_corrupt, read_optional, write_json_atomic};
 use crate::paths::DataPaths;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use voltnest_provider::Sensitivity;
 
@@ -60,6 +61,177 @@ pub struct TraySettings {
     pub extra: Map<String, Value>,
 }
 
+/// 用户合并组：把多台设备呈现为一张卡片。
+#[derive(Clone, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct MergeGroup {
+    /// 主设备 `stableId`；卡片 ID 由它派生，故不可为空。
+    pub primary: String,
+    /// 全部成员（含主设备）。
+    pub members: Vec<String>,
+    /// 卡片名称，默认取合并时 HID 上报的名称。
+    pub name: String,
+    /// 未知字段。
+    #[serde(flatten)]
+    pub extra: Map<String, Value>,
+}
+
+/// 设备管理：用户对呈现层的改动（别名、删除列表、合并组）。
+#[derive(Clone, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct DeviceSettings {
+    /// `stableId` → 自定义名称。
+    pub aliases: BTreeMap<String, String>,
+    /// 用户删除的设备：不再出现在列表、卡片与托盘。
+    pub removed: Vec<String>,
+    /// 用户合并组。
+    pub merges: Vec<MergeGroup>,
+    /// 未知字段。
+    #[serde(flatten)]
+    pub extra: Map<String, Value>,
+}
+
+impl DeviceSettings {
+    /// 是否在删除列表里。
+    pub fn is_removed(&self, id: &str) -> bool {
+        self.removed.iter().any(|r| r == id)
+    }
+
+    /// 自定义名称（空串视为未设置）。
+    pub fn alias_of(&self, id: &str) -> Option<&str> {
+        self.aliases
+            .get(id)
+            .map(String::as_str)
+            .map(str::trim)
+            .filter(|name| !name.is_empty())
+    }
+
+    /// 某设备所在的合并组。
+    pub fn group_of(&self, id: &str) -> Option<&MergeGroup> {
+        self.merges
+            .iter()
+            .find(|group| group.members.iter().any(|m| m == id))
+    }
+
+    /// 改名：空白名称等于清除自定义名称。
+    pub fn rename(&mut self, id: &str, name: &str) {
+        let trimmed = name.trim();
+        if trimmed.is_empty() {
+            self.aliases.remove(id);
+        } else {
+            self.aliases.insert(id.to_string(), trimmed.to_string());
+        }
+    }
+
+    /// 从删除列表恢复；返回它此前是否真的被删除。
+    pub fn restore(&mut self, id: &str) -> bool {
+        let before = self.removed.len();
+        self.removed.retain(|r| r != id);
+        self.removed.len() != before
+    }
+
+    /// 删除一批设备：拆散它们所在的合并组。
+    pub fn remove(&mut self, ids: &[String]) {
+        for id in ids {
+            if !self.is_removed(id) {
+                self.removed.push(id.clone());
+            }
+            self.merges.retain(|group| !group.members.contains(id));
+        }
+        self.normalize();
+    }
+
+    /// 新建合并组：任一成员已在别的合并组里则失败（不静默抢走别人的成员）。
+    pub fn merge(&mut self, primary: &str, members: &[String], name: &str) -> Result<(), String> {
+        let mut all = vec![primary.to_string()];
+        for id in members {
+            if id == primary {
+                return Err("不能把设备与自身合并".to_string());
+            }
+            if all.contains(id) {
+                continue;
+            }
+            all.push(id.clone());
+        }
+        if all.len() < 2 {
+            return Err("至少需要两台设备才能合并".to_string());
+        }
+        for id in &all {
+            if self.is_removed(id) {
+                return Err(format!("设备 {id} 已被删除，请先添加"));
+            }
+            if let Some(group) = self.group_of(id) {
+                return Err(format!(
+                    "设备 {id} 已与「{}」合并，请先分离",
+                    if group.name.trim().is_empty() {
+                        group.primary.as_str()
+                    } else {
+                        group.name.as_str()
+                    }
+                ));
+            }
+        }
+        let trimmed = name.trim();
+        self.merges.push(MergeGroup {
+            primary: primary.to_string(),
+            members: all,
+            name: if trimmed.is_empty() {
+                primary.to_string()
+            } else {
+                trimmed.to_string()
+            },
+            extra: Map::new(),
+        });
+        self.normalize();
+        Ok(())
+    }
+
+    /// 分离以 `primary` 为锚点的合并组；返回是否真的存在。
+    pub fn separate(&mut self, primary: &str) -> bool {
+        let before = self.merges.len();
+        self.merges.retain(|group| group.primary != primary);
+        self.merges.len() != before
+    }
+
+    /// 收敛不变量：删除列表去重，合并组至少两台、主设备在组内、成员不跨组。
+    pub fn normalize(&mut self) {
+        let mut seen = Vec::new();
+        self.removed.retain(|id| {
+            let unique = !id.is_empty() && !seen.contains(id);
+            if unique {
+                seen.push(id.clone());
+            }
+            unique
+        });
+
+        let mut claimed: Vec<String> = Vec::new();
+        let mut groups: Vec<MergeGroup> = Vec::new();
+        for mut group in std::mem::take(&mut self.merges) {
+            let mut members: Vec<String> = Vec::new();
+            for id in group.members.iter() {
+                if id.is_empty()
+                    || members.contains(id)
+                    || claimed.contains(id)
+                    || self.is_removed(id)
+                {
+                    continue;
+                }
+                members.push(id.clone());
+            }
+            if members.len() < 2 {
+                continue;
+            }
+            if !members.contains(&group.primary) {
+                group.primary = members[0].clone();
+            }
+            claimed.extend(members.iter().cloned());
+            group.members = members;
+            groups.push(group);
+        }
+        self.merges = groups;
+    }
+}
+
 /// `settings.json` 的完整形状。
 #[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
@@ -78,6 +250,8 @@ pub struct Settings {
     pub onboarding_completed: bool,
     /// 托盘顺序与隐藏列表。
     pub tray: TraySettings,
+    /// 设备管理（别名 / 删除 / 合并）。
+    pub devices: DeviceSettings,
     /// 未知字段（读-改-写必须保留）。
     #[serde(flatten)]
     pub extra: Map<String, Value>,
@@ -93,6 +267,7 @@ impl Default for Settings {
             start_minimized: false,
             onboarding_completed: false,
             tray: TraySettings::default(),
+            devices: DeviceSettings::default(),
             extra: Map::new(),
         }
     }
@@ -439,5 +614,86 @@ mod tests {
             serde_json::to_string(&NotificationMode::TrayBubble).unwrap(),
             "\"trayBubble\""
         );
+    }
+
+    #[test]
+    fn device_settings_default_and_round_trip() {
+        let (s, dir) = store();
+        let mut settings = Settings::default();
+        settings.devices.rename("hid:7768:6426", "  桌面鼠标 ");
+        settings
+            .devices
+            .remove(&["ble:01:00:00:23:04:35".to_string()]);
+        s.save(&settings).unwrap();
+
+        let text = fs::read_to_string(dir.join("settings.json")).unwrap();
+        assert!(text.contains("\"devices\""), "{text}");
+        let loaded = s.load(T).settings;
+        assert_eq!(
+            loaded.devices.alias_of("hid:7768:6426"),
+            Some("桌面鼠标"),
+            "改名要 trim"
+        );
+        assert!(loaded.devices.is_removed("ble:01:00:00:23:04:35"));
+    }
+
+    #[test]
+    fn legacy_file_without_devices_section_loads() {
+        let (s, dir) = store();
+        fs::write(
+            dir.join("settings.json"),
+            r#"{"schemaVersion":1,"onboardingCompleted":true}"#,
+        )
+        .unwrap();
+        let loaded = s.load(T);
+        assert!(loaded.warning.is_none());
+        assert!(loaded.settings.devices.merges.is_empty());
+        assert!(loaded.settings.devices.removed.is_empty());
+    }
+
+    #[test]
+    fn merge_and_separate_invariants() {
+        let mut d = DeviceSettings::default();
+        let a = "hid:1111:0001".to_string();
+        let b = "ble:02:00:00:00:00:01".to_string();
+
+        d.merge(&a, std::slice::from_ref(&b), "桌面").unwrap();
+        assert_eq!(d.group_of(&b).map(|g| g.primary.as_str()), Some(a.as_str()));
+        assert!(
+            d.merge(&a, std::slice::from_ref(&b), "再来一次").is_err(),
+            "重复合并应失败"
+        );
+        assert!(
+            d.merge(&a, std::slice::from_ref(&a), "自己").is_err(),
+            "自己合并自己应失败"
+        );
+        assert!(d.merge(&a, &[], "少一台").is_err());
+
+        assert!(d.separate(&a));
+        assert!(!d.separate(&a), "重复分离应返回 false");
+        assert!(d.group_of(&a).is_none());
+    }
+
+    #[test]
+    fn removing_one_member_dissolves_group() {
+        let mut d = DeviceSettings::default();
+        let a = "hid:1111:0001".to_string();
+        let b = "ble:02:00:00:00:00:01".to_string();
+        d.merge(&a, std::slice::from_ref(&b), "桌面").unwrap();
+
+        d.remove(std::slice::from_ref(&b));
+        assert!(d.merges.is_empty(), "成员被删后合并组必须解散");
+        assert!(d.is_removed(&b));
+        assert!(d.restore(&b));
+        assert!(!d.restore(&b), "重复恢复应返回 false");
+    }
+
+    #[test]
+    fn rename_with_blank_clears_alias() {
+        let mut d = DeviceSettings::default();
+        d.rename("hid:1111:0001", "鼠标");
+        assert_eq!(d.alias_of("hid:1111:0001"), Some("鼠标"));
+        d.rename("hid:1111:0001", "   ");
+        assert_eq!(d.alias_of("hid:1111:0001"), None);
     }
 }

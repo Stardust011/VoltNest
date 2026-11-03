@@ -10,7 +10,8 @@ use std::thread::JoinHandle;
 
 use tauri::{AppHandle, Emitter};
 use voltnest_core::{
-    DiagLevel, Engine, EngineConfig, NotificationConfig, NotificationEntry, SeedEntry, Snapshot,
+    DiagLevel, Engine, EngineConfig, ManagedDevices, ManagedMerge, NotificationConfig,
+    NotificationEntry, SeedEntry, Snapshot,
 };
 use voltnest_provider::{ProviderEvent, Transport, clock};
 use voltnest_storage::{
@@ -129,13 +130,14 @@ impl HostState {
         shared
     }
 
-    /// 把设置同步进状态机（档位、通知阈值、托盘顺序与隐藏列表）。
+    /// 把设置同步进状态机（档位、通知阈值、托盘顺序与隐藏列表、设备管理）。
     pub fn apply_settings(&self, settings: &Settings) {
         let mut engine = lock(&self.engine);
         engine.set_sensitivity(settings.sensitivity());
         engine.set_notification_config(notification_config(settings));
         engine.set_tray_order(settings.tray.order.clone());
         engine.set_hidden(settings.tray.hidden.clone());
+        engine.set_managed(managed_devices(settings));
     }
 
     /// 当前在途事件数。
@@ -268,6 +270,24 @@ pub fn persist_state(shared: &HostState, now: u64, force: bool) {
     };
     if let Err(err) = result {
         log::warn!("state.json 写入失败: {err}");
+    }
+}
+
+/// 由设置构造引擎的用户呈现配置。
+pub fn managed_devices(settings: &Settings) -> ManagedDevices {
+    ManagedDevices {
+        aliases: settings.devices.aliases.clone(),
+        removed: settings.devices.removed.clone(),
+        merges: settings
+            .devices
+            .merges
+            .iter()
+            .map(|group| ManagedMerge {
+                primary: group.primary.clone(),
+                members: group.members.clone(),
+                name: group.name.clone(),
+            })
+            .collect(),
     }
 }
 

@@ -184,8 +184,19 @@ fn write_settings(
     shared: &HostState,
     mutate: impl FnOnce(&mut Settings),
 ) -> Result<Settings, String> {
+    write_settings_try(shared, |next| {
+        mutate(next);
+        Ok(())
+    })
+}
+
+/// 可失败的读-改-写设置：校验失败时不落盘、不同步状态机。
+pub(crate) fn write_settings_try(
+    shared: &HostState,
+    mutate: impl FnOnce(&mut Settings) -> Result<(), String>,
+) -> Result<Settings, String> {
     let mut next = lock(&shared.settings).clone();
-    mutate(&mut next);
+    mutate(&mut next)?;
     shared
         .settings_store
         .save(&next)

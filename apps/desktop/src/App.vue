@@ -1,8 +1,11 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch, type Component } from "vue";
-import { Activity, BatteryMedium, CircleAlert, Settings } from "@lucide/vue";
+import { Activity, BatteryMedium, CircleAlert, Plus, Settings } from "@lucide/vue";
+import AddDeviceDialog from "./components/AddDeviceDialog.vue";
 import DeviceCard from "./components/DeviceCard.vue";
 import DiagnosticsPanel from "./components/DiagnosticsPanel.vue";
+import MergeDeviceDialog from "./components/MergeDeviceDialog.vue";
+import RenameDeviceDialog from "./components/RenameDeviceDialog.vue";
 import ManualAddPanel from "./components/ManualAddPanel.vue";
 import OnboardingFlow from "./components/OnboardingFlow.vue";
 import SettingsPanel from "./components/SettingsPanel.vue";
@@ -19,6 +22,12 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { useSnapshot } from "./composables/useSnapshot";
 import {
@@ -27,7 +36,9 @@ import {
   getSettings,
   listManualDevices,
   removeManualDevice,
+  removeDevices,
   restartTransport,
+  separateMerge,
   setAutostart,
   subscribeDiagnostics,
   updateSettings,
@@ -43,7 +54,7 @@ import type {
 type View = "devices" | "settings" | "diagnostics";
 
 const view = ref<View>("devices");
-const { snapshot, nowMs, connected } = useSnapshot();
+const { snapshot, nowMs, connected, refresh } = useSnapshot();
 
 const settings = ref<SettingsDto | null>(null);
 const diagnostics = ref<DiagnosticsDto | null>(null);
@@ -91,16 +102,18 @@ const navItems: Array<{ id: View; label: string; icon: Component }> = [
 ];
 
 /**
- * 面板行：快照里的 `cards` 只覆盖「HID + BLE 同一型号」的合并对，
- * 其余设备各自成行。行的顺序直接沿用 `devices` 的数组顺序 —— 排序统一在
- * Rust 决定，前端不得重排。
+ * 面板行：`cards` 覆盖自动合并（同型号的 HID + BLE）与用户手动合并两种情况，
+ * 其余设备各自成行。行的顺序沿用 `devices` 的数组顺序 —— 排序统一在 Rust 决定。
  *
  * 合并卡的非活跃成员不再单独出行，它的信息以副行文案出现在主成员卡上。
  */
 interface Row {
   key: string;
   deviceId: string;
+  card?: CardDto;
   inactiveText?: string;
+  /** 还存在可以合并的另一台设备。 */
+  canMerge: boolean;
 }
 
 const rows = computed<Row[]>(() => {
@@ -108,20 +121,29 @@ const rows = computed<Row[]>(() => {
   if (!snap) return [];
   const byPrimary = new Map<string, CardDto>();
   const absorbed = new Set<string>();
+  const claimedByUser = new Set<string>();
   for (const card of snap.cards) {
     byPrimary.set(card.primaryDeviceId, card);
     for (const id of card.memberDeviceIds) {
       if (id !== card.primaryDeviceId) absorbed.add(id);
+      if (card.userMerged) claimedByUser.add(id);
     }
   }
+  const visibleIds = snap.devices.map((device) => device.stableId);
   const result: Row[] = [];
   for (const device of snap.devices) {
     if (absorbed.has(device.stableId)) continue;
     const card = byPrimary.get(device.stableId);
+    const members = new Set(card?.memberDeviceIds ?? [device.stableId]);
     result.push({
       key: card?.cardId ?? device.stableId,
       deviceId: device.stableId,
+      card,
       inactiveText: card?.inactiveMemberText,
+      // 已合并的卡片先分离才能再合并：菜单项按此置灰，避免点了才报错。
+      canMerge:
+        card?.userMerged !== true &&
+        visibleIds.some((id) => !members.has(id) && !claimedByUser.has(id)),
     });
   }
   return result;
@@ -139,6 +161,91 @@ const statusText = computed(() => {
   const count = rows.value.length;
   return count === 0 ? "尚未发现设备" : `正在监控 ${count} 台设备`;
 });
+
+/** 「添加设备」对话框。 */
+const addOpen = ref(false);
+/** 合并对话框的入参：锚点设备 + 其它可选设备。 */
+const mergeSource = ref<{
+  primary: { id: string; name: string };
+  others: Array<{ id: string; name: string }>;
+} | null>(null);
+/** 改名对话框的入参。 */
+const renameTarget = ref<{ target: string; value: string; merged: boolean } | null>(null);
+/** 删除确认（与开关分开存，避免 `AlertDialogAction` 先关弹窗再置空目标）。 */
+const deleteTarget = ref<{ ids: string[]; name: string } | null>(null);
+const deleteOpen = ref(false);
+
+function rowLabel(row: Row): string {
+  return row.card?.displayName ?? deviceById.value.get(row.deviceId)?.displayName ?? row.deviceId;
+}
+
+/** 改名：合并卡改合并名，单机改设备别名（自动合并卡改它的主成员名）。 */
+function openRename(row: Row) {
+  if (row.card?.userMerged) {
+    renameTarget.value = {
+      target: row.card.cardId,
+      value: row.card.displayName,
+      merged: true,
+    };
+    return;
+  }
+  const device = deviceById.value.get(row.deviceId);
+  renameTarget.value = { target: row.deviceId, value: device?.displayName ?? "", merged: false };
+}
+
+/** 合并：默认名取当前展示名，用户可改；成员与已合并过的设备不进可选列表。 */
+function openMerge(row: Row) {
+  const snap = snapshot.value;
+  if (!snap) return;
+  const members = new Set(row.card?.memberDeviceIds ?? [row.deviceId]);
+  const claimed = new Set(
+    snap.cards.filter((card) => card.userMerged).flatMap((card) => card.memberDeviceIds),
+  );
+  const others = snap.devices
+    .filter((device) => !members.has(device.stableId) && !claimed.has(device.stableId))
+    .map((device) => ({ id: device.stableId, name: device.displayName }));
+  if (others.length === 0) return;
+  mergeSource.value = {
+    primary: { id: row.deviceId, name: rowLabel(row) },
+    others,
+  };
+}
+
+function openDelete(row: Row) {
+  deleteTarget.value = {
+    ids: row.card ? [...row.card.memberDeviceIds] : [row.deviceId],
+    name: rowLabel(row),
+  };
+  deleteOpen.value = true;
+}
+
+/** 分离合并：整组恢复为独立设备。 */
+async function separateRow(row: Row) {
+  if (!row.card) return;
+  try {
+    await separateMerge(row.card.cardId);
+    await refresh();
+  } catch (e) {
+    fail(e);
+  }
+}
+
+async function confirmDelete() {
+  const target = deleteTarget.value;
+  deleteTarget.value = null;
+  deleteOpen.value = false;
+  if (!target) return;
+  try {
+    await removeDevices(target.ids);
+    await refresh();
+  } catch (e) {
+    fail(e);
+  }
+}
+
+async function afterDeviceChange() {
+  await refresh();
+}
 
 function fail(e: unknown) {
   error.value = e instanceof Error ? e.message : String(e);
@@ -349,28 +456,51 @@ onBeforeUnmount(() => {
 
     <main class="mx-auto min-h-0 w-full max-w-[560px] flex-1 overflow-y-auto px-5 pt-4">
       <template v-if="view === 'devices'">
-        <div v-if="connected" class="flex flex-col gap-2.5 pb-5">
-          <template v-if="rows.length > 0">
-            <DeviceCard
-              v-for="row in rows"
-              :key="row.key"
-              :device="deviceById.get(row.deviceId)!"
-              :now-ms="nowMs"
-              :inactive-text="row.inactiveText"
-            />
-          </template>
+        <div v-if="connected" class="pb-5">
+          <ContextMenu>
+            <ContextMenuTrigger as-child>
+              <div class="flex min-h-[55vh] flex-col gap-2.5">
+                <template v-if="rows.length > 0">
+                  <DeviceCard
+                    v-for="row in rows"
+                    :key="row.key"
+                    :device="deviceById.get(row.deviceId)!"
+                    :card="row.card"
+                    :now-ms="nowMs"
+                    :inactive-text="row.inactiveText"
+                    :can-merge="row.canMerge"
+                    @rename="openRename(row)"
+                    @merge="openMerge(row)"
+                    @separate="separateRow(row)"
+                    @remove="openDelete(row)"
+                  />
+                </template>
 
-          <div v-else class="flex flex-col items-center justify-center gap-2 py-10 text-center">
-            <div class="size-3 rounded-full border-2 border-muted-foreground/40" />
-            <p class="text-sm font-medium">还没有发现设备</p>
-            <p class="max-w-[280px] text-xs leading-relaxed text-muted-foreground">
-              插上 2.4G 接收器，或在系统设置里把蓝牙耳机连接一次，设备会自己出现在这里。
-            </p>
-          </div>
+                <div
+                  v-else
+                  class="flex flex-col items-center justify-center gap-2 py-10 text-center"
+                >
+                  <div class="size-3 rounded-full border-2 border-muted-foreground/40" />
+                  <p class="text-sm font-medium">还没有发现设备</p>
+                  <p class="max-w-[280px] text-xs leading-relaxed text-muted-foreground">
+                    插上 2.4G 接收器，或在系统设置里把蓝牙耳机连接一次，设备会自己出现在这里。
+                  </p>
+                </div>
 
-          <p class="text-center text-xs leading-relaxed text-muted-foreground">
-            若未自动识别，请切换为蓝牙模式或前往「诊断页」生成上报数据。
-          </p>
+                <p class="text-center text-xs leading-relaxed text-muted-foreground">
+                  右键设备卡片可改名、合并或删除；右键空白处可添加设备。<br />
+                  若未自动识别，请切换为蓝牙模式或前往「诊断页」生成上报数据。
+                </p>
+              </div>
+            </ContextMenuTrigger>
+
+            <ContextMenuContent class="w-44">
+              <ContextMenuItem @select="addOpen = true">
+                <Plus aria-hidden="true" />
+                添加设备
+              </ContextMenuItem>
+            </ContextMenuContent>
+          </ContextMenu>
         </div>
         <div v-else class="py-16 text-center text-sm text-muted-foreground">正在连接宿主进程…</div>
       </template>
@@ -415,6 +545,61 @@ onBeforeUnmount(() => {
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
+
+    <AlertDialog
+      :open="deleteOpen"
+      @update:open="
+        (open) => {
+          if (!open) {
+            deleteOpen = false;
+            deleteTarget = null;
+          }
+        }
+      "
+    >
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>删除「{{ deleteTarget?.name }}」？</AlertDialogTitle>
+          <AlertDialogDescription>
+            删除后该设备不再出现在列表与托盘；重新接入后可右键空白处「添加设备」恢复。
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>取消</AlertDialogCancel>
+          <AlertDialogAction
+            :class="buttonVariants({ variant: 'destructive' })"
+            @click="confirmDelete"
+          >
+            删除
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+
+    <AddDeviceDialog v-if="addOpen" @close="addOpen = false" @changed="afterDeviceChange" />
+
+    <MergeDeviceDialog
+      v-if="mergeSource"
+      :primary="mergeSource.primary"
+      :others="mergeSource.others"
+      @close="mergeSource = null"
+      @merged="
+        mergeSource = null;
+        afterDeviceChange();
+      "
+    />
+
+    <RenameDeviceDialog
+      v-if="renameTarget"
+      :target="renameTarget.target"
+      :value="renameTarget.value"
+      :merged="renameTarget.merged"
+      @close="renameTarget = null"
+      @renamed="
+        renameTarget = null;
+        afterDeviceChange();
+      "
+    />
 
     <ManualAddPanel v-if="addingDevice" @close="addingDevice = false" @saved="onManualSaved" />
 

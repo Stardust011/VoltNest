@@ -10,6 +10,7 @@
 pub mod diagnostics;
 pub mod engine;
 pub mod humanize;
+pub mod managed;
 pub mod normalize;
 pub mod notify;
 pub mod record;
@@ -19,6 +20,7 @@ pub mod state;
 pub use diagnostics::{DiagEvent, DiagLevel, Diagnostics};
 pub use engine::{Engine, EngineConfig, SeedEntry, Transition};
 pub use humanize::humanize_ago;
+pub use managed::{ManagedDevices, ManagedMerge};
 pub use normalize::normalize;
 pub use notify::{
     LowBatteryNotification, NotificationBook, NotificationConfig, NotificationEntry,

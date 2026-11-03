@@ -56,12 +56,16 @@ pub struct DeviceDto {
     pub last_error: Option<String>,
 }
 
-/// 合并卡（仅在三个条件同时满足时产生）。
+/// 合并卡：自动按型号合并，或由用户手动合并。
 #[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CardDto {
-    /// 卡片 ID（= `modelKey`）。
+    /// 卡片 ID（自动合并 = `modelKey`；用户合并 = `user:<主设备 stableId>`）。
     pub card_id: String,
+    /// 卡片标题。用户合并取合并名，自动合并取主成员显示名。
+    pub display_name: String,
+    /// 是否由用户手动合并（决定是否提供「分离合并」）。
+    pub user_merged: bool,
     /// 活跃成员（提供主电量）。
     pub primary_device_id: String,
     /// 全部成员。
@@ -146,6 +150,8 @@ mod tests {
             devices: vec![],
             cards: vec![CardDto {
                 card_id: "aj159 nl".into(),
+                display_name: "AJ159 NL".into(),
+                user_merged: false,
                 primary_device_id: "ble:01:00:00:23:04:35".into(),
                 member_device_ids: vec!["ble:01:00:00:23:04:35".into(), "hid:7768:6426".into()],
                 battery: None,

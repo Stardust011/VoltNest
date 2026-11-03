@@ -1,9 +1,16 @@
 <script setup lang="ts">
 import { computed } from "vue";
-import { Zap } from "@lucide/vue";
+import { Link2, Pencil, Split, Trash2, Zap } from "@lucide/vue";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
 import { deviceTypeIcon } from "../lib/device-icon";
 import {
   batteryColor,
@@ -16,13 +23,24 @@ import {
   transportLabel,
 } from "../lib/format";
 import { humanizeAgo } from "../lib/time";
-import type { DeviceDto } from "../lib/types";
+import type { CardDto, DeviceDto } from "../lib/types";
 
 const props = defineProps<{
   device: DeviceDto;
   nowMs: number;
+  /** 该行对应的合并卡；无合并时为空。 */
+  card?: CardDto;
   /** 合并卡的非活跃成员说明行；有值时替代普通副行。 */
   inactiveText?: string;
+  /** 没有其它设备可合并时菜单项置灰。 */
+  canMerge: boolean;
+}>();
+
+const emit = defineEmits<{
+  rename: [];
+  merge: [];
+  separate: [];
+  remove: [];
 }>();
 
 const tone = computed(() => toneFor(props.device.state));
@@ -44,6 +62,12 @@ const typeIcon = computed(() => deviceTypeIcon(props.device.deviceType, props.de
 /** 图标无文字，用无障碍标签补语义（类型优先，否则链路）。 */
 const typeIconLabel = computed(() => typeLabel.value ?? transportLabel(props.device.transport));
 
+/** 合并卡用合并名，单机用设备名。 */
+const title = computed(() => props.card?.displayName || props.device.displayName);
+
+/** 用户手动合并时才提供「分离合并」。 */
+const userMerged = computed(() => props.card?.userMerged === true);
+
 /** 副行：合并卡用非活跃链路说明（Rust 生成）；主数字为缓存值时补「上次读数 · 时间」；其余按充电状态。 */
 const secondary = computed(() => {
   if (props.inactiveText) return props.inactiveText;
@@ -57,75 +81,108 @@ const secondary = computed(() => {
 </script>
 
 <template>
-  <Card class="group py-3 transition-shadow hover:shadow-md">
-    <CardContent class="flex items-center gap-3 px-4">
-      <div
-        class="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground"
-        role="img"
-        :aria-label="typeIconLabel"
-        data-testid="device-type-icon"
-      >
-        <component :is="typeIcon" class="size-4" aria-hidden="true" />
-      </div>
+  <ContextMenu>
+    <ContextMenuTrigger as-child>
+      <Card class="group py-3 transition-shadow hover:shadow-md" @contextmenu.stop>
+        <CardContent class="flex items-center gap-3 px-4">
+          <div
+            class="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground"
+            role="img"
+            :aria-label="typeIconLabel"
+            data-testid="device-type-icon"
+          >
+            <component :is="typeIcon" class="size-4" aria-hidden="true" />
+          </div>
 
-      <!-- 电量区域 -->
-      <div class="flex w-16 shrink-0 flex-col gap-2">
-        <div
-          class="flex h-6 items-center gap-1 text-lg leading-none font-semibold whitespace-nowrap tabular-nums"
-          :style="{ color }"
-        >
-          <span>
-            {{ shownBattery === null ? "—" : shownBattery
-            }}<span v-if="shownBattery !== null" class="text-xs font-medium">%</span>
-          </span>
+          <!-- 电量区域 -->
+          <div class="flex w-16 shrink-0 flex-col gap-2">
+            <div
+              class="flex h-6 items-center gap-1 text-lg leading-none font-semibold whitespace-nowrap tabular-nums"
+              :style="{ color }"
+            >
+              <span>
+                {{ shownBattery === null ? "—" : shownBattery
+                }}<span v-if="shownBattery !== null" class="text-xs font-medium">%</span>
+              </span>
 
-          <Zap
-            v-if="device.isCharging === true"
-            class="size-3.5 shrink-0"
-            aria-hidden="true"
-            data-testid="charging-bolt"
-          />
-        </div>
+              <Zap
+                v-if="device.isCharging === true"
+                class="size-3.5 shrink-0"
+                aria-hidden="true"
+                data-testid="charging-bolt"
+              />
+            </div>
 
-        <Progress
-          :model-value="progress"
-          class="h-1.5 [&>div]:bg-current"
-          :style="{ color }"
-          :aria-label="shownBattery === null ? '电量未知' : `电量 ${shownBattery}%`"
-        />
-      </div>
+            <Progress
+              :model-value="progress"
+              class="h-1.5 [&>div]:bg-current"
+              :style="{ color }"
+              :aria-label="shownBattery === null ? '电量未知' : `电量 ${shownBattery}%`"
+            />
+          </div>
 
-      <!-- 设备信息 -->
-      <div class="min-w-0 flex-1 self-center">
-        <div class="flex min-w-0 items-center gap-2">
-          <h2 class="truncate text-sm leading-5 font-semibold">
-            {{ device.displayName }}
-          </h2>
+          <!-- 设备信息 -->
+          <div class="min-w-0 flex-1 self-center">
+            <div class="flex min-w-0 items-center gap-2">
+              <h2 class="truncate text-sm leading-5 font-semibold">
+                {{ title }}
+              </h2>
 
-          <Badge variant="secondary" class="shrink-0 px-1.5 py-0 text-[10px] font-normal">
-            {{ transportLabel(device.transport) }}
-          </Badge>
-        </div>
+              <Badge
+                v-if="userMerged"
+                variant="outline"
+                class="shrink-0 gap-1 px-1.5 py-0 text-[10px] font-normal"
+              >
+                <Link2 class="size-3" aria-hidden="true" />
+                已合并
+              </Badge>
 
-        <p class="mt-1 truncate text-xs leading-4 text-muted-foreground">
-          {{ secondary }}
-        </p>
-      </div>
+              <Badge variant="secondary" class="shrink-0 px-1.5 py-0 text-[10px] font-normal">
+                {{ transportLabel(device.transport) }}
+              </Badge>
+            </div>
 
-      <!-- 状态区域 -->
-      <div class="flex max-w-[8rem] shrink-0 flex-col items-end gap-1.5">
-        <Badge variant="secondary" :class="[tone.chip, 'rounded-full whitespace-nowrap']">
-          <span class="mr-1.5 size-1.5 shrink-0 rounded-full" :class="tone.dot" />
-          {{ stateLabel(device.state) }}
-        </Badge>
+            <p class="mt-1 truncate text-xs leading-4 text-muted-foreground">
+              {{ secondary }}
+            </p>
+          </div>
 
-        <span
-          v-if="device.lastError"
-          class="max-w-full truncate text-right font-mono text-[10px] leading-3 text-orange-600 dark:text-orange-400"
-          :title="device.lastError"
-          >{{ device.lastError }}</span
-        >
-      </div>
-    </CardContent>
-  </Card>
+          <!-- 状态区域 -->
+          <div class="flex max-w-[8rem] shrink-0 flex-col items-end gap-1.5">
+            <Badge variant="secondary" :class="[tone.chip, 'rounded-full whitespace-nowrap']">
+              <span class="mr-1.5 size-1.5 shrink-0 rounded-full" :class="tone.dot" />
+              {{ stateLabel(device.state) }}
+            </Badge>
+
+            <span
+              v-if="device.lastError"
+              class="max-w-full truncate text-right font-mono text-[10px] leading-3 text-orange-600 dark:text-orange-400"
+              :title="device.lastError"
+              >{{ device.lastError }}</span
+            >
+          </div>
+        </CardContent>
+      </Card>
+    </ContextMenuTrigger>
+
+    <ContextMenuContent class="w-44">
+      <ContextMenuItem @select="emit('rename')">
+        <Pencil aria-hidden="true" />
+        改名
+      </ContextMenuItem>
+      <ContextMenuItem :disabled="!canMerge" @select="emit('merge')">
+        <Link2 aria-hidden="true" />
+        与其它设备合并
+      </ContextMenuItem>
+      <ContextMenuItem v-if="userMerged" @select="emit('separate')">
+        <Split aria-hidden="true" />
+        分离合并
+      </ContextMenuItem>
+      <ContextMenuSeparator />
+      <ContextMenuItem variant="destructive" @select="emit('remove')">
+        <Trash2 aria-hidden="true" />
+        删除设备
+      </ContextMenuItem>
+    </ContextMenuContent>
+  </ContextMenu>
 </template>

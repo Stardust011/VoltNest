@@ -6,6 +6,7 @@
 
 use crate::diagnostics::{DiagLevel, Diagnostics};
 use crate::humanize::humanize_ago;
+use crate::managed::ManagedDevices;
 use crate::notify::{
     LowBatteryNotification, NotificationBook, NotificationConfig, NotificationEntry,
     NotificationNode,
@@ -13,7 +14,7 @@ use crate::notify::{
 use crate::record::{DeviceRecord, UNREADABLE_KINDS_MAX};
 use crate::snapshot::{CardDto, DeviceDto, Snapshot, TraySnapshotDto};
 use crate::state::DeviceState;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use voltnest_provider::{
     ClassificationMethod, DegradationThresholds, DeviceFact, DeviceType, ErrorCode, Percent,
     ProfileError, ProviderEvent, ProviderProfile, RemovalReason, Sensitivity, StableId, Transport,
@@ -118,6 +119,7 @@ pub struct Engine {
     pending_notifications: Vec<LowBatteryNotification>,
     tray_order: Vec<String>,
     hidden: Vec<String>,
+    managed: ManagedDevices,
     tray_capacity: usize,
     tray_order_limit: usize,
     rev: u64,
@@ -140,6 +142,7 @@ impl Engine {
             pending_notifications: Vec::new(),
             tray_order: Vec::new(),
             hidden: Vec::new(),
+            managed: ManagedDevices::default(),
             tray_capacity: config.tray_capacity,
             tray_order_limit: config.tray_order_limit,
             rev: 0,
@@ -184,6 +187,16 @@ impl Engine {
     /// 设置托盘隐藏列表（`settings.tray.hidden`）。
     pub fn set_hidden(&mut self, hidden: Vec<String>) {
         self.hidden = hidden;
+    }
+
+    /// 设置用户层的呈现改动（别名 / 删除 / 合并）。
+    pub fn set_managed(&mut self, managed: ManagedDevices) {
+        self.managed = managed;
+    }
+
+    /// 当前用户层配置。
+    pub fn managed(&self) -> &ManagedDevices {
+        &self.managed
     }
 
     /// 某家族的阈值链（含档位缩放）。
@@ -698,13 +711,42 @@ impl Engine {
     }
 
     // ---------- 快照 ----------
+    /// 手动登记一台设备（「添加设备」用）：记录已存在时返回 `false`。
+    ///
+    /// 新建的记录 `present = false`，等 Provider 的 `Arrived` 补齐型号与在场状态；托盘不因此多个图标。
+    pub fn register(&mut self, stable_id: &StableId, display_name: &str, now_ms: u64) -> bool {
+        if self.index_of(stable_id).is_some() {
+            return false;
+        }
+        let transport = stable_id.transport().unwrap_or(Transport::Hid);
+        let family = self.family_for_transport(transport);
+        let mut rec = DeviceRecord::new(
+            stable_id.clone(),
+            transport,
+            family,
+            display_name,
+            "",
+            now_ms,
+        );
+        rec.present = false;
+        self.records.push(rec);
+        self.diagnostics.push(
+            now_ms,
+            DiagLevel::Info,
+            "device_added",
+            Some(stable_id.as_str().to_string()),
+            display_name.to_string(),
+        );
+        true
+    }
 
     /// 生成一次全量快照，`rev` 自增。
     pub fn snapshot(&mut self, now_ms: u64) -> Snapshot {
         self.rev += 1;
         let order = self.sorted_indices();
-        let devices: Vec<DeviceDto> = order.iter().map(|&i| self.device_dto(i)).collect();
-        let cards = self.build_cards(&order, now_ms);
+        let names = self.display_names(&order);
+        let devices: Vec<DeviceDto> = order.iter().map(|&i| self.device_dto(i, &names)).collect();
+        let cards = self.build_cards(&order, now_ms, &names);
         let tray = self.tray_snapshot(&order, &cards);
         Snapshot {
             rev: self.rev,
@@ -768,13 +810,16 @@ impl Engine {
         }
     }
 
-    fn device_dto(&self, idx: usize) -> DeviceDto {
+    fn device_dto(&self, idx: usize, names: &BTreeMap<usize, String>) -> DeviceDto {
         let r = &self.records[idx];
         DeviceDto {
             stable_id: r.stable_id.as_str().to_string(),
             transport: r.transport.as_str().to_string(),
             provider: r.family_id.to_string(),
-            display_name: r.display_name.clone(),
+            display_name: names
+                .get(&idx)
+                .cloned()
+                .unwrap_or_else(|| self.base_name(idx)),
             model_key: r.model_key.clone(),
             device_type: r.classification.device_type.as_str().to_string(),
             classification_method: r.classification.method.as_str().to_string(),
@@ -788,17 +833,34 @@ impl Engine {
         }
     }
 
-    /// 呈现分组，三个条件同时满足：① 两条 `modelKey` 非空且严格相等；② 不都活跃；③ 只涉及 HID 与 BLE。
-    fn build_cards(&self, order: &[usize], now_ms: u64) -> Vec<CardDto> {
+    /// 呈现分组：先出用户合并卡，再对未被用户认领的记录做自动分组。
+    ///
+    /// 自动分组三个条件同时满足：① 两条 `modelKey` 非空且严格相等；② 不都活跃；③ 只涉及 HID 与 BLE。
+    fn build_cards(
+        &self,
+        order: &[usize],
+        now_ms: u64,
+        names: &BTreeMap<usize, String>,
+    ) -> Vec<CardDto> {
+        let mut cards = self.user_cards(order, now_ms);
+        let claimed: BTreeSet<&str> = self
+            .managed
+            .merges
+            .iter()
+            .flat_map(|group| group.members.iter().map(String::as_str))
+            .collect();
+
         let mut groups: BTreeMap<String, Vec<usize>> = BTreeMap::new();
         for &idx in order {
+            if claimed.contains(self.records[idx].stable_id.as_str()) {
+                continue;
+            }
             if let Some(key) = self.records[idx].model_key.as_deref()
                 && !key.is_empty()
             {
                 groups.entry(key.to_string()).or_default().push(idx);
             }
         }
-        let mut cards = Vec::new();
         for (key, members) in groups {
             if members.len() != 2 {
                 continue;
@@ -809,29 +871,43 @@ impl Engine {
                 continue;
             }
             let (active, inactive) = match (ra.state.is_active(), rb.state.is_active()) {
-                (true, false) => (ra, rb),
-                (false, true) => (rb, ra),
-                (false, false) => pick_inactive_primary(ra, rb),
+                (true, false) => (a, b),
+                (false, true) => (b, a),
+                (false, false) => {
+                    if pick_inactive_primary(ra, rb).0.stable_id == ra.stable_id {
+                        (a, b)
+                    } else {
+                        (b, a)
+                    }
+                }
                 (true, true) => continue,
             };
-            let age_text = match inactive.age_ms(now_ms) {
+            let age_text = match self.records[inactive].age_ms(now_ms) {
                 Some(age) => format!(
                     "{} 链路 · 未活动（{}）",
-                    inactive.transport.display_label(),
+                    self.records[inactive].transport.display_label(),
                     humanize_ago(age)
                 ),
-                None => format!("{} 链路 · 未活动", inactive.transport.display_label()),
+                None => format!(
+                    "{} 链路 · 未活动",
+                    self.records[inactive].transport.display_label()
+                ),
             };
             cards.push(CardDto {
                 card_id: key,
-                primary_device_id: active.stable_id.as_str().to_string(),
+                display_name: names
+                    .get(&active)
+                    .cloned()
+                    .unwrap_or_else(|| self.base_name(active)),
+                user_merged: false,
+                primary_device_id: self.records[active].stable_id.as_str().to_string(),
                 member_device_ids: vec![
-                    active.stable_id.as_str().to_string(),
-                    inactive.stable_id.as_str().to_string(),
+                    self.records[active].stable_id.as_str().to_string(),
+                    self.records[inactive].stable_id.as_str().to_string(),
                 ],
-                battery: active.battery.map(Percent::get),
-                is_charging: active.charging,
-                state: active.state,
+                battery: self.records[active].battery.map(Percent::get),
+                is_charging: self.records[active].charging,
+                state: self.records[active].state,
                 inactive_member_text: age_text,
             });
         }
@@ -844,10 +920,127 @@ impl Engine {
         cards
     }
 
+    /// 用户合并卡：成员全部可见时才出卡，成员不足两台就当没合并过。
+    fn user_cards(&self, order: &[usize], now_ms: u64) -> Vec<CardDto> {
+        let mut cards = Vec::new();
+        for group in &self.managed.merges {
+            let members: Vec<usize> = group
+                .members
+                .iter()
+                .filter_map(|id| {
+                    order
+                        .iter()
+                        .copied()
+                        .find(|&i| self.records[i].stable_id.as_str() == id)
+                })
+                .collect();
+            if members.len() < 2 {
+                continue;
+            }
+            let primary = self.pick_primary(&members, &group.primary);
+            let others: Vec<usize> = members.iter().copied().filter(|&i| i != primary).collect();
+            let name = match group.name.trim() {
+                "" => self.base_name(primary),
+                trimmed => trimmed.to_string(),
+            };
+            cards.push(CardDto {
+                card_id: format!("user:{}", group.primary),
+                display_name: name,
+                user_merged: true,
+                primary_device_id: self.records[primary].stable_id.as_str().to_string(),
+                member_device_ids: std::iter::once(primary)
+                    .chain(others.iter().copied())
+                    .map(|i| self.records[i].stable_id.as_str().to_string())
+                    .collect(),
+                battery: self.records[primary].battery.map(Percent::get),
+                is_charging: self.records[primary].charging,
+                state: self.records[primary].state,
+                inactive_member_text: others
+                    .iter()
+                    .map(|&i| self.member_note(i, now_ms))
+                    .collect::<Vec<_>>()
+                    .join("、"),
+            });
+        }
+        cards
+    }
+
+    /// 主成员：用户指定的主设备活跃就用它；否则让位给第一个活跃成员；都不活跃则按指定。
+    fn pick_primary(&self, members: &[usize], configured: &str) -> usize {
+        let configured_idx = members
+            .iter()
+            .copied()
+            .find(|&i| self.records[i].stable_id.as_str() == configured)
+            .unwrap_or(members[0]);
+        if self.records[configured_idx].state.is_active() {
+            return configured_idx;
+        }
+        members
+            .iter()
+            .copied()
+            .find(|&i| self.records[i].state.is_active())
+            .unwrap_or(configured_idx)
+    }
+
+    /// 合并卡里非主成员的说明行。
+    fn member_note(&self, idx: usize, now_ms: u64) -> String {
+        let rec = &self.records[idx];
+        let label = rec.transport.display_label();
+        if rec.state.is_active() {
+            return format!("{label} 链路 · 在线");
+        }
+        match rec.age_ms(now_ms) {
+            Some(age) => format!("{label} 链路 · 未活动（{}）", humanize_ago(age)),
+            None => format!("{label} 链路 · 未活动"),
+        }
+    }
+
+    /// 呈现名：自定义名称优先，否则用 Provider 上报的名称。
+    fn base_name(&self, idx: usize) -> String {
+        let rec = &self.records[idx];
+        self.managed
+            .alias(rec.stable_id.as_str())
+            .unwrap_or(&rec.display_name)
+            .to_string()
+    }
+
+    /// 重名消歧：同名设备追加链路标签，同链路再重名时补序号，保证两张卡片不会一模一样。
+    fn display_names(&self, order: &[usize]) -> BTreeMap<usize, String> {
+        let bases: Vec<(usize, String)> = order.iter().map(|&i| (i, self.base_name(i))).collect();
+        let mut counts: BTreeMap<String, usize> = BTreeMap::new();
+        for (_, name) in &bases {
+            *counts.entry(name.to_lowercase()).or_default() += 1;
+        }
+        let mut used: BTreeMap<String, usize> = BTreeMap::new();
+        bases
+            .into_iter()
+            .map(|(idx, name)| {
+                let duplicated = counts
+                    .get(&name.to_lowercase())
+                    .copied()
+                    .unwrap_or(1)
+                    .gt(&1);
+                let base = if duplicated {
+                    format!("{name} · {}", self.records[idx].transport.display_label())
+                } else {
+                    name
+                };
+                let seen = used.entry(base.clone()).or_default();
+                *seen += 1;
+                let label = if *seen > 1 {
+                    format!("{base} ({seen})")
+                } else {
+                    base
+                };
+                (idx, label)
+            })
+            .collect()
+    }
+
     /// 诊断页的通知节点：同一台设备的多条链路按呈现分组合成一个节点。
     pub fn notification_nodes(&self, now_ms: u64) -> Vec<NotificationNode> {
         let mut owner: BTreeMap<String, (String, Vec<String>)> = BTreeMap::new();
-        for card in self.build_cards(&self.sorted_indices(), now_ms) {
+        for card in self.build_cards(&self.sorted_indices(), now_ms, &BTreeMap::new()) {
             for id in &card.member_device_ids {
                 owner.insert(
                     id.clone(),
@@ -948,18 +1141,20 @@ impl Engine {
             .unwrap_or(usize::MAX)
     }
 
-    /// 面板 / 卡片 / 托盘的统一排序：`tray.order` → 名称 → id。
+    /// 面板 / 卡片 / 托盘的统一排序：`tray.order` → 名称 → id。已删除的设备不出现在任何呈现里。
     fn sorted_indices(&self) -> Vec<usize> {
-        let mut idx: Vec<usize> = (0..self.records.len()).collect();
+        let mut idx: Vec<usize> = (0..self.records.len())
+            .filter(|&i| !self.managed.is_removed(self.records[i].stable_id.as_str()))
+            .collect();
         idx.sort_by(|&a, &b| {
             let ra = &self.records[a];
             let rb = &self.records[b];
             self.order_index(ra.stable_id.as_str())
                 .cmp(&self.order_index(rb.stable_id.as_str()))
                 .then_with(|| {
-                    ra.display_name
+                    self.base_name(a)
                         .to_lowercase()
-                        .cmp(&rb.display_name.to_lowercase())
+                        .cmp(&self.base_name(b).to_lowercase())
                 })
                 .then_with(|| ra.stable_id.cmp(&rb.stable_id))
         });

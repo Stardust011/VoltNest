@@ -21,8 +21,8 @@ pub use manual::{
 };
 pub use paths::DataPaths;
 pub use settings::{
-    LoadedSettings, NotificationMode, NotificationSettings, Settings, SettingsLoadWarning,
-    SettingsStore, TraySettings,
+    DeviceSettings, LoadedSettings, MergeGroup, NotificationMode, NotificationSettings, Settings,
+    SettingsLoadWarning, SettingsStore, TraySettings,
 };
 pub use state::{DeviceStateEntry, NotificationStateEntry, StateFile, StateStore, StateThrottle};
 
