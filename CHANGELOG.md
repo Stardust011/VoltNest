@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.4.0](https://github.com/Stardust011/VoltNest/compare/v0.3.1...v0.4.0) (2026-11-03)
+
+
+### 新功能
+
+* **desktop:** 主面板隐藏满 1 分钟后回收 WebView2 渲染进程 ([24e363d](https://github.com/Stardust011/VoltNest/commit/24e363dc9d0dcd3fcc88ae557b880caa12a102d6))
+* **devices:** 支持分离自动合并卡，修复删除不生效 ([adb1e0d](https://github.com/Stardust011/VoltNest/commit/adb1e0dfe2b8f001e5cfad761bf7e4593d73a1b5))
+* **devices:** 新增设备管理（添加 / 删除 / 合并 / 分离 / 改名） ([759afb3](https://github.com/Stardust011/VoltNest/commit/759afb316cb93793df5ed5ffaf72c9c09edd953c))
+
+
+### 修复
+
+* **dialog:** 修复弹窗内按钮无法点击 ([4d74219](https://github.com/Stardust011/VoltNest/commit/4d74219e6efd13c9fcbe281fed7a8d029145f201))
+* **tray:** 托盘计数改为与图标同源，按呈现单元统计 ([432df5e](https://github.com/Stardust011/VoltNest/commit/432df5e96d22d7fa99ebf5e4b8773ab6a32758bd))
+* **tray:** 设备离线即收起图标，基础图标固定为应用图标 ([05a2db7](https://github.com/Stardust011/VoltNest/commit/05a2db7036afc27c825c222f1e2b214dbbecdb08))
+
+
+### 样式
+
+* **device-card:** 「已合并」标签移到副行 ([b26e59d](https://github.com/Stardust011/VoltNest/commit/b26e59d7d9ffae56c06f48e3d674748befa15702))
+* **device-card:** 自动合并卡也标「已合并」 ([f098dfa](https://github.com/Stardust011/VoltNest/commit/f098dfa73046fe938775b78f348596229186b5e5))
+* **dialogs:** 统一弹窗的布局、间距与按钮样式 ([77e1ed0](https://github.com/Stardust011/VoltNest/commit/77e1ed047e2ad50b4a4bac336773456dff33f540))
+
 ## [0.3.1](https://github.com/Stardust011/VoltNest/compare/v0.3.0...v0.3.1) (2026-11-03)
 
 
