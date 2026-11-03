@@ -65,7 +65,7 @@ const typeIconLabel = computed(() => typeLabel.value ?? transportLabel(props.dev
 /** 合并卡用合并名，单机用设备名。 */
 const title = computed(() => props.card?.displayName || props.device.displayName);
 
-/** 用户手动合并时才提供「分离合并」。 */
+/** 用户手动合并的卡片：副行标「已合并」，自动合并卡不标。 */
 const userMerged = computed(() => props.card?.userMerged === true);
 
 /** 副行：合并卡用非活跃链路说明（Rust 生成）；主数字为缓存值时补「上次读数 · 时间」；其余按充电状态。 */
@@ -128,22 +128,19 @@ const secondary = computed(() => {
                 {{ title }}
               </h2>
 
-              <Badge
-                v-if="userMerged"
-                variant="outline"
-                class="shrink-0 gap-1 px-1.5 py-0 text-[10px] font-normal"
-              >
-                <Link2 class="size-3" aria-hidden="true" />
-                已合并
-              </Badge>
-
               <Badge variant="secondary" class="shrink-0 px-1.5 py-0 text-[10px] font-normal">
                 {{ transportLabel(device.transport) }}
               </Badge>
             </div>
 
-            <p class="mt-1 truncate text-xs leading-4 text-muted-foreground">
-              {{ secondary }}
+            <p
+              class="mt-1 flex min-w-0 items-center gap-1.5 text-xs leading-4 text-muted-foreground"
+            >
+              <span v-if="userMerged" class="flex shrink-0 items-center gap-1">
+                <Link2 class="size-3" aria-hidden="true" />
+                已合并
+              </span>
+              <span class="truncate">{{ secondary }}</span>
             </p>
           </div>
 
