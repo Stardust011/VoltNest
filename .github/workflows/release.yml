@@ -1,17 +1,13 @@
 name: Release
 
-# v1 不做签名与自动更新（见 README 已知限制 5），故只出安装包并挂到 Draft Release。
+# 版本号、tag、Release 正文全部由 release-please 生成；本工作流只负责 release 创建后的双平台打包。
 on:
   push:
-    tags: ["v*"]
-  workflow_dispatch:
-    inputs:
-      tag:
-        description: 手动打包时使用的 tag 名（如 v0.1.0）
-        required: true
+    branches: [master]
 
 permissions:
   contents: write
+  pull-requests: write
 
 env:
   CARGO_TERM_COLOR: always
@@ -21,8 +17,24 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  release-please:
+    name: release-please
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      released: ${{ steps.release.outputs.release_created }}
+      tag: ${{ steps.release.outputs.tag_name }}
+    steps:
+      - uses: googleapis/release-please-action@v4
+        id: release
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
   bundle:
     name: bundle (${{ matrix.target }})
+    needs: release-please
+    if: needs.release-please.outputs.released == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -72,17 +84,14 @@ jobs:
         working-directory: .
 
       # beforeBuildCommand（npm run build）由 tauri-action 负责执行。
-      # v1 起 releaseDraft 为 true 时，若同名 tag 的 release 已发布（非 draft）会直接失败。
+      # 不传 releaseName / releaseBody：v1 会用空串覆盖 release-please 生成的正文。
       - uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           projectPath: apps/desktop
           args: --target ${{ matrix.target }}
-          tagName: ${{ inputs.tag || github.ref_name }}
-          releaseName: VoltNest ${{ inputs.tag || github.ref_name }}
-          releaseBody: |
-            安装包见下方 Assets。Windows 为 NSIS（当前用户安装），Linux 为 deb + AppImage。
+          tagName: ${{ needs.release-please.outputs.tag }}
           releaseDraft: true
           prerelease: false
 

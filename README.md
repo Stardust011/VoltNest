@@ -113,13 +113,14 @@ Tauri 2 会自动把同目录的 `tauri.linux.conf.json` 合并进 `tauri.conf.j
 自动生成，因此不在配置里手写 `depends`（手写会在 Ubuntu 24.04 这类 `t64` 重命名的发行版上写错）。
 
 CI 侧：`release.yml` 在 master 上跑 release-please，它按 Conventional Commits 维护一个 release PR
-（改 `CHANGELOG.md` 与 `Cargo.toml` / `tauri.conf.json` / `package.json` 里的版本号）；合并该 PR 即出
-`vX.Y.Z` tag 与 Draft Release，同一次 run 接着双平台打包并把安装包挂上去（v1 不签名，需手动发布）。
+（改 `CHANGELOG.md` 与 `Cargo.toml` / `tauri.conf.json` / `package.json` 里的版本号）；合并该 PR 后
+release-please 自动打 `vX.Y.Z` tag 并建 Draft Release，同一个 run 接着双平台打包并把安装包挂上去。
+**发版不需要任何手动操作**：不打 tag、不改版本号、不跑脚本，`workflow_dispatch` 也一并去掉了。
 CI 本身不做 release 构建：格式 / clippy / 测试之外不编译 release 配置，此处的打包阶段是唯一在
 `--release` 下构建的地方。
 发布说明用中文小标题（新功能 / 修复 / …）由 `release-please-config.json` 的 `changelog-sections` 定义；
-`.release-please-manifest.json` 初始记 `0.0.0`（仓库还没有任何 tag），首个 release PR 会出 `v0.1.0`；
-`Cargo.lock` 里 workspace 成员的版本不在 PR 内，下一次 cargo 构建会自动跟上。
+`.release-please-manifest.json` 与各版本文件同为 `0.2.4`，下一个 release PR 出 `v0.2.5` 起。
+`Cargo.lock` 里 workspace 成员的版本不在 release PR 内，下一次 cargo 构建会自动跟上。
 `cargo-deny` 与工具链漂移扫描每周一跑（`.github/workflows/security.yml`）；
 型号表每月 1 日抓取厂商网页驱动并开 PR
 （`.github/workflows/mappings.yml`，脚本在 `mappings/scripts/`，只在 `devices` 内容有差异时才开 PR；
