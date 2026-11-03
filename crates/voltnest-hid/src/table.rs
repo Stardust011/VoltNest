@@ -355,7 +355,6 @@ mod tests {
         };
         assert_eq!(e.declared_device_type(), Some(DeviceType::Mouse));
 
-        // 实测的旧配置里 AJ179 / AJ139 的 `device_attr` 是型号族名而不是类型，这类值不得被猜成类型。
         for attr in [
             "aj179",
             "aj179v2",
@@ -371,7 +370,6 @@ mod tests {
 
     #[test]
     fn vendor_device_id_is_not_a_type() {
-        // 101..108 是驱动内部型号编号；即便有人把它当类型，这里也不映射。
         let e = Entry {
             name: Some("AJ159 NL".into()),
             vendor_device_id: Some(102),

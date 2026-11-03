@@ -59,7 +59,6 @@ async fn main() {
     println!("adapter_info  = {:?}", adapter.adapter_info().await);
     println!("adapter_state = {:?}", adapter.adapter_state().await);
 
-    // [A] 会话内缓存 / 已知设备：两个平台的语义不同，见文件头。
     match adapter.peripherals().await {
         Ok(plain) => {
             println!("\n[A] Adapter::peripherals() -> {} 台", plain.len());
@@ -70,7 +69,6 @@ async fn main() {
         Err(e) => println!("\n[A] Adapter::peripherals() 失败: {e}"),
     }
 
-    // [B] 已连接且带电池服务的设备 —— provider 的真实候选集。
     let battery = uuid16(0x180F);
     match adapter
         .retrieve_peripherals(RetrievePeripheralsOptions {
@@ -94,7 +92,6 @@ async fn main() {
         Err(e) => println!("\n[B] retrieve_peripherals 失败: {e}"),
     }
 
-    // [C] Linux：不带选择器的全量已知设备 + UUIDs 数量，用来区分「没连上」和「UUIDs 还没解析」。
     #[cfg(target_os = "linux")]
     match adapter
         .retrieve_peripherals(RetrievePeripheralsOptions::default())
@@ -137,7 +134,6 @@ async fn probe_device(p: &Peripheral) {
     println!("\n-- 读取 {:?}", p.id());
     match timeout(Duration::from_secs(4), p.connect()).await {
         Ok(Ok(())) => println!("   connect ok"),
-        // bluez：已连接的设备再 Connect 会返回 org.bluez.Error.AlreadyConnected —— 链路在就不算失败。
         Ok(Err(e)) => {
             let connected = p.is_connected().await.unwrap_or(false);
             println!("   connect err: {e}（is_connected={connected}）");
@@ -164,7 +160,6 @@ async fn probe_device(p: &Peripheral) {
         .collect();
     println!("   chars = {chars:?}");
 
-    // 名称只取 GAP 0x2A00：Windows 的 local_name 与 bluez 的 Device1.Alias 都是系统级可改缓存名。
     if let Some(ch) = p
         .characteristics()
         .into_iter()

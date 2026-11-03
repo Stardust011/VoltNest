@@ -20,11 +20,9 @@ fn missing_backend_degrades_without_panic_or_hang() {
 
     std::thread::spawn(move || {
         Box::new(BleProvider::new()).run(event_tx, stop_thread);
-        // run 返回 = 采集线程正常收场（panic 会在测试进程里报线程崩溃）。
         let _ = done_tx.send(());
     });
 
-    // 无后端的机器上这里必定先收到 TransportDown；有后端时不发事件，走下面的停止分支。
     if let Ok(event) = event_rx.recv_timeout(Duration::from_secs(3))
         && let ProviderEvent::TransportDown { code, detail } = &event
     {
@@ -33,7 +31,6 @@ fn missing_backend_degrades_without_panic_or_hang() {
     }
 
     stop.store(true, Ordering::Relaxed);
-    // 5s 足够覆盖 250ms 的巡检 tick；拿不到就说明线程卡住了（这才是要防的「阻塞」）。
     assert!(
         done_rx.recv_timeout(Duration::from_secs(5)).is_ok(),
         "采集线程未在停止标志后退出"

@@ -127,7 +127,6 @@ mod tests {
 
     #[test]
     fn parse_is_strict_about_case_and_width() {
-        // 冲突检测依赖严格解析；宽容会让同一设备被当成两台，或两台被当成一台。
         assert!(
             StableId::parse("hid:7768:6426:mi_01col02").is_none(),
             "不得带 mi/col"

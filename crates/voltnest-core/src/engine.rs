@@ -286,10 +286,8 @@ impl Engine {
             let (renamed, reclassified, from) = {
                 let rec = &mut self.records[idx];
                 let from = rec.state;
-                // D8：Provider 是名称唯一真值，快照只做对照。
                 let renamed = (rec.display_name != fact.display_name)
                     .then(|| (rec.display_name.clone(), fact.display_name.clone()));
-                // 类型识别同样以 Provider 为唯一真值；只在真变了时留痕，避免每次重枚举刷诊断。
                 let reclassified = (rec.classification != fact.classification)
                     .then(|| (rec.classification.device_type, fact.classification.clone()));
                 rec.classification.clone_from(&fact.classification);
@@ -301,7 +299,6 @@ impl Engine {
                 rec.present = true;
                 rec.last_seen_at_ms = now_ms;
                 if from == DeviceState::Offline {
-                    // Offline → Unknown：必须清掉旧读数，否则下一次 tick 立刻按时间链推回 Offline。
                     rec.state = DeviceState::Unknown;
                     rec.last_valid_at_ms = None;
                     rec.battery = None;
@@ -396,13 +393,11 @@ impl Engine {
         let display_name = self.records[idx].display_name.clone();
         let stable_id = self.records[idx].stable_id.as_str().to_string();
 
-        // 充电语义不可得的家族，任何 Some(bool) 都转成 None。
         let charging = self
             .profile_for(family)
             .map(|p| p.sanitize_charging(reading.charging))
             .unwrap_or(reading.charging);
 
-        // 时间戳早于 lastValidAt 的读数属于回填，丢弃。
         if let Some(last) = self.records[idx].last_valid_at_ms
             && now_ms < last
         {
@@ -425,10 +420,8 @@ impl Engine {
             rec.last_known_battery = Some(reading.battery);
             rec.last_known_at_ms = Some(now_ms);
             rec.last_error = None;
-            // 故意不清空 `unreadable_kinds`：好坏帧交替时每帧清空会让同一条坏帧重新刷屏，种类只在重新出现时重置。
             rec.present = true;
             rec.last_seen_at_ms = now_ms;
-            // 任何有效读数直接 Online，不经过中间态。
             rec.state = DeviceState::Online;
         }
 
@@ -464,17 +457,12 @@ impl Engine {
         let (from, to, log_line) = {
             let rec = &mut self.records[idx];
             rec.last_error = Some(code);
-            // 同一台设备反复上报同一种坏帧只留一条诊断：坏帧以 20ms 节奏刷屏，
-            // 200 条缓冲会在几秒内被相同内容冲掉，挤掉到达、识别、链路等线索。
-            // 按「本次出现以来见过的种类」去重而非只比上一条：设备常轮流发几种非电量报文，
-            // 交替刷屏时相邻两条永远不同，比上一条挡不住。种类上限见 `UNREADABLE_KINDS_MAX`。
             let log_line = !rec.unreadable_kinds.iter().any(|k| k == &text)
                 && rec.unreadable_kinds.len() < UNREADABLE_KINDS_MAX;
             if log_line {
                 rec.unreadable_kinds.push(text.clone());
             }
             let from = rec.state;
-            // 坏帧只记结构化错误。曾有有效读数 → Unavailable；从未有过 → 保持 Unknown（E：两者 UI 必须可区分）。
             if rec.last_valid_at_ms.is_some() && from != DeviceState::Offline {
                 rec.state = DeviceState::Unavailable;
             }
@@ -540,7 +528,6 @@ impl Engine {
             let rec = &mut self.records[idx];
             let from = rec.state;
             rec.state = DeviceState::Offline;
-            // 唯一的图标销毁路径。
             rec.present = false;
             rec.battery = None;
             rec.charging = None;
@@ -572,7 +559,6 @@ impl Engine {
     ) -> Transition {
         let transports: Vec<Transport> = match transport {
             Some(t) => vec![t],
-            // 调用方未告知来源时按全部 transport 处理，并留下诊断。
             None => vec![Transport::Hid, Transport::Ble],
         };
         self.diagnostics.push(
@@ -668,7 +654,6 @@ impl Engine {
             } else {
                 rec.state
             };
-            // 只允许退化：Unavailable 不会因为时间短而被抬回 Online。
             if rank(target) > rank(rec.state) {
                 rec.state = target;
                 changed = true;
@@ -787,9 +772,7 @@ impl Engine {
             let (active, inactive) = match (ra.state.is_active(), rb.state.is_active()) {
                 (true, false) => (ra, rb),
                 (false, true) => (rb, ra),
-                // 两条都不活跃（启动瞬间、双链路同时退场）仍合并成一张卡。
                 (false, false) => pick_inactive_primary(ra, rb),
-                // 两条都活跃 → 各有实时读数，不合并。
                 (true, true) => continue,
             };
             let age_text = match inactive.age_ms(now_ms) {
@@ -813,7 +796,6 @@ impl Engine {
                 inactive_member_text: age_text,
             });
         }
-        // 卡片顺序跟随主成员在面板中的位置（排序统一由 Rust 决定）。
         let pos = |id: &str| {
             order
                 .iter()
@@ -825,7 +807,6 @@ impl Engine {
 
     /// 诊断页的通知节点：同一台设备的多条链路按呈现分组合成一个节点。
     pub fn notification_nodes(&self, now_ms: u64) -> Vec<NotificationNode> {
-        // 设备 → (主成员, 全部成员)，未参与合并的设备自成一组。
         let mut owner: BTreeMap<String, (String, Vec<String>)> = BTreeMap::new();
         for card in self.build_cards(&self.sorted_indices(), now_ms) {
             for id in &card.member_device_ids {

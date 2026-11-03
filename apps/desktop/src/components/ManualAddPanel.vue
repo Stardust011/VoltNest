@@ -163,7 +163,6 @@ async function refresh() {
   try {
     const list = await listHidTargets();
     targets.value = list;
-    // 选中的设备可能已经拔掉：保留选中态会让人以为还能录。
     if (selectedTarget.value) {
       const fresh = list.find((item) => item.vidPid === selectedTarget.value?.vidPid);
       if (!fresh) {
@@ -249,7 +248,6 @@ function applyCaptureEvent(event: CaptureEventDto) {
   status.value = event.status;
   summary.value = event.summary;
   if (event.message) captureError.value = event.message;
-  // 一帧都没有时留在采集页：直接跳到导出只会得到一条「无法生成报告」的错误。
   if (event.total > 0) {
     samples.value = [
       ...samples.value,
@@ -327,9 +325,7 @@ async function removeSample(sample: CapturedSample) {
   samples.value = samples.value.filter((item) => item.sessionId !== sample.sessionId);
   try {
     await discardHidCapture(sample.sessionId);
-  } catch {
-    // 会话已结束无需提示。
-  }
+  } catch {}
 }
 
 /** 丢弃所有仍被占用的会话（关面板 / 重来）。 */
@@ -344,9 +340,7 @@ async function discardSessions() {
   for (const id of ids) {
     try {
       await discardHidCapture(id);
-    } catch {
-      // 忽略：这里只做清理。
-    }
+    } catch {}
   }
 }
 
@@ -461,13 +455,11 @@ onBeforeUnmount(() => {
   disposed = true;
   unlisten?.();
   if (copiedTimer !== undefined) window.clearTimeout(copiedTimer);
-  // 面板关掉后线程还在录就是泄漏：无条件丢弃全部会话。
   void discardSessions();
 });
 </script>
 
 <template>
-  <!-- 遮罩自标题栏下方起：抓包期间标题栏仍可用。 -->
   <div
     class="fixed inset-x-0 top-10 bottom-0 z-40 flex overflow-y-auto bg-background/95 px-3 py-3 backdrop-blur-[2px]"
     role="dialog"
@@ -483,7 +475,6 @@ onBeforeUnmount(() => {
           </Button>
         </div>
 
-        <!-- 四步进度：只做指示，不提供点击回退（回退会丢掉已录数据，必须走显式按钮） -->
         <ol class="mt-2.5 flex items-center gap-1.5 text-[11px]">
           <li
             v-for="(title, index) in stepTitles"
@@ -662,7 +653,7 @@ onBeforeUnmount(() => {
           </div>
         </section>
 
-        <!-- 第三步：采集（可多段，每段带电量） -->
+        <!-- 第三步：采集 -->
         <section v-else-if="step === 3" class="flex flex-col gap-3">
           <div class="rounded-lg border bg-muted/40 p-2.5">
             <div class="flex items-center justify-between gap-2">
@@ -686,7 +677,6 @@ onBeforeUnmount(() => {
             </p>
           </div>
 
-          <!-- 电量：每次采样各记一份，报告里才能和字节对照 -->
           <div class="flex flex-col gap-1.5">
             <Label for="manual-battery" class="text-[11px] font-medium">
               现在驱动 / 系统显示的电量
@@ -837,7 +827,6 @@ onBeforeUnmount(() => {
             {{ finishHint }}
           </div>
 
-          <!-- 采样列表：电量变化后再采一段，是定位电量字段的唯一可靠办法 -->
           <div v-if="samples.length > 0" class="flex flex-col gap-1.5">
             <div class="flex items-center justify-between gap-1">
               <span class="text-[11px] font-medium">已采集 {{ samples.length }} 段</span>

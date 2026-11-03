@@ -93,12 +93,7 @@ fn clamp_low_battery_levels(pair: [u8; 2]) -> [u8; 2] {
     } else {
         (a.max(b), a.min(b))
     };
-    if high > low {
-        [high, low]
-    } else {
-        // 只可能是 a == b == 0：抬高高阈值而不是压低低阈值，避免出现负数。
-        [1, 0]
-    }
+    if high > low { [high, low] } else { [1, 0] }
 }
 
 /// 诊断 DTO。
@@ -244,11 +239,6 @@ impl TransportHealth {
     }
 }
 
-// ---- 生成上报数据（HID 抓包）----
-//
-// 这一组 DTO 的边界与前面一致：只做「结构搬运 + 展示字符串组装」。十六进制串在这里就拼好，
-// 免得前端再实现一份格式化逻辑（两份实现迟早会漂移，而用户会拿界面上的字节去对 issue）。
-
 /// 一台设备（同一 VID:PID 的全部集合）。
 ///
 /// 交互先按 VID:PID 收敛，再让用户挑集合：复合 HID 会把标准鼠标集合与厂商私有集合
@@ -328,7 +318,6 @@ pub struct HidCollectionDto {
 
 impl From<voltnest_hid::probe::CollectionInfo> for HidCollectionDto {
     fn from(info: voltnest_hid::probe::CollectionInfo) -> Self {
-        // 展示串先算好再搬字段：`path`/`serial` 一旦被移动就没法再借用 `info`。
         let vid_pid = info.vid_pid();
         let display_name = info.display_name();
         let usage_summary = info.usage_summary();
@@ -581,17 +570,12 @@ mod tests {
     #[test]
     fn thresholds_are_kept_strictly_descending() {
         assert_eq!(clamp_low_battery_levels([20, 10]), [20, 10]);
-        // 逆序：以数值大小重排，高阈值在前。
         assert_eq!(clamp_low_battery_levels([10, 20]), [20, 10]);
-        // 相等：拆开一位，避免同一档重复触发。
         assert_eq!(clamp_low_battery_levels([15, 15]), [15, 14]);
-        // 下界 0 合法：设置页允许填 0%。
         assert_eq!(clamp_low_battery_levels([0, 0]), [1, 0]);
         assert_eq!(clamp_low_battery_levels([1, 0]), [1, 0]);
-        // 越界：夹到 0..=95 后重排。
         assert_eq!(clamp_low_battery_levels([200, 5]), [95, 5]);
         assert_eq!(clamp_low_battery_levels([5, 250]), [95, 5]);
-        // 上界修正不能把值推出区间。
         assert_eq!(clamp_low_battery_levels([95, 95]), [95, 94]);
     }
 

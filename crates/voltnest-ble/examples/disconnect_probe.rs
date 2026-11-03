@@ -23,7 +23,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let adapter = manager.adapters().await?.into_iter().next().unwrap();
     let start = Instant::now();
 
-    // 订阅事件必须在建链**之前**：事件来自 adapter 上的 broadcast，订阅晚了会漏掉。
     let mut events = adapter.events().await?;
 
     let peripherals = adapter
@@ -38,7 +37,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         peripherals.len()
     );
     let Some(p) = peripherals.into_iter().next() else {
-        // 没有「已连接」设备：退化为扫描，确认外设是否在广播（鼠标休眠/关机时不会广播）。
         println!("[{}ms] 尝试扫描 6s ...", start.elapsed().as_millis());
         adapter.start_scan(Default::default()).await?;
         tokio::time::sleep(Duration::from_secs(6)).await;

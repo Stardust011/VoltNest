@@ -56,8 +56,6 @@ pub mod probe;
 pub mod spec;
 pub mod table;
 
-// 运行时（枚举 + 读取线程）依赖 hidapi：Windows 走 hid.dll，Linux 走静态 hidraw 后端。
-// 其它平台没有声明 hidapi 依赖，故不编译本模块。
 #[cfg(any(target_os = "windows", target_os = "linux"))]
 pub mod runtime;
 

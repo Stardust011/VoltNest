@@ -1,5 +1,3 @@
-// 与 Rust 侧 `voltnest_core::Snapshot` 一一对应的 DTO 类型：字段名须匹配 serde camelCase，前端不得加派生业务字段。
-
 export type DeviceState = "unknown" | "online" | "stale" | "unavailable" | "offline";
 
 export interface DeviceDto {
@@ -8,9 +6,7 @@ export interface DeviceDto {
   provider: string;
   displayName: string;
   modelKey: string | null;
-  // 设备类型（Rust 枚举小写）。`"unknown"`=证据不足；已判定结论，前端只翻译、不再推断。
   deviceType: string;
-  // 得出 `deviceType` 的方法，仅用于诊断溯源。
   classificationMethod: string;
   battery: number | null;
   lastKnownBattery: number | null;
@@ -54,7 +50,6 @@ export interface SettingsDto {
 
 export interface DiagEventDto {
   atMs: number;
-  // `debug` 默认折叠：放逐条枚举细节而非结论。
   level: "debug" | "info" | "warn" | "error";
   code: string;
   deviceId: string | null;
@@ -71,7 +66,6 @@ export interface TransportStatusDto {
 }
 
 export interface NotificationNodeDto {
-  // 节点覆盖的设备标识：合并卡的多条链路合成一个节点，主成员在前。
   deviceIds: string[];
   threshold: number;
   armed: boolean;
@@ -95,7 +89,6 @@ export interface OnboardingChoice {
 }
 
 // ---- 生成上报数据（HID 抓包）----
-// 与 Rust 侧 `apps/desktop/src-tauri/src/dto.rs` 的 probe 段一一对应，字段名须匹配 camelCase。
 
 /**
  * 一台设备（同一 VID:PID 的全部集合）。

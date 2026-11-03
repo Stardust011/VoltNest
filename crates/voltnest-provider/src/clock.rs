@@ -18,7 +18,6 @@ mod tests {
     #[test]
     fn returns_plausible_epoch_millis() {
         let now = now_utc_ms();
-        // 2020-01-01 之后、2100 年之前：只验证量级，避免测试依赖真实时间。
         assert!(now > 1_577_836_800_000, "时间戳应晚于 2020 年，实际 {now}");
         assert!(now < 4_102_444_800_000, "时间戳应早于 2100 年，实际 {now}");
     }

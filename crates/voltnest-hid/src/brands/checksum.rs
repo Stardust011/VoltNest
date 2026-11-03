@@ -61,13 +61,9 @@ mod tests {
 
     #[test]
     fn reproduces_the_values_the_official_drivers_send() {
-        // 匠盟：0x55 - (0x08 报告 ID + 0x04 命令) = 0x49（`jmdevice.js:1449`）。
         assert_eq!(neg_sum8(&[0x08, 0x04]), 0x49);
-        // 迈从键盘 2.4G：0x13 + 0x4A + 0x01（`tJe` 含报告 ID）。
         assert_eq!(sum8(&[0x13, 0x4A, 0x01]), 0x5E);
-        // 维盛 AP：0xAD 命令 + LEN 6 = 0x00B3，小端落成 `B3 00`。
         assert_eq!(sum16_le(&[0xAD, 0x06]), [0xB3, 0x00]);
-        // 迈从 CZ/QHW：flags 3 · length 0 · cmdLo 4 · cmdHi 9 · biz 0 · seq 0（`Ge` 队列项）。
         assert_eq!(xor8(&[0x03, 0x00, 0x04, 0x09, 0x00, 0x00]), 0x0E);
     }
 

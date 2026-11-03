@@ -16,7 +16,6 @@ describe("humanizeAgo", () => {
   });
 
   it("负值与非法值退化为「刚刚」而不是抛出", () => {
-    // 时钟后跳时 lastValidAt 可能大于 now，界面不能显示「-3 分钟前」。
     expect(humanizeAgo(-1)).toBe("刚刚");
     expect(humanizeAgo(Number.NaN)).toBe("刚刚");
     expect(humanizeAgo(Number.POSITIVE_INFINITY)).toBe("刚刚");
@@ -32,15 +31,12 @@ describe("anchorOffset / serverNow", () => {
 
   it("本地时钟跳变不影响推算结果", () => {
     const offset = anchorOffset(500_000, 2_000);
-    // 单调计时器前进 1000ms，与墙钟无关，结果仍然只前进 1000ms。
     expect(serverNow(offset, 3_000) - serverNow(offset, 2_000)).toBe(1_000);
   });
 
   it("重新对齐后立刻回到宿主时间轴", () => {
-    // 旧锚点会让界面认为宿主时间已走到 1_001_000（比真实时间快 1000ms）。
     const stale = anchorOffset(1_000_000, 0);
     expect(serverNow(stale, 1_000)).toBe(1_001_000);
-    // 收到新快照后立刻纠正：对齐瞬间读数必须等于 serverNowMs 本身。
     const realigned = anchorOffset(1_000_500, 1_000);
     expect(serverNow(realigned, 1_000)).toBe(1_000_500);
     expect(serverNow(realigned, 2_000)).toBe(1_001_500);

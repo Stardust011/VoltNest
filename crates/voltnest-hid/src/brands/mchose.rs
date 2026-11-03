@@ -101,7 +101,6 @@ pub const MOUSE_WIRED: BrandSpec = BrandSpec {
     label: "MCHOSE（鼠标 · 有线）",
     name_from_product: true,
     usage_page: 0xFF01,
-    // 官方 WebHID 过滤器对同一型号同时声明 `0xFF01` / `0xFF0B`（`R1e`）。
     usage_page_alt: Some(0xFF0B),
     usage: None,
     usage_page_write: Some(0xFF01),
@@ -129,7 +128,6 @@ pub const MOUSE_WIRED: BrandSpec = BrandSpec {
             error_from: None,
         }),
     },
-    // 官方 `q3e(true)`：command → type → 电量 → 状态。
     listen: Some(&[ListenSpec {
         cmd: 0x0A,
         cmd2: None,
@@ -151,15 +149,10 @@ pub const MOUSE_WIRED: BrandSpec = BrandSpec {
         cmd_index: 1,
         payload_offset: 2,
         payload: &MCHOSE_REQUEST_PAYLOAD,
-        // **不周期查询**：官方鼠标页只在连接时发一次这条命令，之后只订阅实时帧
-        // （`q3e` 解析 `command===10 && type===5`，`getBatteryMode deviceInfo` 只打一次日志）。
-        // `None` = 会话建立时问一次，之后由运行时在「读数快过期」时探活（见 `runtime::Reader`）。
         interval_ms: None,
         inverted: true,
-        // 官方 `LG()` 在命令字回显不符时最多重读 6 次（600ms 窗口）。
         retry: 6,
     }),
-    // 该固件无独立确认位约定：命令字回显（取自应答 `[1]` 取反）就是确认。
     ack: None,
     fallback_report_id: None,
     expected_interval_ms: 30_000,
@@ -220,7 +213,6 @@ pub const AUDIO: BrandSpec = BrandSpec {
         percent_mask: 0xFF,
         charging: Some(ChargingField {
             mask: 0xFF,
-            // 2=放电 3=充电 4=满电 26=休眠（休眠时电量字段无意义，按错误态拒绝）。
             index: 1,
             true_values: &[0x03, 0x04],
             error_from: Some(0x1A),
@@ -233,14 +225,12 @@ pub const AUDIO: BrandSpec = BrandSpec {
         cmd: 0x65,
         cmd_high: None,
         prefix: &[],
-        // 报告 ID + 63 字节载荷（`[0x65, 0x01, 61×0x00]`）。
         report_len: 64,
         cmd_index: 1,
         payload_offset: 2,
         payload: &AUDIO_REQUEST_PAYLOAD,
         interval_ms: Some(30_000),
         inverted: false,
-        // 音频设备不重发：官方只在充电状态变化后 32s 补查一次，重发会把休眠中的耳机叫醒。
         retry: 0,
     }),
     ack: None,
@@ -302,9 +292,7 @@ pub const KEYBOARD_GLW: BrandSpec = BrandSpec {
     label: "MCHOSE（键盘 · CZ/GLW 族）",
     name_from_product: true,
     usage_page: 0x0001,
-    // 官方过滤器第二条：`0xFF00/0x0001`。正常模式用不到，但 boot 模式下设备只在它上面有集合。
     usage_page_alt: Some(0xFF00),
-    // 只打开 GLW 私有集合（`1/0`），不落到键盘 `1/6`。
     usage: Some(0),
     usage_page_write: Some(0x0001),
     reassembly: None,
@@ -312,13 +300,9 @@ pub const KEYBOARD_GLW: BrandSpec = BrandSpec {
     reply_inverted: false,
     clamp_percent: false,
     frame: FrameLayout {
-        // 线上无编号报告：官方 `CmdQueueItem` 未指定 reportId 时取缺省 `0`，即无编号报告。
         report_id: None,
-        // 应答 `AA <cmd> …`：`[0]` 是期望标志、`[1]` 才是命令字。
         cmd_index: 1,
-        // `[4]` = 本包含有的数据长度（官方 `_isMatch` 用它判「回包属于哪一问」）。
         len_index: Some(4),
-        // 头部 8 字节：`AA cmd ? ? size lo hi 00`。
         payload_offset: 8,
         fixed_payload_len: 0,
     },
@@ -326,7 +310,6 @@ pub const KEYBOARD_GLW: BrandSpec = BrandSpec {
         cmd: Some(0x05),
         cmd_high: None,
         subtag: None,
-        // 功能配置块的第 33 字节：低 7 位电量、最高位充电。
         percent_index: 32,
         percent_mask: 0x7F,
         charging: Some(ChargingField {
@@ -336,9 +319,6 @@ pub const KEYBOARD_GLW: BrandSpec = BrandSpec {
             error_from: None,
         }),
     },
-    // 官方 `handleMessage`（`cz_main`）的两个 `250/251` 分支：
-    // `FA FB FF` → 只报充电态；`FA FB 07 <电量> <flag>` → `flag == 0` 才更新电量（停充），
-    // `flag == 1` 官方直接 return —— 充电中的读数不可信。
     listen: Some(&[
         ListenSpec {
             cmd: 0xFA,
@@ -370,23 +350,15 @@ pub const KEYBOARD_GLW: BrandSpec = BrandSpec {
         usage_page: 0x0001,
         cmd: 0x05,
         cmd_high: None,
-        // `[0]` 是 hidapi 对**无编号报告**要求的报告 ID 槽（必须是 `0x00`），`[1]` 才是官方
-        // `NORMAL_OPTIONS.flag = 0x55`。少写这个 0，hidapi 会把 `0x55` 当成报告 ID，整帧被设备丢弃。
         prefix: &[0x00, 0x55],
-        // 官方 `packetLength` 缺省 64：整包发满，尾部补 0。
         report_len: 64,
         cmd_index: 2,
         payload_offset: 3,
         payload: &KEYBOARD_GLW_PAYLOAD,
-        // **不周期查询**：官方键盘页只在进入页面 / 切档位 / 通信中断恢复时读一次，
-        // 常态靠设备推送（`FA FB 07` / `FA FB FF`）。`None` = 读数快过期时才探活。
         interval_ms: None,
         inverted: false,
-        // 官方 `getFuncConfig` 走队列重发，不按「一问一答」重问；重发会插进设备正在处理的队列。
         retry: 0,
     }),
-    // 功能配置块按 `64 × 板载档位` 分块（官方 `getFuncConfig(t) → 64*t`），偏移落在 payload
-    // `[3]`/`[4]`，头部 `[1]` 是折叠校验和 `size + lo + hi`。
     block_offset: Some(BlockOffset {
         lo_index: 3,
         hi_index: 4,
@@ -394,7 +366,6 @@ pub const KEYBOARD_GLW: BrandSpec = BrandSpec {
         size_index: Some(2),
         stride: KEYBOARD_FUNC_BLOCK_STRIDE,
     }),
-    // 连上先读一次 base（官方 `getBase() → 0x04`），按 `[0]` 与 `[2..]` 的档位顺序表解出当前档位。
     profile_probe: Some(ProfileProbe {
         request: RequestTemplate {
             usage_page: 0x0001,
@@ -429,7 +400,6 @@ pub const KEYBOARD_GLW: BrandSpec = BrandSpec {
 /// 只有 `lo = hi = 0` 时两者同值，按板载档位偏移后必须按求和重算（见 [`BlockOffset`]）。
 const KEYBOARD_GLW_PAYLOAD: [u8; 6] = {
     let size = 56u8;
-    // 档位 0 时 `lo = hi = 0`，求和即 size 本身。
     [0x00, size, size, 0x00, 0x00, 0x00]
 };
 
@@ -502,7 +472,6 @@ pub const KEYBOARD_QHW: BrandSpec = BrandSpec {
     label: "MCHOSE（键盘 · CZ/QHW 族）",
     name_from_product: true,
     usage_page: 0xFF80,
-    // 官方过滤器两条都是 0xFF80，只是 `usage:1` 与 `usage:1, boot:true` 之分 —— 同一个页面。
     usage_page_alt: None,
     usage: None,
     usage_page_write: Some(0xFF80),
@@ -512,35 +481,25 @@ pub const KEYBOARD_QHW: BrandSpec = BrandSpec {
     clamp_percent: false,
     frame: FrameLayout {
         report_id: Some(0x4D),
-        // 命令字在 `[4]`（`[1]` version、`[2]` flags、`[3]` length 之后）。
         cmd_index: 4,
         len_index: Some(3),
-        // 头部 8 字节：`4D 01 03 <len> <lo> <hi> <biz> <seq>`。
         payload_offset: 8,
-        // 长度取自 `[3]`，固定值不参与（`validate` 只在 `len_index` 为 `None` 时校验它）。
         fixed_payload_len: 0,
     },
     battery: BatteryFields {
-        // 命令 2308 = 0x0904，线上小端写作 `04 09`。
         cmd: Some(0x04),
         cmd_high: Some(0x09),
         subtag: None,
-        // `getBattery` 取 `data[0]` 状态、`data[1]` 电量。
         percent_index: 1,
         percent_mask: 0xFF,
         charging: Some(ChargingField {
-            // 三态整字节比较：0 未充电 / 1 充电中 / 2 已充满。`2`（充满）不算「正在充电」，
-            // 与官方 `toChargingStatus` 的语义一致 —— 充满时插着线，但充电已停止。
             mask: 0xFF,
             index: 0,
             true_values: &[0x01],
-            // 官方把 3 及以上叫 `unknown` 而不是错误态：电量字段仍可能有效，不整帧作废。
             error_from: None,
         }),
     },
     listen: None,
-    // 设备主动推 `MANUAL_REPORT`（命令 0x0700）时更新电量：整块配置里 `data[2]` 三态充电、
-    // `data[3]` 电量（官方 `parseManualReportBytes` 拆 23 字节，`toChargingStatus(n[2])` + `n[3]`）。
     notify: Some(NotifySpec {
         cmd: 0x00,
         cmd_high: Some(0x07),
@@ -557,20 +516,13 @@ pub const KEYBOARD_QHW: BrandSpec = BrandSpec {
         usage_page: 0xFF80,
         cmd: 0x04,
         cmd_high: Some(0x09),
-        // `[1..4)`：version / flags / length(=0，本条命令不带参数)。
         prefix: &[0x01, 0x03, 0x00],
-        // 报告 ID + 31 字节报文（`Ge.NORMAL_MAX_PACKET_LENGTH = 31`：7 头 + 23 数据 + 1 校验）。
         report_len: 32,
         cmd_index: 4,
-        // 命令字之后紧跟 `bizCode` `sequence` `校验和` —— 本条命令不带参数，校验和就是帧尾，
-        // 故从 `[6]` 起一律算 payload（与应答侧 `payload_offset = 8` 不同：那边 `[8]` 起才是 data）。
         payload_offset: 6,
         payload: &KEYBOARD_QHW_PAYLOAD,
-        // **不周期查询**：键盘处理一条电量命令要唤醒固件，而推送是设备自己决定何时发。
-        // `None` = 会话建立时问一次，之后由运行时在「读数快过期」时探活（见 `runtime::Reader`）。
         interval_ms: None,
         inverted: false,
-        // 官方 `_simpleGet` 由队列重发，不按「一问一答」重问；重发会插进设备正在处理的队列。
         retry: 0,
     }),
     ack: None,
@@ -589,7 +541,6 @@ pub const KEYBOARD_QHW: BrandSpec = BrandSpec {
 const KEYBOARD_QHW_PAYLOAD: [u8; 3] = {
     let biz = 0u8;
     let seq = 0u8;
-    // 与官方 `toHeaderBytes` 覆盖范围一致：flags · length · cmdLo · cmdHi · bizCode · sequence。
     let checksum = checksum::xor8(&[0x03, 0x00, 0x04, 0x09, biz, seq]);
     [biz, seq, checksum]
 };
@@ -620,7 +571,6 @@ pub const KEYBOARD_DJE_WIRED: BrandSpec = BrandSpec {
         cmd_index: 1,
         len_index: None,
         payload_offset: 2,
-        // 6 字节头部 + 电量 + 状态：整段一起算 payload，0% 且未充电时才不会被误判成「空应答」。
         fixed_payload_len: 8,
     },
     battery: BatteryFields {
@@ -630,14 +580,12 @@ pub const KEYBOARD_DJE_WIRED: BrandSpec = BrandSpec {
         percent_index: 6,
         percent_mask: 0xFF,
         charging: Some(ChargingField {
-            // 状态字节低半字节 = chargeStatus，高半字节是 fullStatus，故按 0x0F 取位。
             mask: 0x0F,
             index: 7,
             true_values: &[0x01],
             error_from: None,
         }),
     },
-    // 同一套实时上报帧（官方键盘页的消费者同样判 `command===10 && type===5`）。
     listen: Some(&[ListenSpec {
         cmd: 0x0A,
         cmd2: None,
@@ -655,19 +603,15 @@ pub const KEYBOARD_DJE_WIRED: BrandSpec = BrandSpec {
         cmd: 0x87,
         cmd_high: None,
         prefix: &[],
-        // 报告 ID `0x06` + 519 字节载荷 = 官方那条 520 字节特征报告。
         report_len: 520,
         cmd_index: 1,
         payload_offset: 2,
         payload: &KEYBOARD_DJE_WIRED_PAYLOAD,
         interval_ms: Some(30_000),
         inverted: false,
-        // 官方有线读是一次「发 + 收」，没有重问；重问只会拖长无响应设备的占用时间。
         retry: 0,
     }),
     ack: None,
-    // 官方 `OE` 表里 6 个型号（G98 Pro / G98 V2 / UT98 / Z75 / Z75S / G87 V2）有线报告 ID 是
-    // `0x09` 而不是 `0x06`。型号名对不上型号表，故不在 route 里按名字猜，交给运行时「主 → 备」探测。
     fallback_report_id: Some(0x09),
     expected_interval_ms: 30_000,
     block_offset: None,
@@ -690,20 +634,16 @@ pub const KEYBOARD_DJE_WIRELESS: BrandSpec = BrandSpec {
     usage: None,
     usage_page_write: Some(0xFF01),
     reassembly: Some(Reassembly {
-        // 官方 `currentOrder = parseInt(wirelessCommand.split(" ")[1], 16)` = `0x4A`。
         cmd: 0x4A,
         total_index: 1,
         seq_index: 2,
         payload_offset: 4,
-        // 官方 `t.slice(4, -1)`：最后一个字节是校验和，不进载荷。
         trailer_len: 1,
         timeout_ms: 10_000,
     }),
     transport: ReplyTransport::InterruptQuery,
     reply_inverted: false,
     clamp_percent: false,
-    // 组装结果没有报告 ID / 命令字头部，故 payload 从 0 起算；报告 ID 仍声明，
-    // 因为它是这条通道收发报文用的 ID（运行时按它过滤输入报告）。
     frame: FrameLayout {
         report_id: Some(0x13),
         cmd_index: 1,
@@ -718,15 +658,12 @@ pub const KEYBOARD_DJE_WIRELESS: BrandSpec = BrandSpec {
         percent_index: 0,
         percent_mask: 0xFF,
         charging: Some(ChargingField {
-            // 低半字节 = chargeStatus，高半字节是 fullStatus（查询结果里官方不使用满电标志，
-            // 见 `frame::decode_assembled` 的说明）。
             mask: 0x0F,
             index: 1,
             true_values: &[0x01],
             error_from: None,
         }),
     },
-    // 2.4G 的实时帧前面多 3 字节 `space0`（与鼠标一致）。
     listen: Some(&[ListenSpec {
         cmd: 0x0A,
         cmd2: None,
@@ -744,14 +681,12 @@ pub const KEYBOARD_DJE_WIRELESS: BrandSpec = BrandSpec {
         cmd: 0x4A,
         cmd_high: None,
         prefix: &[],
-        // 报告 ID `0x13` + 19 字节载荷 = 20 字节 output report。
         report_len: 20,
         cmd_index: 1,
         payload_offset: 2,
         payload: &KEYBOARD_DJE_WIRELESS_PAYLOAD,
         interval_ms: Some(30_000),
         inverted: false,
-        // 无线是「发一次 + 多包应答」，重发会打断正在拼的那一轮。
         retry: 0,
     }),
     ack: None,
@@ -778,14 +713,11 @@ pub const KEYBOARD_DJE_WIRELESS: BrandSpec = BrandSpec {
 /// 缺字段一律 `None`（不采集），不退回任一默认族：猜错族的表现是「设备在列表里但永远读不出」，
 /// 比不显示更难查。
 fn route(entry: &Entry) -> Option<&'static BrandSpec> {
-    // 升级模式 PID（G75 V2 2.4G 的 `bootUpdateMode` = `0x3837:0x2010`）：官方只拿它刷固件，
-    // 不读电量。混进采集会让升级过程中的设备在列表里显示一个永远刷不出来的读数。
     if entry.mode.eq_ignore_ascii_case("upgrade") {
         return None;
     }
     let wireless = entry.mode.eq_ignore_ascii_case("2.4G");
     match entry.device_type.as_str() {
-        // 三族键盘的 HID 页面、帧头、命令字全都不同，必须按 `driver` 分派。
         "keyboard" => match entry.declared_driver() {
             Some("glw") => Some(&KEYBOARD_GLW),
             Some("dje") => Some(if wireless {
@@ -793,13 +725,9 @@ fn route(entry: &Entry) -> Option<&'static BrandSpec> {
             } else {
                 &KEYBOARD_DJE_WIRED
             }),
-            // `qhw`：报告 `0x4D` + 7 字节头（含 2 字节命令与自增序号）+ 尾校验。
             Some("qhw") => Some(&KEYBOARD_QHW),
-            // 没登记 `driver` 的键盘（型号表缺字段）：不采集，也不退回任一默认族去猜。
             _ => None,
         },
-        // 键盘与鼠标是**两套互不兼容的协议**：键盘走 CZ / `dJe` 家族，鼠标走 `LG` 家族
-        // （`11 06` 且应答逐字节取反）。
         "mouse" => Some(if wireless {
             &MOUSE_WIRELESS
         } else {
@@ -808,7 +736,6 @@ fn route(entry: &Entry) -> Option<&'static BrandSpec> {
         "headset" | "speaker" => {
             let name = entry.name.as_deref().unwrap_or_default();
             if ALT_AUDIO_MODELS.contains(&name) {
-                // 另一种帧（Gd/Mpe + XOR 校验和）未接入：不拿 0x65 帧去猜。
                 None
             } else {
                 Some(&AUDIO)
@@ -911,7 +838,6 @@ mod tests {
         assert_eq!(r.percent.get(), 55);
         assert_eq!(r.charging, Some(true));
 
-        // 不带报告 ID 时同样成立（官方解析器的输入就是这种形态）。
         let bare = [0x0A, 0x05, 0x37, 0x00];
         assert_eq!(listen_reading(&MOUSE_WIRED, &bare).charging, Some(false));
     }
@@ -933,7 +859,6 @@ mod tests {
     fn ignores_frames_that_are_not_battery() {
         // 鼠标位移报告：首字节不是 0x0A。
         assert!(decode_listen(&MOUSE_WIRED, &[0x02, 0x01, 0x00, 0x00]).is_none());
-        // 命令字对上但 type 不是 5（官方同款判断）。
         assert!(decode_listen(&MOUSE_WIRED, &[0x0A, 0x02, 0x37, 0x00]).is_none());
     }
 
@@ -1000,7 +925,6 @@ mod tests {
         payload[2..6].copy_from_slice(&[0, 2, 1, 3]);
         assert_eq!(probe.resolve(&payload), 1, "顺序表第 2 项是 1");
 
-        // 顺序表不是 0..3 的排列 → 退回「板载下标本身」。
         payload[2..6].copy_from_slice(&[9, 9, 9, 9]);
         assert_eq!(probe.resolve(&payload), 2);
     }
@@ -1045,7 +969,6 @@ mod tests {
         let table = table();
         let spec_of = |vid, pid| SPEC.for_device(table.lookup(vid, pid).unwrap());
 
-        // G75 V2（2.4G 接收器）：官方 CZ/GLW 族 —— 标准页 0x0001，命令 0x05 读功能配置块。
         let glw = spec_of(0x3837, 0x3033).expect("G75 V2 的 2.4G PID 必须能分派出协议");
         assert_eq!(glw.id, KEYBOARD_GLW.id, "G75 V2 2.4G 属 CZ/GLW 族");
         assert_eq!(glw.usage_page, 0x0001, "GLW 族挂在标准 Generic Desktop 页");
@@ -1069,13 +992,11 @@ mod tests {
             assert_eq!(spec_of(vid, pid).unwrap().id, KEYBOARD_GLW.id);
         }
 
-        // 升级模式 PID（G75 V2 2.4G 的 `bootUpdateMode`）：官方只刷固件，不读电量。
         assert!(
             spec_of(0x3837, 0x2010).is_none(),
             "0x2010 是 2.4G 接收器的升级模式，不参与采集"
         );
 
-        // G98 V3 / K87 V3 及其共用的 2.4G 接收器是 CZ/QHW 族：0xFF80 页面 + 报告 0x4D。
         for (vid, pid) in [(0x3837, 0x2025), (0x3837, 0x2023), (0x3837, 0x1015)] {
             let qhw = spec_of(vid, pid).expect("QHW 族必须能分派出协议");
             assert_eq!(qhw.id, KEYBOARD_QHW.id, "0x{vid:04X}:0x{pid:04X} 属 QHW 族");
@@ -1089,13 +1010,11 @@ mod tests {
             );
         }
 
-        // 老族（`dJe`）：不在 CZ 配置表里的键盘 PID 保持原有行为。
         let dje = spec_of(0x3837, 0x2019).expect("老族键盘必须仍可分派");
         assert_eq!(dje.id, KEYBOARD_DJE_WIRED.id);
         assert_eq!(dje.frame.report_id, Some(0x06));
         assert_eq!(dje.request.unwrap().cmd, 0x87);
 
-        // 鼠标（2.4G）：A7 Pro —— 仍是鼠标那套 0x11/0x06，不受键盘分派改动影响。
         let wireless = spec_of(0x3837, 0x0010).unwrap();
         assert_eq!(wireless.frame.report_id, Some(0x11), "鼠标不走键盘通道");
         assert!(wireless.reassembly.is_none());
@@ -1109,7 +1028,6 @@ mod tests {
         assert_eq!(headset.frame.report_id, Some(0x55));
         assert_eq!(headset.battery.cmd, Some(0x65));
 
-        // 官方走另一种帧的两个型号：不采集。
         for (vid, pid) in [(0x3837, 0x6011), (0x3837, 0x6013)] {
             assert!(
                 spec_of(vid, pid).is_none(),
@@ -1141,7 +1059,6 @@ mod tests {
         assert_eq!(idle.percent.get(), 73);
         assert_eq!(idle.charging, Some(false));
 
-        // 充电时最高位被置上：不取位会读成 201 并被判成越界 —— 充电场景反而没有读数。
         let charging = decode_battery(&KEYBOARD_GLW, &glw_reply(73, true)).unwrap();
         assert_eq!(charging.percent.get(), 73);
         assert_eq!(charging.charging, Some(true));
@@ -1153,7 +1070,6 @@ mod tests {
         assert_eq!(KEYBOARD_GLW.battery.percent_mask, 0x7F);
         assert_eq!(KEYBOARD_GLW.battery.percent_of(0x80 | 42), 42);
         assert_eq!(KEYBOARD_GLW.battery.percent_of(100), 100);
-        // 取位后仍越界（>100）才判错：0x7F = 127 是坏数据，不是 100。
         let mut bad = glw_reply(0, false);
         bad[8 + 32] = 0x7F;
         assert_eq!(
@@ -1189,7 +1105,6 @@ mod tests {
             "报告 ID 槽 + 官方 flag + 命令 + 校验 + size + lo + hi + 保留"
         );
         assert!(query[9..].iter().all(|b| *b == 0), "尾部补 0");
-        // 官方 getFuncConfig 走队列，不按一问一答重问。
         assert_eq!(req.retry, 0);
     }
 
@@ -1210,7 +1125,6 @@ mod tests {
         let reading = decode_battery(&KEYBOARD_GLW, &shifted).expect("位移一字节的应答也要能解");
         assert_eq!(reading.percent.get(), 64);
 
-        // 前置过滤同样要放行：否则帧在进解析器之前就被静默丢弃，没有任何错误可查。
         assert!(frame::matches_cmd(&KEYBOARD_GLW, &shifted));
         assert!(frame::matches_cmd(&KEYBOARD_GLW, &plain));
     }
@@ -1232,7 +1146,6 @@ mod tests {
     /// `getBattery` 的两个字段：`data[0]` 是三态充电状态、`data[1]` 才是电量。
     #[test]
     fn qhw_reply_maps_charge_tristate_and_percent() {
-        // 未充电 / 充电中 / 已充满。`2`（充满）不报「正在充电」—— 插着线但充电已停止。
         for (raw, charging) in [(0u8, false), (1, true), (2, false)] {
             let reading = decode_battery(&KEYBOARD_QHW, &qhw_reply(raw, 63)).unwrap();
             assert_eq!(reading.percent.get(), 63, "电量在 data[1]");
@@ -1273,8 +1186,6 @@ mod tests {
             "头 7 字节 + bizCode + sequence + 校验和 0x0E"
         );
         assert!(query[9..].iter().all(|b| *b == 0), "尾部补 0");
-        // 校验和取 flags 起算（官方 `d.slice(1)` 跳过 version），不是整帧异或：
-        // 3 ^ 4 ^ 9 = 0x0E，整帧（含 version）异或会得到 0x0F。
         assert_eq!(KEYBOARD_QHW_PAYLOAD[2], 0x0E, "校验和按官方算法实算");
     }
 
@@ -1285,7 +1196,6 @@ mod tests {
     fn qhw_notify(charge: u8, percent: u8) -> Vec<u8> {
         let mut report = vec![0x4D, 0x01, 0x03, 23, 0x00, 0x07, 0x00, 0x00];
         let mut data = [0u8; 23];
-        // `n[0..2]` 是官方 `Uh([a,i])` 拼出的双字节字段，取非零值以证明它不参与电量。
         data[0] = 0x37;
         data[1] = 0x38;
         data[2] = charge;
@@ -1425,7 +1335,6 @@ mod tests {
             &[0x06, 0x87, 0x00, 0x00, 0x01, 0x00, 0x02, 0x00]
         );
         assert!(query[8..].iter().all(|b| *b == 0x00));
-        // 官方有线读是一次「发 + 收」，不重问。
         assert_eq!(req.retry, 0);
     }
 
@@ -1444,7 +1353,6 @@ mod tests {
             "中间必须是 16 个 0"
         );
 
-        // 校验和的来历：官方 `tJe` 对**含报告 ID** 的整条命令逐字节求和。
         let sum = query.iter().map(|b| *b as u32).sum::<u32>();
         assert_eq!(
             (sum - 0x5E) & 0xFF,
@@ -1458,7 +1366,6 @@ mod tests {
         for spec in [&KEYBOARD_GLW, &KEYBOARD_DJE_WIRED, &KEYBOARD_DJE_WIRELESS] {
             assert!(spec.validate().is_ok(), "{} 结构不合法", spec.label);
         }
-        // GLW 族的电量与充电同字节、靠掩码分开：这条不变量必须真的被校验器接受。
         assert_eq!(KEYBOARD_GLW.battery.percent_index, 32);
         assert_eq!(KEYBOARD_GLW.battery.charging.unwrap().index, 32);
     }

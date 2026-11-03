@@ -134,7 +134,6 @@ pub fn candidate_dirs() -> Vec<PathBuf> {
 fn candidate_dirs_for(exe_dir: Option<&Path>, explicit: Option<&Path>) -> Vec<PathBuf> {
     let mut dirs: Vec<PathBuf> = Vec::new();
     let mut push = |path: PathBuf| {
-        // 词法规整掉 `..`：错误信息与日志里出现的必须是可直接核对、可直接复制的路径。
         let path = normalize(&path);
         if !dirs.contains(&path) {
             dirs.push(path);
@@ -146,24 +145,19 @@ fn candidate_dirs_for(exe_dir: Option<&Path>, explicit: Option<&Path>) -> Vec<Pa
     }
 
     if let Some(exe_dir) = exe_dir {
-        // 安装形态：数据与二进制同目录（Windows NSIS / 免安装版；Tauri 的 resource 目录在 Windows 上即 exe 目录）。
         push(exe_dir.join(DIR_NAME));
         push(exe_dir.join("data").join(DIR_NAME));
         push(exe_dir.join("resources").join(DIR_NAME));
-        // 上游目录形态：`bin/` + `share/`，或 macOS `.app/Contents/{MacOS,Resources}`。
         let up = exe_dir.join("..");
         push(up.join("Resources").join(DIR_NAME));
         push(up.join(DIR_NAME));
         push(up.join("data").join(DIR_NAME));
         push(up.join("share").join("voltnest").join(DIR_NAME));
-        // Linux 打包形态：`/usr/bin/<exe>` 与 `/usr/lib/<productName>/`。
         for dir in lib_layout_dirs(exe_dir) {
             push(dir);
         }
     }
 
-    // 开发期：`cargo run` / `cargo test` 的 exe 在 target 下，只有这条指向真实源码树。
-    // 发布机上该路径通常是构建机的临时目录，自然不存在，会被跳过。
     push(
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("data")
@@ -308,7 +302,6 @@ impl MappingSet {
             }
             paths.push((name.to_string(), path));
         }
-        // 固定顺序：同一目录两次加载的诊断输出必须完全一致（不随文件系统返回顺序漂移）。
         paths.sort_by(|a, b| a.0.cmp(&b.0));
         if paths.is_empty() {
             return Err(MappingError::Empty {
@@ -322,7 +315,6 @@ impl MappingSet {
                 Ok(table) => {
                     tables.insert(name, table);
                 }
-                // 单份坏表不拖垮整次启动：其它品牌的设备必须照常采集。
                 Err(error) => skipped.push(SkippedTable { file: name, error }),
             }
         }
@@ -478,7 +470,6 @@ mod tests {
             matches!(&skip.error, MappingError::InvalidTable { path, .. } if path.ends_with("bad.json")),
             "{skip:?}"
         );
-        // 记录必须可读：日志里要能直接说清「哪份表、为什么」。
         assert_eq!(
             skip.to_string(),
             format!("型号表 bad.json 已跳过：{}", skip.error)
@@ -682,7 +673,6 @@ mod tests {
             std::process::id()
         ));
         std::fs::create_dir_all(&dir).unwrap();
-        // 上一次同名残留（同一进程不可达，但重跑可能命中）先清空。
         for entry in std::fs::read_dir(&dir).unwrap().flatten() {
             std::fs::remove_file(entry.path()).ok();
         }
@@ -739,7 +729,6 @@ mod tests {
                 "{err:?} 的诊断文本缺少 {needle}：{text}"
             );
         }
-        // 所有候选路径都要列出来，装错包时才能逐条核对。
         let err = MappingError::DirNotFound {
             candidates: vec![dir.clone()],
         };

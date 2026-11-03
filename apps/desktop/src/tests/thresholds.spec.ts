@@ -14,13 +14,11 @@ import {
   type LowBatteryLevels,
 } from "../lib/thresholds";
 
-// 两档都不报错。
 function isValidPair(raws: [string, string]): boolean {
   const [first, second] = validateThresholdPair(raws);
   return first === null && second === null;
 }
 
-// 正式值须始终满足约束：0~95 且第一档比第二档至少高 1%。
 function expectInvariant(pair: LowBatteryLevels) {
   for (const value of pair) {
     expect(Number.isInteger(value)).toBe(true);
@@ -100,7 +98,6 @@ describe("两档联动校验", () => {
       SECOND_ABOVE_MESSAGE,
     ]);
     expect(validateThresholdPair(["0", "95"])).toEqual([FIRST_BELOW_MESSAGE, SECOND_ABOVE_MESSAGE]);
-    // 只差 1% 也算「第二档更高」，不能报成「至少相差 1%」。
     expect(validateThresholdPair(["19", "20"])).toEqual([
       FIRST_BELOW_MESSAGE,
       SECOND_ABOVE_MESSAGE,
@@ -147,14 +144,11 @@ describe("applyThresholdEdit", () => {
   });
 
   it("保持原有修正顺序：编辑哪一档，哪一档让位", () => {
-    // 第一档被抬到第二档之上。
     expect(applyThresholdEdit([20, 10], 0, "8")).toEqual([11, 10]);
-    // 第二档被压到第一档之下。
     expect(applyThresholdEdit([20, 10], 1, "30")).toEqual([20, 19]);
   });
 
   it("修正撞到上界时移动另一档，不产出 96", () => {
-    // 旧实现：next[0] = 95 + 1 = 96。
     const next = applyThresholdEdit([90, 95], 0, "90");
     expect(next).toEqual([95, 94]);
     expectInvariant(next as LowBatteryLevels);
@@ -162,11 +156,9 @@ describe("applyThresholdEdit", () => {
   });
 
   it("修正撞到下界时移动另一档，不产出负数", () => {
-    // 旧实现：next[1] = 0 - 1 越界。
     const next = applyThresholdEdit([0, 1], 1, "0");
     expect(next).toEqual([1, 0]);
     expectInvariant(next as LowBatteryLevels);
-    // 常规下界修正：第二档让位到第一档之下。
     expect(applyThresholdEdit([5, 10], 1, "6")).toEqual([5, 4]);
   });
 
@@ -177,7 +169,6 @@ describe("applyThresholdEdit", () => {
   });
 
   it("任何合法输入都产出合法两档", () => {
-    // 穷举所有起始组合 × 代表性输入（含越界与边界），收集违例后一次断言，避免上百万次 expect。
     const values = [-1, 0, 4, 5, 6, 20, 50, 94, 95, 96, 100, 1000];
     const violations: string[] = [];
     for (let first = THRESHOLD_MIN; first <= THRESHOLD_MAX; first += 1) {

@@ -56,18 +56,15 @@ pub const JM: BrandSpec = BrandSpec {
         fixed_payload_len: 2,
     },
     battery: BatteryFields {
-        // 匠盟回显命令字：`GetReport` 只接受 `body[0] == 0x04` 的应答（`jmdevice.js:1490`）。
         cmd: Some(0x04),
         cmd_high: None,
         subtag: None,
-        // payload[0] = body[5] = Level；payload[1] = body[6] = Status。
         percent_index: 0,
         percent_mask: 0xFF,
         charging: Some(ChargingField {
             mask: 0xFF,
             index: 1,
             true_values: &[0x01, 0x02],
-            // 0x00 非充电 / 0x01 普通充 / 0x02 快充 / 0x03 及以上错误态。
             error_from: Some(0x03),
         }),
     },
@@ -84,10 +81,8 @@ pub const JM: BrandSpec = BrandSpec {
         payload: &JM_QUERY_PAYLOAD,
         interval_ms: Some(30_000),
         inverted: false,
-        // 官方每条命令只发一次，无重试约定。
         retry: 0,
     }),
-    // 匠盟靠回显的命令字 + 报告 ID 判定，无独立确认位约定。
     ack: None,
     fallback_report_id: None,
     expected_interval_ms: 30_000,
@@ -126,11 +121,9 @@ pub const TG: BrandSpec = BrandSpec {
         fixed_payload_len: 4,
     },
     battery: BatteryFields {
-        // 官方对 Tg 应答只校验确认位，不校验命令回显（`tgdevice.js:1836`）。
         cmd: None,
         cmd_high: None,
         subtag: None,
-        // payload[0] = Status，payload[1] = Level。
         percent_index: 1,
         percent_mask: 0xFF,
         charging: Some(ChargingField {
@@ -146,7 +139,6 @@ pub const TG: BrandSpec = BrandSpec {
         usage_page: 0x000C,
         cmd: 0x80,
         cmd_high: None,
-        // body[0]=TargetId(0) / body[1]=HDR_SIZE(0x03) / body[2]=HDR_CLASS(0x07)。
         prefix: &[0x00, 0x03, 0x07],
         report_len: 65,
         cmd_index: 4,
@@ -154,7 +146,6 @@ pub const TG: BrandSpec = BrandSpec {
         payload: &[],
         interval_ms: Some(30_000),
         inverted: false,
-        // 官方每条命令只发一次，无重试约定。
         retry: 0,
     }),
     ack: Some(AckField {
@@ -196,10 +187,8 @@ pub const HS: BrandSpec = BrandSpec {
 fn route(entry: &Entry) -> Option<&'static BrandSpec> {
     match entry.declared_fw_type() {
         Some(0x02) => Some(&JM),
-        // 磁轴 `0x06` 与自研 `0x00` 共用同一套 Tg 指令与报告 ID 选择（`device.js:1109,460-470`）。
         Some(0x00) | Some(0x06) => Some(&TG),
         Some(0x01) => Some(&HS),
-        // `0x04` / `0x05`（合盈 OHID）与未知家族：未验证，不采集。
         _ => None,
     }
 }

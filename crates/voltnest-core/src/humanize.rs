@@ -43,7 +43,6 @@ mod tests {
 
     #[test]
     fn saturating_large_values_do_not_overflow() {
-        // u64::MAX 来自 saturating_sub 的极端值，必须能渲染而非 panic。
         let text = humanize_ago(u64::MAX);
         assert!(text.ends_with("天前"), "{text}");
     }

@@ -138,10 +138,6 @@ fn supervise(
                 restarts = restarts.saturating_add(1);
                 continue;
             }
-            // provider 已经自己上报过 TransportDown（BLE 权限被拒、无 bluetoothd、无适配器
-            // 都是这条路径）：设备已转 Offline，原因也是结构化的。这里沿用它的 code/detail、
-            // 不再重复上报 —— 否则一条 Internal / 「采集线程自行退出」会把它覆盖掉，
-            // 诊断页就丢了「需 bluetoothd」这类唯一有用的提示。
             RunOutcome::Returned(Some((code, detail))) => Failure {
                 detail,
                 code,
@@ -205,7 +201,6 @@ fn supervise(
                         ),
                     );
                 }
-                // 只等手动重启：期间每 500ms 检查一次退出标志。
                 loop {
                     if shared.shutting_down.load(Ordering::Relaxed) {
                         return;
@@ -283,7 +278,6 @@ fn run_once(
     let worker = std::thread::Builder::new()
         .name(format!("voltnest-{}", spec.transport.as_str()))
         .spawn(move || {
-            // panic 必须在采集线程边界被吞掉，转成一条结构化失败原因。
             let result = std::panic::catch_unwind(AssertUnwindSafe(|| {
                 provider.run(event_tx, stop_for_worker)
             }));
@@ -295,11 +289,9 @@ fn run_once(
         Err(err) => return RunOutcome::Panicked(format!("无法创建采集线程: {err}")),
     };
 
-    // 本轮已转发给宿主的 TransportDown（provider 自己上报的失败原因）。
     let mut reported: Option<(ErrorCode, String)> = None;
 
     let outcome = loop {
-        // 1. 采集线程是否已经结束
         match done_rx.try_recv() {
             Ok(None) => break RunOutcome::Returned(None),
             Ok(Some(msg)) => break RunOutcome::Panicked(msg),
@@ -308,7 +300,6 @@ fn run_once(
                 break RunOutcome::Panicked("采集线程异常终止".into());
             }
         }
-        // 2. 宿主指令
         match cmd_rx.try_recv() {
             Ok(SupervisorCmd::Stop) => break RunOutcome::Stopped,
             Ok(SupervisorCmd::Restart) => break RunOutcome::Restarted,
@@ -317,11 +308,9 @@ fn run_once(
         if shared.shutting_down.load(Ordering::Relaxed) {
             break RunOutcome::Stopped;
         }
-        // 3. 转发事件
         match event_rx.recv_timeout(Duration::from_millis(100)) {
             Ok(event) => forward_tracked(shared, spec.transport, &mut reported, event),
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
-            // 采集线程已放下发送端：给它一点时间把 done 消息送出来。
             Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
                 std::thread::sleep(Duration::from_millis(10));
             }
@@ -330,12 +319,9 @@ fn run_once(
 
     stop.store(true, Ordering::Relaxed);
     let _ = worker.join();
-    // 收尾：把可能残留的事件转发出去（含最后一次读数）。
     while let Ok(event) = event_rx.try_recv() {
         forward_tracked(shared, spec.transport, &mut reported, event);
     }
-    // provider「先发失败原因再返回」时，那条事件只可能在收尾阶段才被转发到，
-    // 故 `reported` 必须等 drain 结束再挂到 `Returned` 上。
     match outcome {
         RunOutcome::Returned(_) => RunOutcome::Returned(reported),
         other => other,
@@ -423,7 +409,6 @@ fn set_status(
         let mut statuses = lock(&shared.transports);
         upsert(&mut statuses, spec, status, failures, restarts, last_error);
     }
-    // 重启次数只在这里推进，而 transports 不在快照里：不主动通知，诊断页就永远是旧的。
     let _ = shared.tx.send(HostEvent::Diagnostics);
 }
 
@@ -492,8 +477,6 @@ mod tests {
             &[1, 1, 1, 1],
         );
 
-        // 线程组每次改状态（含重启次数 +1）都必须推一条信号，
-        // 否则诊断页只能等切页时重新拉取，界面上永远是旧数值。
         let mut notified = false;
         let deadline = std::time::Instant::now() + Duration::from_secs(5);
         while !notified && std::time::Instant::now() < deadline {
@@ -516,7 +499,6 @@ mod tests {
             &[1, 1, 1, 1],
         );
 
-        // 1. panic 必须转成 TransportDown，而不是静默消失。
         let mut down = 0;
         let deadline = std::time::Instant::now() + Duration::from_secs(5);
         while down == 0 && std::time::Instant::now() < deadline {
@@ -529,7 +511,6 @@ mod tests {
         }
         assert!(down >= 1, "panic 必须上报 TransportDown");
 
-        // 2. 连续失败达到上限后转「不可用」，停止自动重启。
         let mut unavailable = false;
         let deadline = std::time::Instant::now() + Duration::from_secs(5);
         while !unavailable && std::time::Instant::now() < deadline {
@@ -540,7 +521,6 @@ mod tests {
         }
         assert!(unavailable, "连续失败达到上限后必须转人工重启");
 
-        // 3. Stop 能让监管线程干净退出（不遗留采集线程）。
         cmd.send(SupervisorCmd::Stop).expect("监管线程仍在");
         handle.join().expect("监管线程应能正常退出");
     }
@@ -583,7 +563,6 @@ mod tests {
             &[1, 1, 1, 1],
         );
 
-        // 每个失败周期只该有一条 TransportDown：provider 自己那条。
         let mut seen: Vec<(ErrorCode, String)> = Vec::new();
         let deadline = std::time::Instant::now() + Duration::from_secs(5);
         while seen.len() < 2 && std::time::Instant::now() < deadline {

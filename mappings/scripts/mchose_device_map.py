@@ -74,7 +74,6 @@ USER_AGENT = (
     "(KHTML, like Gecko) Chrome/124.0 Safari/537.36"
 )
 
-# 打包代码中的 deviceType 枚举名 -> 输出取值
 ENUM_TYPE_MAP = {
     "MOUSE": "mouse",
     "KEYBOARD": "keyboard",
@@ -85,7 +84,6 @@ ENUM_TYPE_MAP = {
     "GAMEPAD": "gamepad",
 }
 
-# 型号名关键字 -> 设备类型（未能从枚举取到类型时兜底）
 NAME_TYPE_HINTS = [
     ("HEADSET", "headset"),
     ("SPEAKER", "speaker"),
@@ -99,14 +97,6 @@ DONGLE_PIDS = {4106, 4107, 4128, 4129, 8219, 16401, 0x1015, 0x1017}
 # --------------------------------------------------------------------------
 # 共享接收器 PID 消歧规则
 # --------------------------------------------------------------------------
-# 网页驱动不按 VID:PID 认型号：VID:PID 只是第一层粗筛，真正区分靠 WebHID 上报的
-# productName 字符串，设备表把这些条目的 key 写成 "0xVID_0xPID_型号名"，并且
-# 对碰撞 PID 故意不建基键（"0xVID_0xPID"），所以查表时必须带名字。
-#
-# 下面的表是打包代码里 pickUsefulProductName（cz_main.js，Le 函数）的逐条移植：
-#   - 0x3033 / 0x2010：按顺序做 substring 匹配，全部不中则回落到 K87S 2.4G
-#   - 0x1015 / 0x1017：正则 MCHOSE.+2.4G 抽取，名字里含 "Upgrader" 时视为升级模式排除
-# 每组两个 PID 是同一物理设备的正常运行 / 升级模式孪生 PID，规则相同。
 _KB_RECEIVER_3033 = {
     "match": "contains",
     "order": [
@@ -131,12 +121,8 @@ SHARED_RECEIVER_RULES: dict[tuple[int, int], dict] = {
     (0x3837, 0x1017): _KB_RECEIVER_1015,
 }
 
-# 升级模式的孪生 PID：设备进入 bootloader 后换这个 PID 出现，官方只用它做 OTA
-# （`bootUpdateMode.key`），不读电量。表里标成 `upgrade`，采集端据此排除 —— 否则
-# 升级过程中会对着 bootloader 发查询。
 UPGRADE_PIDS: set[tuple[int, int]] = {(0x3837, 0x2010)}
 
-# 同一 VID:PID 被多个型号登记时，保留哪一条：数字越小越可信
 SOURCE_RANK = {"cardList": 0, "cz": 1, "bundle": 2, "mouse-table": 3}
 
 
@@ -417,15 +403,8 @@ IDENTITY_RE = re.compile(
     r'_identity:\{vendorId:(\d+),productId:(\d+),productName:(null|"[^"]*"),key:"([^"]*)"\}'
 )
 
-# CZ 配置表里的任意设备键（`_identity.key` / `bootUpdateMode.key` / `spread[].key`）：
-# 形如 `0x3837_0x3033_MCHOSE G75 V2 2.4G`。**出现在这里 = 走 CZ 驱动**（新一代键盘）。
 CZ_KEY_RE = re.compile(r'key:"0x([0-9A-Fa-f]{4})_0x([0-9A-Fa-f]{4})')
 
-# 官方 `cz_main.js` 里显式声明 `manufacturer:"qhw"` 的型号。
-#
-# 判据不能在脚本里自动继承：`manufacturer` 写在 `_identity` **之后/之前**的位置随对象而变，
-# 而共享接收器 PID（0x1015）又是多个型号共用、本身不带 `manufacturer`，自动继承会把它判成 glw。
-# 这里按「型号 → 孪生 PID」显式列全，并由下面的交叉校验在官方新增 qhw 型号时出声。
 QHW_PIDS: set[tuple[int, int]] = {
     (0x3837, 0x2025),  # G98 V3
     (0x3837, 0x2023),  # K87 V3
@@ -443,12 +422,8 @@ def parse_cz_drivers(js: str, quiet: bool = False) -> dict[tuple[int, int], str]
     cz: set[tuple[int, int]] = set()
     for m in CZ_KEY_RE.finditer(js):
         cz.add((int(m.group(1), 16), int(m.group(2), 16)))
-    # qhw 型号的孪生 PID 不一定出现在官方设备键里（0x1017 只列在 cardList 的 identities 中），
-    # 但它们必然属于 CZ 驱动 —— 否则会落到 `dje`，拿老族的帧去问一台新键盘。
     cz |= QHW_PIDS
 
-    # 交叉校验：官方若给新型号标了 `manufacturer:"qhw"`，而 QHW_PIDS 还没跟上，必须出声 ——
-    # 静默按 glw 处理会让那台设备「在列表里但永远读不出」，比不显示更难查。
     declared: set[tuple[int, int]] = set()
     for m in re.finditer(r'manufacturer:"qhw"', js):
         nxt = IDENTITY_RE.search(js, m.end())
@@ -628,7 +603,6 @@ def build_output(
             key = f"{vid}:{pid}" if key_format == "dec" else f"{vid:04X}:{pid:04X}"
             entry_mode = overrides.get((vid, pid), mode)
             if (vid, pid) in SHARED_RECEIVER_RULES:
-                # 规则命中的 PID 都是接收器侧接口；其中孪生 PID 是升级模式，不参与采集。
                 entry_mode = "upgrade" if (vid, pid) in UPGRADE_PIDS else "2.4G"
             grouped.setdefault(key, []).append(
                 {
@@ -650,7 +624,6 @@ def build_output(
     conflicted_keys: list[str] = []
 
     for key in sorted(grouped):
-        # 同一型号可能被多个来源重复登记，先按型号名去重
         uniq: dict[str, dict] = {}
         for item in grouped[key]:
             uniq.setdefault(_merge_key(item["name"]), item)
@@ -661,7 +634,6 @@ def build_output(
             item = items[0]
             entry = {"name": item["name"], "deviceType": item["deviceType"]}
             if item["deviceType"] == "keyboard":
-                # 键盘三族（glw / qhw / dje）的页面与帧都不同，必须逐台记录协议族。
                 entry["driver"] = driver_map.get((vid, pid), "dje")
             entry["mode"] = item["mode"]
             if item["receiverProductName"]:
@@ -670,7 +642,6 @@ def build_output(
             continue
 
         if (vid, pid) in SHARED_RECEIVER_RULES:
-            # 官方明确按 productName 消歧的共享接收器 PID：不猜，交出候选与规则
             is_keyboard = all(item["deviceType"] == "keyboard" for item in items)
             devices[key] = _ambiguous_entry(
                 vid,
@@ -681,11 +652,8 @@ def build_output(
             ambiguous_keys.append(key)
             continue
 
-        # 其余碰撞（多为鼠标接收器 PID 池共用，官方靠 productName 细分）：
-        # 保留可信度最高的型号，同时列出冲突型号，避免静默丢弃
         items.sort(key=lambda it: (it["rank"], -it["typeConfidence"], it["name"]))
         best = items[0]
-        # 同一台模型的有线/无线 PID 混在同一列表里，取多数派更能反映该 PID 的真实用途
         modes = Counter(item["mode"] for item in items)
         entry = {"name": best["name"], "deviceType": best["deviceType"]}
         if best["deviceType"] == "keyboard":

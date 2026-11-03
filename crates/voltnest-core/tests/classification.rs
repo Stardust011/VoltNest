@@ -41,7 +41,6 @@ fn classification_reaches_snapshot() {
 
 #[test]
 fn unknown_classification_still_collects_battery() {
-    // 识别失败不得影响采集：这是「解耦」的可执行断言。
     let mut e = engine();
     feed(&mut e, &hid_arrived(), Transport::Hid, T0);
     assert_eq!(
@@ -69,7 +68,6 @@ fn unknown_classification_still_collects_battery() {
 #[test]
 fn reclassification_is_recorded_once_per_change() {
     let mut e = engine();
-    // 首次：证据不足。
     feed(&mut e, &hid_arrived(), Transport::Hid, T0);
     let count = |e: &voltnest_core::Engine| {
         e.diagnostics()
@@ -80,11 +78,9 @@ fn reclassification_is_recorded_once_per_change() {
     };
     assert_eq!(count(&e), 1, "首次到达必须留一条识别记录（含未判定原因）");
 
-    // 第二次：同一结论，不该再刷诊断。
     feed(&mut e, &hid_arrived(), Transport::Hid, T0 + 1_000);
     assert_eq!(count(&e), 1, "结论没变不得重复刷");
 
-    // 第三次：证据补齐 → 结论变化，留一条带新旧值的记录。
     let fact = classified(
         hid_fact("AJ159 NL"),
         DeviceType::Mouse,
@@ -116,7 +112,6 @@ fn reclassification_is_recorded_once_per_change() {
 
 #[test]
 fn reading_before_arrival_leaves_type_unknown_then_filled() {
-    // 读数先于 Arrived：记录被隐式建出，此时还没有任何类型证据。
     let mut e = engine();
     e.apply_event(&hid_reading(50), Some(Transport::Hid), T0);
     assert_eq!(e.records().len(), 1);
@@ -142,7 +137,6 @@ fn reading_before_arrival_leaves_type_unknown_then_filled() {
             .device_type,
         DeviceType::Mouse
     );
-    // 分类补齐不得清掉已有读数或回退状态。
     assert_eq!(
         e.record("hid:7768:6426").unwrap().state,
         DeviceState::Online
@@ -167,7 +161,6 @@ fn conflict_evidence_is_surfaced_without_a_type() {
     let snap = e.snapshot(T0);
     assert_eq!(snap.devices[0].device_type, "unknown");
     assert_eq!(snap.devices[0].classification_method, "unknown");
-    // 结论行只写结论，冲突原因落在 debug 证据里。
     let recent = e.diagnostics().recent();
     let conclusion = recent
         .iter()
@@ -188,7 +181,6 @@ fn conflict_evidence_is_surfaced_without_a_type() {
 
 #[test]
 fn evidence_goes_to_debug_and_conclusion_stays_short() {
-    // 结论行只留结论；逐条证据与「未支持组合」清单全部降为 debug。
     let mut e = engine();
     let mut c = DeviceClassification::new(
         DeviceType::Mouse,

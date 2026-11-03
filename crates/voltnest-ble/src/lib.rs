@@ -21,8 +21,6 @@
 #![deny(clippy::disallowed_types)]
 #![warn(missing_docs)]
 
-// 只实现了 Windows 与 Linux 两套后端语义（见 runtime 模块文档的复核表）。
-// 其它平台必须显式失败：静默套用 bluez 假设会得到「能编译、行为错」的运行时。
 #[cfg(not(any(target_os = "windows", target_os = "linux")))]
 compile_error!(
     "voltnest-ble 仅支持 Windows 与 Linux；新增平台需先按 runtime 模块文档的复核表逐条核对 btleplug 后端语义"

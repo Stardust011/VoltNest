@@ -36,7 +36,6 @@ pub fn update_settings(
 ) -> Result<SettingsDto, String> {
     let next = write_settings(&shared, |current| settings.apply_to(current))?;
     notify_wake(&shared);
-    // 改阈值重建通知触发节点（旧档位丢弃、新档位建出），诊断页须重拉，否则仍显示改前列表，像「新阈值没生效」。
     notify_diagnostics(&shared);
     Ok(SettingsDto::from_settings(&next))
 }
@@ -190,7 +189,6 @@ fn write_settings(
 ) -> Result<Settings, String> {
     let mut next = lock(&shared.settings).clone();
     mutate(&mut next);
-    // 先落盘再换内存：写盘失败时界面保持旧值，不出现「看起来改了、重启又变回去」。
     shared
         .settings_store
         .save(&next)

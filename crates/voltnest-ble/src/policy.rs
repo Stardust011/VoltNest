@@ -115,7 +115,6 @@ impl PolicyBook {
     /// 判定本轮是否建链。
     pub fn admission(&self, addr: [u8; 6], now_ms: u64) -> Admission {
         let Some(state) = self.devices.get(&addr) else {
-            // 未登记的新地址：只有还有槽位时才允许。
             return if self.devices.len() < self.policy.max_tracked {
                 Admission::Admit
             } else {
@@ -203,7 +202,6 @@ pub fn backoff_step(failures: u32, threshold: u32, cap_ms: u64) -> u64 {
         return 0;
     }
     let exp = failures - threshold;
-    // 2 分钟起步，指数增长，避免 2u64.pow 溢出（最多只用到 3~4 档）。
     let factor = 1u64.checked_shl(exp.min(20)).unwrap_or(u64::MAX);
     (2 * 60_000u64).saturating_mul(factor).min(cap_ms)
 }
@@ -237,7 +235,6 @@ mod tests {
 
     #[test]
     fn negative_cache_blocks_for_thirty_minutes() {
-        // 否则用户每台非电量 BLE 外设会每 60s 被建链一次，永不停止。
         let mut b = book();
         b.track(A);
         b.on_service_missing(A, T);
@@ -263,7 +260,6 @@ mod tests {
 
     #[test]
     fn backoff_is_two_four_eight_then_cap() {
-        // 连续失败 3 次 → 2 / 4 / 8 分钟，上限 10 分钟。
         let mut b = book();
         b.track(A);
         b.on_failure(A, T, ErrorCode::IoTimeout);
@@ -352,7 +348,6 @@ mod tests {
 
     #[test]
     fn tracking_limit_is_eight() {
-        // 第 9 台只进诊断页，不建链。
         let mut b = book();
         for i in 0..8u8 {
             b.track([i, 0, 0, 0, 0, 1]);
@@ -371,7 +366,6 @@ mod tests {
 
     #[test]
     fn link_lost_does_not_accumulate_backoff() {
-        // 反复休眠/唤醒的鼠标不能被退避：断链是链路事实，不是读取失败。
         let mut b = book();
         b.track(A);
         for _ in 0..6 {

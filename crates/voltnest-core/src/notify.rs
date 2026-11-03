@@ -146,7 +146,6 @@ impl NotificationBook {
         }
         let levels = self.config.low_battery_levels.clone();
         for device in self.devices.values_mut() {
-            // 保留下来的档位沿用原有 armed / 冷却历史。
             device
                 .entries
                 .retain(|threshold, _| levels.contains(threshold));
@@ -212,12 +211,10 @@ impl NotificationBook {
                     last_result: None,
                 });
 
-            // 迟滞：只有回升到「阈值 + 5%」才重新武装。
             if battery >= threshold.saturating_add(self.config.rearm_margin) {
                 entry.armed = true;
             }
 
-            // 跌破判定：上次 >= 阈值且本次 < 阈值；首次获得读数且已低于阈值也算跌破。
             let fell_below = match prev {
                 Some(p) => p >= threshold && battery < threshold,
                 None => battery < threshold,
@@ -231,7 +228,6 @@ impl NotificationBook {
                 continue;
             }
 
-            // 冷却只挡「快速往返」，不承担持续提醒职责。
             let cooldown_ok = entry
                 .last_notified_at_ms
                 .is_none_or(|last| now_ms.saturating_sub(last) >= self.config.cooldown_ms);
@@ -252,7 +248,6 @@ impl NotificationBook {
             });
         }
 
-        // 充电期间冻结判定基线，拔线后才能观察到「跌破」。
         if charging != Some(true) {
             state.last_battery = Some(battery);
         }
@@ -345,14 +340,12 @@ mod tests {
         let mut b = book();
         assert!(b.observe("d", "Dev", 25, Some(false), T0).is_none());
         assert!(b.observe("d", "Dev", 19, Some(false), T0 + 1).is_some());
-        // 持续在阈值下不得重复提醒。
         assert!(b.observe("d", "Dev", 18, Some(false), T0 + 2).is_none());
         assert!(b.observe("d", "Dev", 17, Some(false), T0 + 3).is_none());
     }
 
     #[test]
     fn hysteresis_requires_threshold_plus_five() {
-        // 冷却关掉，单独验证迟滞。
         let mut b = NotificationBook::new(NotificationConfig {
             low_battery_levels: vec![20, 10],
             cooldown_ms: 0,
@@ -360,10 +353,8 @@ mod tests {
         });
         assert!(b.observe("d", "Dev", 25, Some(false), T0).is_none());
         assert!(b.observe("d", "Dev", 19, Some(false), T0 + 1).is_some());
-        // 19% ↔ 21% 的采样抖动不得连续触发（未回到 25% 就没重新武装）。
         assert!(b.observe("d", "Dev", 21, Some(false), T0 + 2).is_none());
         assert!(b.observe("d", "Dev", 19, Some(false), T0 + 3).is_none());
-        // 回升到 25%（= 阈值 + 5%）才重新武装。
         assert!(b.observe("d", "Dev", 25, Some(false), T0 + 4).is_none());
         assert!(b.observe("d", "Dev", 19, Some(false), T0 + 5).is_some());
     }
@@ -373,7 +364,6 @@ mod tests {
         let mut b = book();
         assert!(b.observe("d", "Dev", 25, Some(false), T0).is_none());
         assert!(b.observe("d", "Dev", 19, Some(false), T0 + 1).is_some());
-        // 充电 3 分钟又拔掉，5 分钟内再次跌破 → 冷却拦截。
         assert!(
             b.observe("d", "Dev", 25, Some(false), T0 + 60_000)
                 .is_none()
@@ -382,7 +372,6 @@ mod tests {
             b.observe("d", "Dev", 19, Some(false), T0 + 120_000)
                 .is_none()
         );
-        // 30 分钟后放行。
         assert!(
             b.observe("d", "Dev", 25, Some(false), T0 + 1_800_000)
                 .is_none()
@@ -402,7 +391,6 @@ mod tests {
             b.observe("d", "Dev", 25, Some(false), T0 + 1 + DEFAULT_COOLDOWN_MS)
                 .is_none()
         );
-        // 恰好 30 分钟（-1ms 仍被挡，恰好放行）。
         let mut b2 = book();
         assert!(b2.observe("d", "Dev", 25, Some(false), T0).is_none());
         assert!(b2.observe("d", "Dev", 19, Some(false), T0).is_some());
@@ -423,7 +411,6 @@ mod tests {
             b.observe("d", "Dev", 15, Some(true), T0).is_none(),
             "充电时不得发送"
         );
-        // 拔线后仍低于阈值：基线被冻结在插入前，因此能观察到跌破。
         let a = b
             .observe("d", "Dev", 15, Some(false), T0 + 10)
             .expect("拔线后应提醒");
@@ -469,7 +456,6 @@ mod tests {
 
         let mut restored = book();
         restored.seed("d", last, &entries);
-        // 重启后同一读数不得再提醒。
         assert!(
             restored
                 .observe("d", "Dev", 19, Some(false), T0 + 2)
@@ -483,7 +469,6 @@ mod tests {
         assert!(b.observe("d", "Dev", 25, Some(false), T0).is_none());
         assert!(b.observe("d", "Dev", 19, Some(false), T0).is_some());
         b.clear_cooldowns();
-        // 冷却已清除，重新跌破即可发送。
         assert!(b.observe("d", "Dev", 25, Some(false), T0 - 10).is_none());
         assert!(b.observe("d", "Dev", 19, Some(false), T0 - 9).is_some());
     }
@@ -521,7 +506,6 @@ mod tests {
             entries[0].stable_id, "a",
             "按 stableId 排序，便于诊断页展示"
         );
-        // 同一设备内档位从高到低：第一档在上，和设置页的列表顺序一致。
         let order: Vec<(&str, u8)> = entries
             .iter()
             .map(|e| (e.stable_id.as_str(), e.threshold))
@@ -531,7 +515,6 @@ mod tests {
             vec![("a", 20), ("a", 10), ("b", 20), ("b", 10)],
             "设备升序、同一设备内阈值降序"
         );
-        // 只有被跌破的那一档写了结果；未跌破的 10% 档保持未武装过的空结果。
         assert!(
             entries
                 .iter()
@@ -563,7 +546,6 @@ mod tests {
         );
         b.mark_result("a", 20, "suppressed_mode_off");
         assert_eq!(pick(&b, 20).as_deref(), Some("suppressed_mode_off"));
-        // 未知设备 / 未知阈值是空操作，不能 panic。
         b.mark_result("nope", 20, "failed");
         b.mark_result("a", 7, "failed");
         assert_eq!(pick(&b, 20).as_deref(), Some("suppressed_mode_off"));
@@ -579,11 +561,9 @@ mod tests {
     #[test]
     fn config_change_drops_stale_entries() {
         let mut b = book();
-        // 20% 档已通知，10% 档还没跌破；两条都会进诊断页与 state.json。
         assert!(b.observe("d", "Dev", 15, Some(false), T0).is_some());
         assert_eq!(b.entries().len(), 2);
 
-        // 改成 30 / 25：20 / 10 的条目必须随之消失，新档位立刻建出来。
         b.set_config(with_thresholds(vec![30, 25]));
         let entries = b.entries();
         let mut kept: Vec<u8> = entries.iter().map(|e| e.threshold).collect();
@@ -596,7 +576,6 @@ mod tests {
             "新档位不能继承旧档位的通知历史"
         );
 
-        // 下一次读数按新档位判定：15% 已在新阈值之下，只报最高的那一档。
         let notification = b
             .observe("d", "Dev", 15, Some(false), T0 + 1)
             .expect("抬高一档后应按当前电量提醒");
@@ -612,8 +591,6 @@ mod tests {
         let mut b = book();
         assert!(b.observe("d", "Dev", 15, Some(false), T0).is_some());
 
-        // 只改通知模式（阈值列表不变）时，已通知的档位不得被重新武装，
-        // 否则同一次低电量会重复提醒。
         b.set_config(NotificationConfig {
             low_battery_levels: vec![20, 10],
             cooldown_ms: 0,
@@ -627,17 +604,13 @@ mod tests {
     #[test]
     fn raising_threshold_alerts_on_current_reading() {
         let mut b = book();
-        // 电量稳定在 15%：20% 档已通知，10% 档没跌破。
         assert!(b.observe("d", "Dev", 15, Some(false), T0).is_some());
 
-        // 用户把第一档抬到 30：15% 已经低于新阈值。基线若不清空，
-        // 「上次 15 >= 30」永远不成立，新档位一次也不会触发。
         b.set_config(with_thresholds(vec![30, 10]));
         let notification = b
             .observe("d", "Dev", 15, Some(false), T0 + 1)
             .expect("抬高一档后应按当前电量提醒");
         assert_eq!(notification.threshold, 30);
-        // 低的那一档没被跨过，不得连带触发。
         assert!(
             b.observe("d", "Dev", 15, Some(false), T0 + 2).is_none(),
             "同一读数不得重复提醒"

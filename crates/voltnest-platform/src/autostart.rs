@@ -363,7 +363,6 @@ mod tests {
 
     #[test]
     fn command_always_carries_autostart_flag() {
-        // 命令恒带 --autostart，首屏显隐另由「启动时最小化」决定。
         for p in [r"C:\a b\VoltNest.exe", r"C:\a\VoltNest.exe"] {
             assert!(run_command(&PathBuf::from(p)).ends_with("--autostart"));
         }
@@ -410,7 +409,6 @@ mod tests {
 
     #[test]
     fn exec_percent_is_escaped_as_field_code() {
-        // 未转义的 % 会被桌面环境当成域代码（%f/%u）而吞掉。
         let entry = desktop_entry(Path::new("/opt/50%/voltnest"));
         assert_eq!(
             exec_value(&entry).as_deref(),
@@ -462,7 +460,6 @@ mod tests {
 
     #[test]
     fn entry_written_to_disk_reads_back() {
-        // 真实落盘一轮：写入 → 读回 → Exec 仍指向同一个可执行文件。
         let dir = std::env::temp_dir().join(format!("voltnest-autostart-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let file = dir.join(DESKTOP_FILE_NAME);

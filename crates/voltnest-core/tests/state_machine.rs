@@ -24,7 +24,6 @@ fn arrived_creates_unknown_without_battery() {
 
 #[test]
 fn first_reading_goes_straight_to_online() {
-    // 任何有效读数直接 Online，不经过中间态。
     let mut e = engine();
     feed(&mut e, &hid_arrived(), Transport::Hid, T0);
     let t = e.apply_event(&hid_reading(90), Some(Transport::Hid), T0 + 1_000);
@@ -43,7 +42,6 @@ fn first_reading_goes_straight_to_online() {
 
 #[test]
 fn stale_boundary_is_strict_greater_than() {
-    // HID 标准档 staleAfter = 45s。
     let mut e = engine();
     feed(&mut e, &hid_arrived(), Transport::Hid, T0);
     feed(&mut e, &hid_reading(90), Transport::Hid, T0);
@@ -70,7 +68,6 @@ fn unavailable_and_offline_boundaries() {
     feed(&mut e, &hid_arrived(), Transport::Hid, T0);
     feed(&mut e, &hid_reading(90), Transport::Hid, T0);
 
-    // 60s → Unavailable（60_000 恰好仍为 Stale）。
     assert!(e.tick(T0 + 60_000));
     assert_eq!(e.record("hid:7768:6426").unwrap().state, DeviceState::Stale);
     assert!(e.tick(T0 + 60_000 + 1));
@@ -79,7 +76,6 @@ fn unavailable_and_offline_boundaries() {
         DeviceState::Unavailable
     );
 
-    // 180s → Offline。
     assert!(!e.tick(T0 + 180_000));
     assert_eq!(
         e.record("hid:7768:6426").unwrap().state,
@@ -94,7 +90,6 @@ fn unavailable_and_offline_boundaries() {
 
 #[test]
 fn tick_only_reports_true_on_real_change() {
-    // 状态真变化才发布快照。
     let mut e = engine();
     feed(&mut e, &hid_arrived(), Transport::Hid, T0);
     feed(&mut e, &hid_reading(90), Transport::Hid, T0);
@@ -137,7 +132,6 @@ fn reading_recovers_to_online_from_stale_and_unavailable() {
 
 #[test]
 fn re_arrival_clears_offline_back_to_unknown() {
-    // Offline → Unknown（重新出现）；旧读数必须清掉，否则下一次 tick 立刻又变灰。
     let mut e = engine();
     feed(&mut e, &hid_arrived(), Transport::Hid, T0);
     feed(&mut e, &hid_reading(90), Transport::Hid, T0);
@@ -163,7 +157,6 @@ fn re_arrival_clears_offline_back_to_unknown() {
 
 #[test]
 fn unreadable_on_unknown_stays_unknown_but_records_error() {
-    // E：Unknown 与 Unavailable 必须可区分。
     let mut e = engine();
     feed(&mut e, &hid_arrived(), Transport::Hid, T0);
     let event = ProviderEvent::Unreadable {
@@ -202,7 +195,6 @@ fn unreadable_after_reading_is_unavailable_and_keeps_last_valid() {
 
 #[test]
 fn unreadable_does_not_override_offline() {
-    // 链路已断时迟到的解析错误不得把状态抬回 Unavailable。
     let mut e = engine();
     feed(&mut e, &hid_arrived(), Transport::Hid, T0);
     feed(&mut e, &hid_reading(90), Transport::Hid, T0);
@@ -225,7 +217,6 @@ fn unreadable_does_not_override_offline() {
 
 #[test]
 fn link_lost_is_immediate_offline_without_percent() {
-    // 链路消失立即 Offline，不等下一个周期。
     let mut e = engine();
     feed(&mut e, &hid_arrived(), Transport::Hid, T0);
     feed(&mut e, &hid_reading(90), Transport::Hid, T0);
@@ -273,7 +264,6 @@ fn removed_drops_presence_and_tray_membership() {
 
 #[test]
 fn transport_down_only_affects_its_own_transport() {
-    // 一处挂死只影响当前 transport。
     let mut e = engine();
     feed(&mut e, &hid_arrived(), Transport::Hid, T0);
     feed(&mut e, &hid_reading(90), Transport::Hid, T0);
@@ -297,7 +287,6 @@ fn transport_down_only_affects_its_own_transport() {
 
 #[test]
 fn binding_conflict_does_not_create_second_record() {
-    // 保留先发现的一条，第二台只告警。
     let mut e = engine();
     feed(&mut e, &hid_arrived(), Transport::Hid, T0);
     let conflict = ProviderEvent::BindingConflict {
@@ -326,14 +315,12 @@ fn duplicate_arrival_does_not_duplicate_records() {
 
 #[test]
 fn clock_backward_does_not_underflow_and_clears_cooldown() {
-    // u64 下溢不得变成天文数字，冷却必须清除。
     let mut e = engine();
     feed(&mut e, &hid_arrived(), Transport::Hid, T0);
     feed(&mut e, &hid_reading(15), Transport::Hid, T0);
     assert_eq!(e.take_notifications().len(), 1, "首次低电量必须提醒");
 
     e.tick(T0 + 1_000);
-    // 系统时间被调早 1 小时。
     assert!(!e.tick(T0 - 3_600_000), "时间后跳不得触发退化");
     let rec = e.record("hid:7768:6426").unwrap();
     assert_eq!(rec.state, DeviceState::Online);
@@ -347,7 +334,6 @@ fn clock_backward_does_not_underflow_and_clears_cooldown() {
 
 #[test]
 fn backfilled_reading_is_dropped() {
-    // 时钟后跳产生的回填值必须丢弃，不得改写 lastValidAt / battery。
     let mut e = engine();
     feed(&mut e, &hid_arrived(), Transport::Hid, T0);
     feed(&mut e, &hid_reading(90), Transport::Hid, T0);
@@ -366,7 +352,6 @@ fn backfilled_reading_is_dropped() {
 
 #[test]
 fn clock_forward_jump_degrades_in_one_batch() {
-    // 前跳允许批量退化。
     let mut e = engine();
     feed(&mut e, &hid_arrived(), Transport::Hid, T0);
     feed(&mut e, &hid_reading(90), Transport::Hid, T0);
@@ -395,7 +380,6 @@ fn sensitivity_scales_the_whole_chain() {
         feed(e, &hid_arrived(), Transport::Hid, T0);
         feed(e, &hid_reading(90), Transport::Hid, T0);
     }
-    // 标准档 45s 已过期，宽松档 90s 未过期。
     assert!(standard.tick(T0 + 50_000));
     assert_eq!(
         standard.record("hid:7768:6426").unwrap().state,
@@ -407,7 +391,6 @@ fn sensitivity_scales_the_whole_chain() {
         DeviceState::Online
     );
 
-    // 宽松档 120s 仍应停在 Stale（unavailable=120s，使用 >）。
     assert!(loose.tick(T0 + 90_001));
     assert_eq!(
         loose.record("hid:7768:6426").unwrap().state,
@@ -422,7 +405,6 @@ fn sensitivity_scales_the_whole_chain() {
 
 #[test]
 fn ble_uses_its_own_thresholds() {
-    // Windows BLE 阈值 90/120/360：50s 时仍 Online（若误用 HID 阈值会变 Stale）。
     let mut e = engine();
     feed(&mut e, &ble_arrived(), Transport::Ble, T0);
     feed(&mut e, &ble_reading(80), Transport::Ble, T0);
@@ -440,7 +422,6 @@ fn ble_uses_its_own_thresholds() {
 
 #[test]
 fn ble_charging_is_always_unknown() {
-    // BLE 不得显示「未充电」。
     let mut e = engine();
     feed(&mut e, &ble_arrived(), Transport::Ble, T0);
     let event = ProviderEvent::Reading(ValidReading::new(
@@ -454,7 +435,6 @@ fn ble_charging_is_always_unknown() {
 
 #[test]
 fn reading_before_arrival_is_not_lost() {
-    // 读线程可能先于枚举线程给出第一条读数。
     let mut e = engine();
     let t = e.apply_event(&hid_reading(70), Some(Transport::Hid), T0);
     assert_eq!(
@@ -465,7 +445,6 @@ fn reading_before_arrival_is_not_lost() {
         }
     );
     assert_eq!(e.records().len(), 1);
-    // 随后的 Arrived 补齐名称，不新建记录。
     e.apply_event(&hid_arrived(), Some(Transport::Hid), T0 + 10);
     assert_eq!(e.records().len(), 1);
     assert_eq!(e.record("hid:7768:6426").unwrap().display_name, "AJ159 NL");
@@ -473,7 +452,6 @@ fn reading_before_arrival_is_not_lost() {
 
 #[test]
 fn seed_backfills_unknown_with_last_known_only() {
-    // 回填后主电量「—」，副行上次 X%。
     let mut e = engine();
     e.seed(
         &[voltnest_core::SeedEntry {
@@ -496,10 +474,8 @@ fn seed_backfills_unknown_with_last_known_only() {
     assert_eq!(rec.last_known_battery.map(Percent::get), Some(90));
     assert!(!rec.present, "未枚举到之前不得渲染假设备卡（D8）");
     assert_eq!(rec.model_key.as_deref(), Some("aj159 nl"));
-    // 回填记录不该出现在面板排序的托盘集合里。
     assert!(e.snapshot(T0).tray.visible_device_ids.is_empty());
 
-    // 第一条有效读数到达后切换为 online 并清除副行。
     e.apply_event(&hid_reading(88), Some(Transport::Hid), T0 + 1);
     let snap = e.snapshot(T0 + 1);
     let dto = &snap.devices[0];
@@ -536,7 +512,6 @@ fn seed_ignores_malformed_ids() {
 
 #[test]
 fn tray_order_is_pruned_to_limit_keeping_recent() {
-    // 超过 32 条淘汰最久未出现项（无记录的按「从未出现」处理）。
     let mut e = engine();
     let mut order: Vec<String> = (0..35).map(|i| format!("hid:{i:04x}:0001")).collect();
     let fresh_id = StableId::hid(0x0034, 0x0001);
@@ -588,7 +563,6 @@ fn malformed_frame_detail_reaches_diagnostics() {
 
 #[test]
 fn unreadable_without_detail_stays_bare_code() {
-    // 没有可复核数据的错误（打开句柄失败等）退化成只有错误码，行为与改动前一致。
     let mut e = engine();
     feed(&mut e, &hid_arrived(), Transport::Hid, T0);
     let event = ProviderEvent::Unreadable {
@@ -607,7 +581,6 @@ fn unreadable_without_detail_stays_bare_code() {
 
 #[test]
 fn identical_malformed_frames_are_coalesced() {
-    // 坏帧以 20ms 节奏刷屏时，同一条内容不得把 200 条环形缓冲刷掉。
     let mut e = engine();
     feed(&mut e, &hid_arrived(), Transport::Hid, T0);
     let same = "cmd_mismatch(want=0x03 got=0x23) · 6B: 06 FA 23 00 5A 01";
@@ -616,16 +589,13 @@ fn identical_malformed_frames_are_coalesced() {
     }
     assert_eq!(unreadable_count(&e), 1, "完全相同的坏帧只留一条");
 
-    // 字节变了 → 新的一条：诊断要能看出「帧内容在变」。
     let other = "cmd_mismatch(want=0x03 got=0x24) · 6B: 06 FA 24 00 5A 01";
     feed(&mut e, &unreadable_frame(other), Transport::Hid, T0 + 6);
     assert_eq!(unreadable_count(&e), 2);
 
-    // 有效读数**不**重置种类：好坏帧交替上报时，每帧清空会让同一条坏帧重新刷屏。
     feed(&mut e, &hid_reading(90), Transport::Hid, T0 + 1_000);
     feed(&mut e, &unreadable_frame(same), Transport::Hid, T0 + 1_001);
     assert_eq!(unreadable_count(&e), 2, "有效读数不得让同一条坏帧重新留痕");
-    // 去重只作用于诊断行，状态机照旧退化。
     assert_eq!(
         e.record("hid:7768:6426").unwrap().state,
         DeviceState::Unavailable
@@ -634,8 +604,6 @@ fn identical_malformed_frames_are_coalesced() {
 
 #[test]
 fn alternating_malformed_frames_each_get_one_line() {
-    // 设备轮流发出两种非电量报文（命令字不同）：只比「上一条是否相同」时
-    // 相邻两条永远不同，20ms 一次就会把环形缓冲刷空。
     let mut e = engine();
     feed(&mut e, &hid_arrived(), Transport::Hid, T0);
     let a = "cmd_mismatch(want=0x03 got=0x23) · 6B: 06 FA 23 00 5A 01";
@@ -649,7 +617,6 @@ fn alternating_malformed_frames_each_get_one_line() {
 
 #[test]
 fn distinct_malformed_kinds_are_capped() {
-    // 帧里带计数器时「每帧都不同」：上限内逐条留痕，超过上限不再刷屏。
     let mut e = engine();
     feed(&mut e, &hid_arrived(), Transport::Hid, T0);
     for i in 0..(UNREADABLE_KINDS_MAX + 5) {
@@ -673,7 +640,6 @@ fn kinds_reset_when_device_reappears() {
     feed(&mut e, &unreadable_frame(same), Transport::Hid, T0);
     assert_eq!(unreadable_count(&e), 1);
 
-    // 掉线 → 重新出现 → 同样的坏帧必须重新留痕。
     feed(
         &mut e,
         &ProviderEvent::Removed {

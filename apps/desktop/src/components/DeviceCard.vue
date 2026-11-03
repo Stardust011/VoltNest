@@ -59,7 +59,6 @@ const secondary = computed(() => {
 <template>
   <Card class="group py-3 transition-shadow hover:shadow-md">
     <CardContent class="flex items-center gap-3 px-4">
-      <!-- 类型图标（最左侧）：类型不可知时退化为链路图标 -->
       <div
         class="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground"
         role="img"

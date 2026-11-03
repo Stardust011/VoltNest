@@ -88,7 +88,6 @@ fn app_icon() -> Image<'static> {
 
 /// 安装托盘：菜单事件处理器 + 基础图标。
 pub fn install(app: &AppHandle) -> tauri::Result<()> {
-    // 菜单事件全局分发（任何图标的菜单走同一监听器列表），故只注册一次：各图标各自注册会让一次「退出」被调用 N 次。
     app.on_menu_event(|app, event| match event.id.as_ref() {
         MENU_OPEN => show_main(app),
         MENU_QUIT => quit(app),
@@ -115,19 +114,16 @@ fn quit(app: &AppHandle) {
 /// 按快照同步设备托盘图标：增、改、删。
 pub fn sync_tray_icons(app: &AppHandle, shared: &Arc<HostState>, snap: &Snapshot) {
     let mut known = lock(&shared.tray_ids);
-    // 全部离线时设备图标整体退位，托盘只剩应用图标。
     let visible: &[String] = if all_devices_offline(snap) {
         &[]
     } else {
         &snap.tray.visible_device_ids
     };
-    // 被上限截断的设备数：基础图标退位之后，「还有 N 台」只能挂在最后一张设备图标上。
     let truncated = snap.devices.len().saturating_sub(visible.len());
     let mut wanted: Vec<String> = Vec::with_capacity(visible.len());
 
     for (idx, stable_id) in visible.iter().enumerate() {
         let Some(device) = snap.devices.iter().find(|d| &d.stable_id == stable_id) else {
-            // 快照自洽性由核心保证；真出现不一致时跳过而不是 panic。
             continue;
         };
         let tray_id = tray_id_for(stable_id);
@@ -189,7 +185,6 @@ fn update_base(app: &AppHandle, snap: &Snapshot, has_device_icons: bool) {
         let _ = base.set_tooltip(Some(&tooltip));
         remember_tooltip(BASE_TRAY_ID, &tooltip);
     }
-    // `set_visible` 会让 Shell 重新注册这一项，没必要每次快照都碰它。
     if BASE_VISIBLE.swap(visible, Ordering::Relaxed) != visible {
         let _ = base.set_visible(visible);
     }
@@ -225,7 +220,6 @@ fn build_tray(
                 .icon(icon)
                 .tooltip(&tip)
                 .menu(&menu)
-                // 左键点图标开面板，右键才弹菜单，和系统托盘惯例一致。
                 .show_menu_on_left_click(false)
                 .on_tray_icon_event(|tray, event| match event {
                     TrayIconEvent::Click {
@@ -322,7 +316,6 @@ fn notification_tray(app: &AppHandle, stable_id: &str) -> Option<TrayIcon> {
     if let Some(tray) = app.tray_by_id(&TrayIconId::new(tray_id_for(stable_id))) {
         return Some(tray);
     }
-    // 基础图标隐身时不能当落点：提示写进 tooltip 也没人看得见。
     if BASE_VISIBLE.load(Ordering::Relaxed) {
         return app.tray_by_id(&TrayIconId::new(BASE_TRAY_ID));
     }
@@ -335,11 +328,9 @@ fn summary_tooltip(snap: &Snapshot) -> String {
     if total == 0 {
         return "VoltNest".to_string();
     }
-    // 应用图标顶替了整排设备图标：得说清设备还在，只是全都断了。
     if all_devices_offline(snap) {
         return format!("VoltNest · {total} 台设备（全部离线）");
     }
-    // 有设备却一张图标都没有：只可能是用户把它们全隐藏了。
     if snap.tray.visible_device_ids.is_empty() {
         return format!("VoltNest · {total} 台设备（未固定在托盘）");
     }
@@ -359,7 +350,6 @@ fn tooltip_for(device: &DeviceDto, extra: usize) -> String {
         None => "—".to_string(),
     };
     let mut body = format!("{} · {battery}", device.display_name);
-    // 缓存值必须标明来源，不能和实时读数看起来一样。
     if reading.is_some_and(|r| r.from_cache) {
         body.push_str("（上次读数）");
     }
@@ -371,7 +361,6 @@ fn tooltip_for(device: &DeviceDto, extra: usize) -> String {
     } else {
         String::new()
     };
-    // 先给后缀留出位置，长设备名不会把「还有 N 台」挤掉。
     let budget = TOOLTIP_LIMIT.saturating_sub(suffix.chars().count());
     format!("{}{suffix}", clamp_chars(body, budget))
 }
@@ -451,19 +440,13 @@ pub fn ring_image(battery: Option<u8>, charging: bool, state: DeviceState) -> Im
     let outer = size * 0.44;
 
     let plug = is_charging_glyph(charging, state);
-    // 闪电要占环心，环太厚就会贴上去糊成一团；但也别细到看不出弧长，
-    // 32px 上 0.12×size ≈ 3.8px，仍是任务栏里一眼能读出的粗细。
     let thickness = if plug { size * 0.12 } else { size * 0.155 };
     let inner = outer - thickness;
 
     let rgb = ring_tone(battery, charging, state);
     let draw_line = state == DeviceState::Offline;
-    // 一圈都没有读数（刚启动、还没回填到缓存值）：整环用状态色画满，
-    // 这样托盘里始终是「一块看得懂的颜色」，而不是只剩灰轨道。
     let pending = battery.is_none() && !draw_line;
 
-    // 充电也照实画弧：闪电负责说「在充电」，弧长继续交代「充到哪了」。
-    // 只画满环会让 5% 和 95% 长得一模一样，进度就没了。
     let ratio = if state == DeviceState::Offline || pending {
         1.0
     } else {
@@ -472,10 +455,8 @@ pub fn ring_image(battery: Option<u8>, charging: bool, state: DeviceState) -> Im
             .unwrap_or(0.0)
     };
     let arc_alpha = if pending { PENDING_ALPHA } else { 1.0 };
-    // 24 单位的闪电画成 0.56×size 高，正好落在收窄后的环心里（尖角离内圈约 1.5px）。
     let bolt_scale = size * 0.028;
 
-    // 3×3 超采样：32px 上不做抗锯齿的环会明显锯齿。
     const SS: usize = 3;
     const TRACK: [u8; 4] = [120, 130, 145, 110];
     let mut buf = vec![0u8; (ICON_SIZE * ICON_SIZE * 4) as usize];
@@ -519,12 +500,10 @@ pub fn ring_image(battery: Option<u8>, charging: bool, state: DeviceState) -> Im
 
             let total = (SS * SS) as f32;
             let idx = ((py * ICON_SIZE + px) * 4) as usize;
-            // 轨道只画在有过采样命中的地方，避免整块半透明。
             let track_a = track_hits as f32 / total;
             let arc_a = arc_hits as f32 / total;
             let line_a = line_hits as f32 / total;
             let bolt_a = bolt_hits as f32 / total;
-            // 闪电与环同色，直接并进电弧那一层；两者几何上不重叠。
             let (r, g, b, a) = blend(rgb, arc_a * arc_alpha + bolt_a, TRACK, track_a, line_a);
             if a > 0.0 {
                 buf[idx] = r;
@@ -572,7 +551,6 @@ fn blend(arc: [u8; 3], arc_a: f32, track: [u8; 4], track_a: f32, line_a: f32) ->
         alpha += arc_a;
     }
     if line_a > 0.0 {
-        // 横线用深色，压在环上表示「链路不在」。
         for out in out.iter_mut() {
             *out = *out * (1.0 - line_a) + 30.0 * line_a;
         }
@@ -708,7 +686,6 @@ mod tests {
 
     #[test]
     fn base_icon_is_the_app_icon() {
-        // 没有设备时托盘该显示应用图标本身（和任务栏同一个 PNG），不是手绘的电量环。
         let img = app_icon();
         assert_eq!((img.width(), img.height()), (ICON_SIZE, ICON_SIZE));
         let rgba = img.rgba();
@@ -717,7 +694,6 @@ mod tests {
             opaque > 900,
             "应用图标是实心圆角方块，覆盖面积远大于电量环：{opaque}"
         );
-        // 顶端正中：电量环在这里是透明的（圆环上边缘落在 y≈2），应用图标的深色底是实心。
         assert_eq!(
             rgba[(16 * 4) + 3],
             255,
@@ -727,7 +703,6 @@ mod tests {
 
     #[test]
     fn waiting_icon_is_the_panel_blue() {
-        // 面板「等待读数」是 #38bdf8；刚启动、还没发现设备时托盘必须是同一个蓝。
         assert_eq!(ring_tone(None, false, DeviceState::Unknown), SKY);
         assert_eq!(
             ring_tone(Some(87), false, DeviceState::Unknown),
@@ -742,7 +717,6 @@ mod tests {
             .filter(|p| p[3] > 0)
             .max_by_key(|p| p[3])
             .expect("等待环不能是一张空图");
-        // 半透明像素做混合除法时会有一两级的取整误差，按容差比色。
         let close = |got: u8, want: u8| (i32::from(got) - i32::from(want)).abs() <= 2;
         assert!(
             close(brightest[0], SKY[0])
@@ -786,7 +760,6 @@ mod tests {
 
     #[test]
     fn charging_puts_a_bolt_in_the_hole() {
-        // 环心（半径 0.5×center 以内）在不充电时必须是空的。
         let hole_pixels = |charging: bool| {
             let img = ring_image(Some(50), charging, DeviceState::Online);
             let c = ICON_SIZE as f32 / 2.0;
@@ -807,7 +780,6 @@ mod tests {
 
     #[test]
     fn charging_keeps_the_progress_arc() {
-        // 只量环上的不透明像素（环内半径 0.6×中心距以内是闪电的地盘，排除掉）。
         let arc = |battery: u8| {
             let img = ring_image(Some(battery), true, DeviceState::Online);
             let c = ICON_SIZE as f32 / 2.0;
@@ -851,12 +823,10 @@ mod tests {
 
     #[test]
     fn tooltip_reports_the_battery_the_ring_is_drawing() {
-        // 环上画了 87% 的蓝弧，悬停文字就不能还写着「—」。
         let mut waiting = device(None, DeviceState::Unknown);
         waiting.last_known_battery = Some(87);
         assert_eq!(tooltip_for(&waiting, 0), "AJ159 NL · 87%（上次读数）");
 
-        // 有实时读数时不该多出「上次读数」的尾巴。
         let online = device(Some(87), DeviceState::Online);
         assert_eq!(tooltip_for(&online, 0), "AJ159 NL · 87%");
     }
@@ -872,7 +842,6 @@ mod tests {
             rgba.chunks(4).any(|p| p[3] > 200),
             "必须画出不透明的环，而不是一张空图"
         );
-        // 四角是透明的：托盘图标不该有方块底。
         assert_eq!(rgba[3], 0, "左上角必须透明");
     }
 

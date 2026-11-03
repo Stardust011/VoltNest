@@ -62,7 +62,6 @@ USER_AGENT = (
     "(KHTML, like Gecko) Chrome/124.0 Safari/537.36"
 )
 
-# products/<pid>.json 中 Device.Type 的取值含义（device.js CreateHidDevice 分派 + 实测）
 TYPE_MAP = {0: "mouse", 1: "keyboard", 2: "receiver"}
 
 
@@ -372,11 +371,9 @@ def derive_modes(
     """推导该 PID 支持的连接方式集合。"""
     modes: set[str] = {"2.4G"} if device_type == "receiver" else {"USB"}
 
-    # JM_WIRELESS_MAP 配对表 或 白名单注释里的 "Dongle: 0xXXXX"
     if pid in dongle_map or pid in pair_pids or dongle_pid is not None:
         modes.add("2.4G")
 
-    # 注释里的“三模 / 蓝牙”是站点内唯一可静态获得的 BLE 线索
     if "三模" in comment:
         modes.update({"USB", "2.4G", "BLE"})
     elif re.search(r"蓝牙|BLE", comment, re.IGNORECASE):
@@ -389,7 +386,6 @@ def pick_mode(modes: set[str], priority: str) -> str:
     if priority == "wired":
         order = ("USB", "2.4G", "BLE")
     else:
-        # 三模设备优先记 2.4G（站点里 BLE 只是同 PID 的另一条运行时链路）
         order = ("2.4G", "BLE", "USB")
     for m in order:
         if m in modes:
@@ -484,7 +480,6 @@ def build_output(
 ) -> tuple[dict, Counter]:
     hints = collect_dongle_hints(comments)
 
-    # 用 "Dongle: 0xXXXX" 注释补全 JM_WIRELESS_MAP 之外的配对关系
     for dev_pid, dongle_pid in hints.items():
         entry = dongle_map.setdefault(dongle_pid, {"dongleType": None, "pairs": []})
         if all(p["pid"] != dev_pid for p in entry["pairs"]):
@@ -493,8 +488,6 @@ def build_output(
     pair_pids = {p["pid"] for e in dongle_map.values() for p in e["pairs"]}
     all_pids = set(comments) | set(metas) | set(dongle_map) | pair_pids
 
-    # 第一遍：整理每个 PID 的型号信息
-    # 站点约定：ProductName 是对外可读型号（如 Z82 / A980），Model 是厂家内部型号（如 TK51A / TM238）
     info: dict[int, dict] = {}
     for pid in all_pids:
         meta = metas.get(pid) or {}
@@ -508,7 +501,6 @@ def build_output(
 
         internal, alias = (model, "") if model else split_fallback_name(comment)
         internal = internal or ""
-        # 接收器的 ProductName 多是 "USB 2.4G Receiver" 这类通用串，不当作可读型号
         readable = "" if device_type == "receiver" else (product or alias)
         info[pid] = {
             "meta": meta,
@@ -522,7 +514,6 @@ def build_output(
 
     readable_names = {pid: it["readable"] for pid, it in info.items() if it["readable"]}
 
-    # 内部型号 -> 可读型号（仅保留一对一映射，用于给只留内部型号的备注消歧）
     seen: dict[str, set[str]] = {}
     for it in info.values():
         if it["deviceType"] == "receiver" or not it["model"] or not it["readable"]:
@@ -542,7 +533,6 @@ def build_output(
             stats["skipped_receiver"] += 1
             continue
 
-        # name = 可读型号；internalModel = 厂家内部型号
         name = it["readable"]
         if not name:
             if device_type == "receiver":
@@ -561,7 +551,6 @@ def build_output(
             "mode": pick_mode(modes, mode_priority),
         }
 
-        # 附加信息（可选字段，取不到即省略）
         if it["model"] and it["model"] != name:
             entry["internalModel"] = it["model"]
         if device_type != "receiver" and it["product"] and it["product"] != name:
@@ -576,7 +565,6 @@ def build_output(
         if comment:
             entry["note"] = comment
 
-        # 接收器 <-> 设备 双向配对关系
         if pid in dongle_map:
             pairs = sorted({f"{vendor_id:04X}:{p['pid']:04X}" for p in dongle_map[pid]["pairs"]})
             if pairs:

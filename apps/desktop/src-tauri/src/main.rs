@@ -28,11 +28,9 @@ use crate::host::{HostState, lock};
 use crate::supervisor::{SupervisorCmd, TransportSpec};
 
 fn main() {
-    // 1. 单实例：第二个进程给首实例发信号后立刻退出，绝不创建窗口。
     let guard = match acquire() {
         Instance::Second => return,
         Instance::First(guard) => Some(guard),
-        // 权限异常时不阻塞启动：宁可多开一个窗口，也不要打不开。
         Instance::Unavailable(reason) => {
             eprintln!("单实例互斥体不可用，继续启动：{reason}");
             None
@@ -42,7 +40,6 @@ fn main() {
     let launched_by_autostart =
         std::env::args().any(|arg| arg == voltnest_platform::AUTOSTART_FLAG);
 
-    // 2. 数据目录与日志。
     let paths = DataPaths::resolve();
     if let Err(err) = paths.ensure_root() {
         eprintln!("创建数据目录失败：{err}");
@@ -50,14 +47,11 @@ fn main() {
     logger::init(&paths.logs_dir());
     log::info!("VoltNest 启动（autostart={launched_by_autostart}）");
 
-    // 3. AUMID 先于首次 Toast 就位；图标须先落盘，`IconUri` 只认真实文件。
-    //    非 Windows 上 `init` 是空操作（返回 `None`，不落盘）：那边没有 AUMID/Toast。
     let toast_icon = toast_icon::init(paths.root());
     if let Err(err) = voltnest_platform::aumid::register("VoltNest", toast_icon.as_deref()) {
         log::warn!("AUMID 注册失败：{err}");
     }
 
-    // 4. 设置与状态。
     let settings_store = SettingsStore::new(paths.clone());
     let loaded = settings_store.load(clock::now_utc_ms());
     let state_store = StateStore::new(paths.clone());
@@ -72,7 +66,6 @@ fn main() {
     );
     shared.apply_settings(&loaded.settings);
 
-    // 设置损坏 / 版本过高：备份 + 默认值启动 + 诊断告警，不阻塞。
     if let Some(warning) = loaded.warning {
         let detail = warning.to_string();
         log::warn!("设置加载告警：{detail}");
@@ -84,7 +77,6 @@ fn main() {
             detail,
         );
     }
-    // 自启项可能是用户手动删掉的：以注册表为准回写设置，界面才不会说谎。
     if loaded.settings.autostart {
         let actual = voltnest_platform::autostart::is_enabled();
         if !actual {
@@ -100,7 +92,6 @@ fn main() {
     let start_minimized = loaded.settings.start_minimized;
     let shared_for_exit = Arc::clone(&shared);
 
-    // 生成上报数据：独立的临时状态（抓包会话 + 手动设备清单），不参与采集生命周期。
     let probe_state = Arc::new(probe::ProbeState::new(paths.clone(), clock::now_utc_ms()));
 
     let app = tauri::Builder::default()
@@ -132,15 +123,12 @@ fn main() {
         .setup(move |app| {
             let handle = app.handle().clone();
 
-            // 5.1 托盘（基础图标 + 菜单），失败不阻塞窗口。
             if let Err(err) = tray::install(&handle) {
                 log::error!("托盘初始化失败：{err}");
             }
 
-            // 5.2 宿主事件循环：唯一持有 Engine 的地方。
             host::spawn_host_loop(handle.clone(), Arc::clone(&shared), rx);
 
-            // 5.3 Provider 线程组监管。
             let mut supervisors = HashMap::new();
             for spec in [TransportSpec::hid(), TransportSpec::ble()] {
                 let transport = spec.transport;
@@ -149,21 +137,17 @@ fn main() {
             }
             *lock(&shared.supervisors) = supervisors;
 
-            // 5.4 首帧快照：窗口显示时就已经有数据，不会先闪一下空列表。
             host::publish_snapshot(&handle, &shared, clock::now_utc_ms());
 
-            // 5.5 二次启动唤醒。
             if let Some(guard) = guard {
                 let stop = Arc::new(AtomicBool::new(false));
                 let activation_handle = handle.clone();
                 let _ = guard.listen_activation(stop, move || {
                     tray::show_main(&activation_handle);
                 });
-                // 守卫必须活到进程结束：交给 Tauri 托管，随 App 一起释放。
                 app.manage(guard);
             }
 
-            // 5.6 首屏显隐：自启与手动启动一致，统一由「启动时最小化到托盘」管控。
             if let Some(window) = app.get_webview_window("main")
                 && !start_minimized
             {
@@ -175,9 +159,6 @@ fn main() {
         })
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { api, .. } = event {
-                // 标题栏 × 已改成「退出程序」（走 `quit_app` → `app.exit`），能落到这儿的只剩 Alt+F4 这类系统关闭请求
-                // 与 `close()` 调用。仍然收进托盘而不是退出：这是个后台监控程序，误触 Alt+F4 不该把采集一起关掉；
-                // 真要退出有标题栏 × 和托盘菜单两条明路。
                 api.prevent_close();
                 let _ = window.hide();
                 let shared = window.app_handle().state::<Arc<HostState>>();
@@ -193,11 +174,9 @@ fn main() {
             shared_for_exit
                 .shutting_down
                 .store(true, std::sync::atomic::Ordering::Relaxed);
-            // 通知全部监管线程停止，让 provider 释放句柄（GATT 订阅、HID 句柄）。
             for sender in lock(&shared_for_exit.supervisors).values() {
                 let _ = sender.send(SupervisorCmd::Stop);
             }
-            // 退出前强制落盘，别让最后 5s 内的电量变化消失。
             host::persist_state(&shared_for_exit, clock::now_utc_ms(), true);
             let _ = app;
         }

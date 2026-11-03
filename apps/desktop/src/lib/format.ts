@@ -1,5 +1,3 @@
-// 展示层纯函数：只把快照字段翻译成 CSS/文案，不做业务推断。
-
 import type { DeviceDto, DeviceState } from "./types";
 
 export interface Tone {
@@ -56,10 +54,8 @@ export function toneFor(state: DeviceState): Tone {
   return TONES[state] ?? TONES.unknown;
 }
 
-// 充电绿：与托盘 `tray.rs::EMERALD` 同色值，两侧必须一致。充电不分档，闪电已表「在充」，弧长仍表进度。
 const CHARGING_GREEN = "#10b981";
 
-// 电量环颜色与托盘对齐：<10% 红、<20% 橙、充电绿；离线/过期沿用状态色。
 export function batteryColor(
   battery: number | null,
   charging: boolean,
@@ -73,7 +69,6 @@ export function batteryColor(
   return toneFor(state).ring;
 }
 
-// null 时返回 0（只画底环，不画比例）。
 export function ringProgress(battery: number | null): number {
   if (battery === null) return 0;
   return Math.min(100, Math.max(0, battery));
@@ -83,10 +78,8 @@ export function stateLabel(state: DeviceState): string {
   return toneFor(state).label;
 }
 
-// 副行文案，全部由快照字段决定。
 export function secondaryLine(device: DeviceDto): string {
   if (device.battery === null) {
-    // 缓存值已在主位显示，副行只补时间语义。
     if (device.lastKnownBattery !== null) return "上次读数";
     return device.state === "unknown" ? "尚未收到读数" : "无可用读数";
   }
@@ -95,8 +88,6 @@ export function secondaryLine(device: DeviceDto): string {
   return "使用电池";
 }
 
-// 主读数：状态为 `unknown`（启动回填/离线重现）时用 `lastKnownBattery` 撑首屏，避免「— + 空进度条」。
-// unavailable/offline 是「确定读不到」，不借缓存假装有实时读数。
 export function displayedBattery(device: DeviceDto): number | null {
   if (device.battery !== null) return device.battery;
   return device.state === "unknown" ? device.lastKnownBattery : null;
@@ -106,7 +97,6 @@ export function transportLabel(transport: "hid" | "ble"): string {
   return transport === "hid" ? "2.4G" : "蓝牙";
 }
 
-// 诊断列表默认折叠 `debug`：级别只控「默认是否展示」，不控「是否记录」——逐条证据仍留环形缓冲，展开可核对，过滤不改数据。
 export function visibleDiagEvents<T extends { level: string }>(
   events: readonly T[],
   showDebug: boolean,
@@ -114,7 +104,6 @@ export function visibleDiagEvents<T extends { level: string }>(
   return showDebug ? [...events] : events.filter((e) => e.level !== "debug");
 }
 
-// 设备类型 → 中文短标签。`unknown`/未知串返回 `null`：识别不出就不显示，前端不猜类型。
 export function deviceTypeLabel(deviceType: string): string | null {
   switch (deviceType) {
     case "keyboard":

@@ -68,18 +68,15 @@ function finish() {
 </script>
 
 <template>
-  <!-- 遮罩自标题栏下方起：引导期间标题栏仍可拖动/最小化/收进托盘。 -->
   <div
     class="fixed inset-x-0 top-10 bottom-0 z-40 flex overflow-y-auto bg-background px-4 py-4"
     role="dialog"
     aria-labelledby="onboarding-title"
   >
-    <!-- 用 `m-auto` 而非 `items-center`：内容超窗高时仍可滚到顶，不被裁切。 -->
     <Card class="m-auto w-full max-w-[400px] gap-0 overflow-hidden py-0 shadow-lg">
       <CardHeader class="gap-0 px-6 pt-4 pb-4">
         <div class="flex items-center justify-between gap-3">
           <div class="flex min-w-0 items-center gap-2">
-            <!-- 品牌标识与应用图标同源（BrandMark），强化「同一应用」连续性。 -->
             <BrandMark class="size-6 shrink-0" />
             <span class="text-xs font-semibold tracking-tight">VoltNest</span>
             <span class="truncate text-[11px] text-muted-foreground">外设电量监控</span>
@@ -111,7 +108,6 @@ function finish() {
       <CardContent class="px-6 pb-4">
         <!-- 第一步：产品介绍 -->
         <section v-if="step === 0" class="flex flex-col gap-3.5">
-          <!-- 示意面板：数值写死，非真实设备数据。 -->
           <div class="rounded-lg border bg-muted/40 p-3">
             <div class="flex items-center justify-between gap-2">
               <span class="text-[11px] font-medium">设备面板</span>
@@ -173,7 +169,7 @@ function finish() {
           </ul>
         </section>
 
-        <!-- 第二步：启动设置（两项独立，默认关闭） -->
+        <!-- 第二步：启动设置 -->
         <section v-else class="flex flex-col gap-2.5">
           <div
             class="flex items-start gap-3 rounded-lg border bg-muted/40 p-3"

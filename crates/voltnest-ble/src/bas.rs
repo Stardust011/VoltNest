@@ -37,7 +37,6 @@ pub fn parse_battery_level(bytes: &[u8]) -> Result<Percent, ErrorCode> {
         if bytes.iter().all(|b| *b == 0) {
             return Err(ErrorCode::EmptyPayload);
         }
-        // 标准特征只有 1 字节；多余字节说明读错了特征或布局变化，不猜。
         return Err(ErrorCode::MalformedFrame);
     }
     Percent::new(bytes[0]).ok_or(ErrorCode::PercentOutOfRange)
@@ -74,7 +73,6 @@ mod tests {
 
     #[test]
     fn zero_is_valid_not_empty() {
-        // 单字节 0x00 是 0%，不得判成「全零 payload」。
         assert_eq!(parse_battery_level(&[0x00]).unwrap().get(), 0);
     }
 
@@ -103,7 +101,6 @@ mod tests {
 
     #[test]
     fn name_drops_nul_padding() {
-        // 实测：0x2A00 = "AJ159 NL" + 补零。
         let raw = b"AJ159 NL\0\0\0\0\0\0\0\0";
         assert_eq!(parse_device_name(raw).as_deref(), Some("AJ159 NL"));
     }
@@ -131,11 +128,9 @@ mod tests {
 
     #[test]
     fn appearance_is_little_endian_and_length_checked() {
-        // HID Mouse 0x03C2 → 线上字节 [0xC2, 0x03]。
         assert_eq!(parse_appearance(&[0xC2, 0x03]), Some(0x03C2));
         assert_eq!(parse_appearance(&[0x00, 0x00]), Some(0x0000));
         assert_eq!(parse_appearance(&[0x41, 0x08]), Some(0x0841));
-        // 长度不符：不补零、不截断。
         assert_eq!(parse_appearance(&[]), None);
         assert_eq!(parse_appearance(&[0xC2]), None);
         assert_eq!(parse_appearance(&[0xC2, 0x03, 0x00]), None);

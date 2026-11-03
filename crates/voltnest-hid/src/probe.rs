@@ -529,7 +529,6 @@ fn capture_platform(
         output_frames: 0,
         elapsed_ms: 0,
         truncated: false,
-        // 报告里要写「每 N ms 一轮」，这里记实际生效的间隔而不是请求值。
         write_interval_ms: write_interval.map_or(0, |interval| interval.as_millis() as u64),
         write_failures: 0,
         write_error: None,
@@ -549,7 +548,6 @@ fn capture_platform(
             break;
         }
 
-        // 查询报文先发：设备收到后才可能产生下一帧应答，顺序反了会多等一个间隔。
         if let Some(interval) = write_interval
             && Instant::now() >= next_write
         {
@@ -576,7 +574,6 @@ fn capture_platform(
         }
 
         match device.read_timeout(&mut buf, CAPTURE_READ_TIMEOUT_MS) {
-            // 超时无数据：正常现象（设备不发就什么也没有），继续下一轮。
             Ok(0) => {}
             Ok(n) => {
                 if summary.frames < max_frames {
@@ -806,7 +803,6 @@ mod tests {
 
         let targets = group_targets(merge_collections(vec![first, second, third]));
         assert_eq!(targets.len(), 2, "两个 VID:PID → 两台设备");
-        // 排序按 VID:PID：0x1234 在前。
         assert_eq!(targets[0].vid_pid(), "0x1234:0x0001");
         let ajazz = &targets[1];
         assert_eq!(ajazz.vid_pid(), "0x7768:0x6426");

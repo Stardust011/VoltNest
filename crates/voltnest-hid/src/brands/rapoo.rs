@@ -50,10 +50,8 @@ pub const NRF54L: BrandSpec = BrandSpec {
     clamp_percent: false,
     frame: FrameLayout {
         report_id: Some(0x07),
-        // 监听帧不回显命令字（`cmd: None`），该下标只作为「头部」占位。
         cmd_index: 0x06,
         len_index: None,
-        // payload = [状态, 百分比] = data[6..8]。
         payload_offset: 0x07,
         fixed_payload_len: 2,
     },
@@ -66,7 +64,6 @@ pub const NRF54L: BrandSpec = BrandSpec {
         charging: Some(ChargingField {
             mask: 0xFF,
             index: 0,
-            // 0x02 = 充电中；1 = 未充电、0 = 未上报，都按「非充电」处理。
             true_values: &[0x02],
             error_from: None,
         }),
@@ -148,11 +145,8 @@ pub const AP: BrandSpec = BrandSpec {
     clamp_percent: false,
     frame: FrameLayout {
         report_id: Some(0x04),
-        // data[2] = 命令回显（官方按它判定「应答属于本命令」）。
         cmd_index: 0x03,
-        // data[3] = LEN。
         len_index: Some(0x04),
-        // data[7] = DATA[0]。
         payload_offset: 0x08,
         fixed_payload_len: 2,
     },
@@ -166,7 +160,6 @@ pub const AP: BrandSpec = BrandSpec {
             mask: 0xFF,
             index: 1,
             true_values: &[0x01],
-            // 官方只接受 0 / 1：≥0x02 是未定义值，整帧不可当作读数。
             error_from: Some(0x02),
         }),
     },
@@ -176,17 +169,13 @@ pub const AP: BrandSpec = BrandSpec {
         usage_page: 0xFF1C,
         cmd: 0xAD,
         cmd_high: None,
-        // 报告 ID 之后的第 1、2 字节是小端校验和。
         prefix: &AP_QUERY_CHECKSUM,
-        // 报告 ID + 63 字节报文（`payloadByteLength: 63`）。
         report_len: 64,
         cmd_index: 0x03,
         payload_offset: 0x04,
-        // LEN = 6、ADDR = 0；DATA 区留空。
         payload: &[0x06, 0x00, 0x00],
         interval_ms: Some(30_000),
         inverted: false,
-        // 官方每条命令只发一次，无重试约定。
         retry: 0,
     }),
     ack: None,
@@ -208,7 +197,6 @@ fn route(entry: &Entry) -> Option<&'static BrandSpec> {
         Some("VT_CH584") => Some(&CH584),
         Some("LM20RT") => Some(&LM20RT),
         Some("Telink3228C_Mouse") => Some(&AP),
-        // TelinkKeyboard / CH585M / GCOME_AP / OHID 与未知家族：未实测，不采集。
         _ => None,
     }
 }
@@ -302,7 +290,6 @@ mod tests {
         report[8] = 12;
         assert_eq!(decode_battery(&LM20RT, &report).unwrap().percent.get(), 12);
 
-        // 报告 ID 与家族绑定：CH584 不认 0x07，LM20RT 不认 0x08。
         let mut wrong = [0u8; 64];
         wrong[0] = 0x07;
         wrong[8] = 73;
@@ -323,7 +310,6 @@ mod tests {
             "DATA 区必须全零：{:02X?}",
             &query[7..]
         );
-        // 校验和 = 报文第 2 字节起逐字节求和（0xAD + 0x06）。
         assert_eq!(0xAD + 0x06, 0x00B3);
     }
 

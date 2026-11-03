@@ -55,18 +55,14 @@ function quit() {
 }
 
 onMounted(async () => {
-  // 首帧光标未知，先按无悬停画。
   markPointerStale();
 
-  // 真实指针输入到达即光标可信，交还 CSS；捕获阶段监听避免被子元素 stopPropagation 截断。
   window.addEventListener("pointerdown", clearPointerStale, true);
   window.addEventListener("pointermove", clearPointerStale, true);
-  // 窗口重获焦点（任务栏还原/托盘唤起）时状态已过期。
   window.addEventListener("focus", markPointerStale);
 
   if (!appWindow) return;
   try {
-    // 宿主侧焦点兜底：隐藏期间浏览器未必派发 `window.focus`。
     unlisten = await appWindow.onFocusChanged(({ payload: focused }) => {
       if (focused) markPointerStale();
     });

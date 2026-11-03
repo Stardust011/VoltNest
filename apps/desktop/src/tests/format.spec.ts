@@ -59,7 +59,6 @@ describe("toneFor / stateLabel", () => {
   });
 
   it("未知状态回退到 unknown 而不是抛错", () => {
-    // 宿主升级后新增状态时，旧前端必须仍能渲染。
     expect(toneFor("bogus" as DeviceState)).toEqual(toneFor("unknown"));
   });
 });

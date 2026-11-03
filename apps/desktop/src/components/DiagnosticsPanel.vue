@@ -278,10 +278,6 @@ function detailClass(code: string) {
       </CardContent>
     </Card>
 
-    <!--
-      生成上报数据：自动识别失败的唯一兜底入口。
-      放在诊断页而不是设备页 —— 它产出的是「给维护者看的数据」，不是日常监控视图。
-    -->
     <ManualDeviceList
       :devices="manualDevices"
       :now-ms="nowMs"
@@ -342,7 +338,6 @@ function detailClass(code: string) {
       </CardContent>
     </Card>
 
-    <!-- 调试区（红色边框）：只做前端重放，不写设置、不动启动项 -->
     <Card class="min-w-0 border-destructive/60 py-4">
       <CardHeader class="px-4 pb-0">
         <div class="flex items-center justify-between gap-3">
@@ -357,10 +352,6 @@ function detailClass(code: string) {
       </CardHeader>
 
       <CardContent class="flex flex-col gap-3 px-4">
-        <!--
-          调试开关（原「显示调试」按钮的位置在诊断事件卡里，现挪到调试区并改成开关）：
-          它控制的是上方「诊断事件」是否展开 debug 级记录，纯前端状态、不落盘。
-        -->
         <div
           class="flex items-start justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/5 p-3"
         >

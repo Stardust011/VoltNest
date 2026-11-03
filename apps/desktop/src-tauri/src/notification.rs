@@ -53,15 +53,11 @@ pub fn dispatch_notifications(
                 );
                 let outcome = tray::bubble(app, &notification.stable_id, &text);
                 match outcome {
-                    // 真写进 tooltip 了，无需额外动作。
                     tray::BubbleOutcome::Sent => {}
-                    // 我们真没发（没有落脚图标）：日志交代清楚，诊断页记 `failed`。
                     tray::BubbleOutcome::NoIcon => log::warn!(
                         "托盘里没有可用图标，低电量提示未送出（{}）",
                         notification.stable_id
                     ),
-                    // 平台不支持：既不能记成 `failed`（那会和「没图标」混为一谈），
-                    // 也不能打上面那句归因错误的日志。
                     tray::BubbleOutcome::UnsupportedPlatform => push_diag(
                         shared,
                         DiagLevel::Warn,
@@ -130,7 +126,6 @@ fn toast(title: &str, body: &str) -> Result<(), String> {
         .text1(body)
         .duration(Duration::Short);
 
-    // `appLogoOverride` 直接指定文件，不依赖 AUMID 的 IconUri 能否解析：数据目录被挪走/图标被清理也只是少张图，不影响发送。
     if let Some(icon) = crate::toast_icon::path() {
         toast = toast.icon(icon, IconCrop::Square, "VoltNest");
     }

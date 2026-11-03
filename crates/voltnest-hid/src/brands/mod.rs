@@ -209,12 +209,10 @@ impl Registry {
             }
             for variant in spec.variants {
                 variant.validate()?;
-                // 品牌标识不参与匹配，但它是日志与诊断的唯一线索：重复即分不清是哪套协议出的问题。
                 if !seen_ids.insert(variant.id) {
                     return Err(SpecError::DuplicateBrandId { brand: variant.id }.into());
                 }
             }
-            // 型号表不可用只跳过这个品牌：同一份表常被多套协议共用，缺一份不该殃及其它品牌。
             let table = match mappings.table(spec.device_table_file) {
                 Ok(table) => table,
                 Err(error) => {
@@ -226,7 +224,6 @@ impl Registry {
                     continue;
                 }
             };
-            // 精确匹配必须唯一：同一 VID:PID 落到两品牌时型号名与字段位置会随枚举顺序漂移，属配置错误，不能拖到运行期。
             for other in &brands {
                 let other: &Brand = other;
                 for ((vid, pid), _) in other.table.entries() {
@@ -244,7 +241,6 @@ impl Registry {
             brands.push(Brand { spec, table });
         }
         if brands.is_empty() {
-            // 一个能服务的品牌都没有 = 装包 / 数据事故，必须显式失败，而不是「静默零品牌」。
             return Err(RegistryError::NoUsableBrand { skipped });
         }
         Ok(Self {
@@ -372,7 +368,6 @@ mod tests {
                 report_id: None,
                 cmd_index: 1,
                 len_index: None,
-                // 头体重叠：cmd_index 落在 payload 内。
                 payload_offset: 1,
                 fixed_payload_len: 4,
             },
@@ -407,7 +402,6 @@ mod tests {
             id: "bad-variant",
             label: "坏变体",
             name_from_product: false,
-            // 头体重叠：命令字落在 payload 内（payload 从 cmd_index 处开始）。
             frame: crate::spec::FrameLayout {
                 payload_offset: 1,
                 ..ajazz::SPEC.frame
@@ -485,7 +479,6 @@ mod tests {
         let dir =
             std::env::temp_dir().join(format!("voltnest-hid-registry-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
-        // 键位换成一个内置表里不存在的 PID：若仍读编译期常量，这条必然查不到。
         let json = r#"{
             "config_version": "9.9.9",
             "source": { "file": "swap.xml" },
@@ -528,12 +521,10 @@ mod tests {
             matches!(&skip.error, MappingError::MissingTable { file, .. } if file == "nope.json"),
             "{skip:?}"
         );
-        // 记录必须说清「缺哪份、现有哪几份」。
         assert!(
             skip.to_string().contains("ajazz.json"),
             "须列出实际存在的表：{skip}"
         );
-        // 跳过的品牌不得凭空出现设备。
         assert!(reg.lookup(0x7768, 0x6426).is_some(), "ajazz 必须仍可查表");
     }
 
@@ -620,7 +611,6 @@ mod tests {
         .to_string();
         assert!(text.contains("没有任何可用品牌"), "{text}");
         assert!(text.contains("dareu") && text.contains("rapoo"), "{text}");
-        // 多个跳过项必须分隔，否则两个品牌会连成一串。
         assert!(text.contains('；'), "{text}");
 
         assert!(

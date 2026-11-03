@@ -34,7 +34,6 @@ mod tests {
 
     #[test]
     fn strips_nul_and_padding() {
-        // 实测 BLE GAP 0x2A00 为定长 32 字节，尾部补零。
         assert_eq!(normalize("AJ159 NL\0\0\0\0").as_deref(), Some("aj159 nl"));
     }
 
@@ -55,7 +54,6 @@ mod tests {
     #[test]
     fn is_case_insensitive_but_exact_otherwise() {
         assert_eq!(normalize("aj159 nl"), normalize("AJ159 NL"));
-        // 只差一位的型号不得归一化到一起（禁止前缀匹配）。
         assert_ne!(normalize("AJ159 NL P"), normalize("AJ159 NL"));
         assert_eq!(normalize("AJ159 NL P").as_deref(), Some("aj159 nl p"));
     }

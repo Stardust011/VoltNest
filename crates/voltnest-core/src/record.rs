@@ -140,7 +140,6 @@ mod tests {
         assert_eq!(r.age_ms(5_000), None);
         r.last_valid_at_ms = Some(10_000);
         assert_eq!(r.age_ms(15_000), Some(5_000));
-        // 系统时间后跳：不得下溢。
         assert_eq!(r.age_ms(1), Some(0));
     }
 

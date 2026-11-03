@@ -55,16 +55,12 @@ pub const SPEC: BrandSpec = BrandSpec {
     listen: None,
     notify: None,
     request: None,
-    // 该固件无应答确认位约定。
     ack: None,
-    // 报告 ID 不随连接方式变化。
     fallback_report_id: None,
     expected_interval_ms: 30_000,
-    // 型号表由运行时从映射目录读取（`crate::mappings`），此处只声明文件名。
     block_offset: None,
     profile_probe: None,
     device_table_file: "ajazz.json",
-    // 单协议品牌：没有变体，也不按型号表字段分派。
     variants: &[],
     route: None,
 };
@@ -106,7 +102,6 @@ mod tests {
 
     #[test]
     fn real_charging_and_unplugged_frames() {
-        // 2026-10-22 实测：插线 90→100 且标志 0x01；拔线 100 且标志 0x00。
         let charging = [0x06, 0xFA, 0x03, 0x00, 0x00, 0x03, 0x64, 0x01];
         assert_eq!(
             decode_battery(&super::SPEC, &charging).unwrap().charging,
@@ -229,7 +224,6 @@ mod tests {
 
     #[test]
     fn unknown_charging_flag_values_are_not_charging() {
-        // 只有 0x01 表示充电；其它值一律按「未充电」处理，不猜测语义。
         let frame = buf_with(&[0x03, 0x5A, 0x02]);
         assert_eq!(
             decode_battery(&super::SPEC, &frame).unwrap().charging,
@@ -243,7 +237,6 @@ mod tests {
         noisy[..REAL_FRAME.len()].copy_from_slice(&REAL_FRAME);
         noisy[63] = 0xAA;
         assert!(!padding_all_zero(&super::SPEC, &noisy));
-        // 填充脏了，但电量仍然可用。
         assert_eq!(
             decode_battery(&super::SPEC, &noisy).unwrap().percent.get(),
             90
@@ -254,7 +247,6 @@ mod tests {
     fn device_table_covers_verified_generation() {
         let table = crate::mappings::load_table(super::SPEC.device_table_file).unwrap();
         assert_eq!(table.len(), 16, "8 型号 × 2 模式");
-        // 抓取时刻逐月变化，只校验形状 YYYY-MM-DDTHH
         let version = &table.config_version;
         assert!(
             version.len() == 13

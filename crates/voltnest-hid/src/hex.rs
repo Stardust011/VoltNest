@@ -63,7 +63,6 @@ pub fn parse(text: &str) -> Result<Vec<u8>, HexError> {
     let mut index = 0;
     while index < chars.len() {
         let c = chars[index];
-        // `0x` 前缀：跳过这两个字符，字节值本身照常按位收集。
         if (c == '0') && matches!(chars.get(index + 1), Some('x' | 'X')) {
             index += 2;
             continue;
@@ -143,7 +142,6 @@ mod tests {
         assert_eq!(parse(""), Err(HexError::Empty));
         assert_eq!(parse("   \n"), Err(HexError::Empty));
         assert_eq!(parse("06 ZZ"), Err(HexError::InvalidChar('Z')));
-        // 中文/全角字符同样要指出来，不能静默吞掉。
         assert!(matches!(parse("06 号"), Err(HexError::InvalidChar(_))));
     }
 

@@ -299,7 +299,6 @@ fn apply_event(shared: &HostState, transport: Transport, event: &ProviderEvent, 
     let visible = engine
         .apply_event(event, Some(transport), now)
         .should_publish();
-    // 队列深度按 64 的整数倍节流记录：积压时不要每来一条事件就写一条诊断。
     let depth = shared.queue_depth();
     if depth > QUEUE_ALERT_DEPTH && depth.is_multiple_of(QUEUE_ALERT_DEPTH) {
         engine.push_diag(
@@ -330,7 +329,6 @@ pub fn spawn_host_loop(
                 let now = clock::now_utc_ms();
                 let tick_at = last_tick.saturating_add(TICK_MS);
                 let due = deadline.map_or(tick_at, |d| d.min(tick_at));
-                // 等待上界压到 200ms：既能准点 tick，也能及时响应退出请求。
                 let wait = due.saturating_sub(now).clamp(1, 200);
 
                 match rx.recv_timeout(std::time::Duration::from_millis(wait)) {
@@ -344,8 +342,6 @@ pub fn spawn_host_loop(
                     Err(RecvTimeoutError::Disconnected) => break,
                 }
 
-                // 事件常成批到达（HID 一次读两帧、BLE 同时连两台）：把已有的全部吃掉，
-                // 再统一 tick / 发布，避免一帧一次快照。
                 while let Ok(next) = rx.try_recv() {
                     match next {
                         HostEvent::Provider { transport, event } => {
@@ -365,7 +361,6 @@ pub fn spawn_host_loop(
                 }
 
                 if dirty && deadline.is_none() {
-                    // 从「第一次变化」开始计时，连续变化不延长窗口 → 稳定 ≤4Hz。
                     deadline = Some(now.saturating_add(SNAPSHOT_WINDOW_MS));
                 }
                 if let Some(at) = deadline

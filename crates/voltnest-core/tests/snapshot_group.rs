@@ -38,7 +38,6 @@ fn snapshot_carries_server_now_and_null_battery() {
 #[test]
 fn devices_follow_tray_order_then_name() {
     let mut e = engine();
-    // 两台不同 VID 的 HID 设备。
     let a = StableId::hid(0x1111, 0x0001);
     let b = StableId::hid(0x2222, 0x0001);
     let fact_a = ProviderEvent::Arrived(voltnest_provider::DeviceFact::new(
@@ -57,12 +56,10 @@ fn devices_follow_tray_order_then_name() {
     ));
     common::feed(&mut e, &fact_a, Transport::Hid, T0);
     common::feed(&mut e, &fact_b, Transport::Hid, T0);
-    // 未设置 order 时按名称排序。
     let snap = e.snapshot(T0);
     assert_eq!(snap.devices[0].display_name, "Alpha");
     assert_eq!(snap.devices[1].display_name, "Zeta");
 
-    // 设置 order 后按 order 排序（排序统一由 Rust 决定）。
     e.set_tray_order(vec![a.as_str().to_string()]);
     let snap = e.snapshot(T0);
     assert_eq!(snap.devices[0].stable_id, a.as_str());
@@ -98,12 +95,10 @@ fn tray_respects_capacity_presence_and_hidden() {
     );
     assert_eq!(snap.tray.visible_device_ids[0], ids[0].as_str());
 
-    // 隐藏是用户显式动作。
     e.set_hidden(vec![ids[0].as_str().to_string()]);
     let snap = e.snapshot(T0);
     assert_eq!(snap.tray.visible_device_ids[0], ids[1].as_str());
 
-    // 物理消失后不再有图标。
     let removed = ProviderEvent::Removed {
         stable_id: ids[1].clone(),
         reason: voltnest_provider::RemovalReason::Unplugged,
@@ -120,9 +115,7 @@ fn tray_respects_capacity_presence_and_hidden() {
 
 #[test]
 fn groups_hid_active_with_ble_inactive() {
-    // 场景：切到 2.4G，蓝牙链路变成「未活动」。
     let mut e = engine();
-    // 先让 BLE 有读数再衰败。
     common::feed(&mut e, &ble_arrived(), Transport::Ble, T0);
     common::feed(&mut e, &ble_reading(80), Transport::Ble, T0);
     e.tick(T0 + 400_000); // BLE offline 360s
@@ -185,7 +178,6 @@ fn no_group_when_both_active() {
 
 #[test]
 fn groups_at_startup_before_any_reading() {
-    // 刚启动：两条链路都到位但都还没读数，仍必须只有一张卡。
     let mut e = engine();
     common::feed(&mut e, &hid_arrived(), Transport::Hid, T0);
     common::feed(&mut e, &ble_arrived(), Transport::Ble, T0);
@@ -228,7 +220,6 @@ fn notification_nodes_merge_and_follow_grouping() {
     common::feed(&mut e, &ble_arrived(), Transport::Ble, T0);
     common::feed(&mut e, &ble_reading(14), Transport::Ble, T0);
     e.take_notifications();
-    // 两条链路都退场后合并成一台设备。
     e.tick(T0 + 400_000);
 
     let nodes = e.notification_nodes(T0 + 400_000);
@@ -274,7 +265,6 @@ fn groups_are_independent_of_sensitivity() {
 #[test]
 fn no_group_when_model_key_differs_or_missing() {
     let mut e = engine();
-    // 名称不同（只差一位也不行，禁止前缀匹配）。
     let hid = ProviderEvent::Arrived(hid_fact("AJ159 NL P"));
     let ble = ProviderEvent::Arrived(ble_fact("AJ159 NL"));
     common::feed(&mut e, &hid, Transport::Hid, T0);
@@ -286,7 +276,6 @@ fn no_group_when_model_key_differs_or_missing() {
         "modelKey 不相等 → 不合并"
     );
 
-    // 名称为空 → modelKey 为 None → 谓词自然失败。
     let mut e2 = engine();
     let empty_hid = ProviderEvent::Arrived(hid_fact(""));
     let empty_ble = ProviderEvent::Arrived(ble_fact(""));
@@ -299,7 +288,6 @@ fn no_group_when_model_key_differs_or_missing() {
 
 #[test]
 fn no_group_with_three_members_or_same_transport() {
-    // 三条同 modelKey（两只同型号 + 一只另一链路）→ 不合并。
     let mut e = engine();
     let third = StableId::hid(0x9999, 0x0001);
     let third_fact = ProviderEvent::Arrived(voltnest_provider::DeviceFact::new(
@@ -329,7 +317,6 @@ fn card_follows_primary_position_in_order() {
     common::feed(&mut e, &ble_arrived(), Transport::Ble, T0);
     common::feed(&mut e, &ble_reading(70), Transport::Ble, T0);
     e.tick(T0 + 400_000); // 所有都过期
-    // 重新激活 BLE，让它成为主成员，并置于 order 首位。
     common::feed(&mut e, &ble_reading(70), Transport::Ble, T0 + 400_001);
     e.set_tray_order(vec!["ble:01:00:00:23:04:35".to_string()]);
     let snap = e.snapshot(T0 + 400_001);
@@ -340,10 +327,8 @@ fn card_follows_primary_position_in_order() {
 
 #[test]
 fn inactive_text_without_any_reading_has_no_duration() {
-    // 从未收到读数的非活跃成员：不得出现「18446744073709551 分钟前」这种下溢文案。
     let mut e = engine();
     common::feed(&mut e, &hid_arrived(), Transport::Hid, T0);
-    // HID 无读数（Unknown，非活跃），BLE 有读数（活跃）。
     common::feed(&mut e, &ble_arrived(), Transport::Ble, T0);
     common::feed(&mut e, &ble_reading(70), Transport::Ble, T0);
     let snap = e.snapshot(T0 + 1);
@@ -353,7 +338,6 @@ fn inactive_text_without_any_reading_has_no_duration() {
 
 #[test]
 fn stale_counts_as_active_for_grouping() {
-    // Stale 仍有一条可展示的当前读数，因此算活跃。
     let mut e = engine();
     common::feed(&mut e, &ble_arrived(), Transport::Ble, T0);
     common::feed(&mut e, &ble_reading(80), Transport::Ble, T0);

@@ -148,8 +148,6 @@ impl ProviderProfile {
 
     /// 构造期不变量，进程启动时跑一次（[`validate_registry`] 内部调用）。
     pub fn validate(&self) -> Result<(), ProfileError> {
-        // 家族 ID 必须 `<transport>-<protocol>`，品牌名不得占据 transport 段或单独构成 ID。
-        // 协议段允许带厂商标识，故不能简单黑名单整串；`hid-vbas` 已把品牌从 ID 移除，收敛为「协议 = 家族」。
         let prefix = self.transport.as_str();
         let mut segments = self.family_id.split('-');
         let first = segments.next().unwrap_or_default();
@@ -175,7 +173,6 @@ impl ProviderProfile {
             }
         }
 
-        // 三档都要满足 stale < unavailable < offline，且档位越宽松阈值越大。
         for level in self.thresholds {
             if !(level.stale_ms < level.unavailable_ms && level.unavailable_ms < level.offline_ms) {
                 return Err(ProfileError::ThresholdOrder {
@@ -193,12 +190,9 @@ impl ProviderProfile {
             });
         }
 
-        // 标准档阈值必须显著大于采集周期，否则边界抖动。
-        // 快档可能有意小于周期（更灵敏），只在构建期告警，不在此拒绝。
         let t = self.thresholds_for(Sensitivity::Standard);
         match self.cadence {
             Cadence::NotifyWithPoll { poll } => {
-                // 先校验区间，再校验与周期之间的关系。
                 if poll.min_ms < POLL_MIN_FLOOR_MS
                     || poll.max_ms > POLL_MAX_CEIL_MS
                     || !(poll.min_ms <= poll.default_ms && poll.default_ms <= poll.max_ms)
@@ -231,7 +225,6 @@ impl ProviderProfile {
             }
         }
 
-        // 出现检测间隔必须为正；非法值在构建期已拦，这里守住运行期构造的常量。
         if self.presence_poll_ms == Some(0) {
             return Err(ProfileError::PresencePollZero);
         }
@@ -397,7 +390,6 @@ pub static HID_VBAS: ProviderProfile = ProviderProfile {
     cadence: HID_VBAS_CADENCE,
     thresholds: HID_VBAS_THRESHOLDS,
     charging: ChargingSupport::FromReading,
-    // 内部常量，不进 settings.json。
     presence_poll_ms: HID_VBAS_PRESENCE_POLL_MS,
 };
 
@@ -407,10 +399,7 @@ pub static BLE_BAS: ProviderProfile = ProviderProfile {
     transport: Transport::Ble,
     cadence: BLE_BAS_CADENCE,
     thresholds: BLE_BAS_THRESHOLDS,
-    // 0x2BF0 / 0x2BEA 未实现，0x2BED 失真（BLE 充电状态不可用）。
     charging: ChargingSupport::Unavailable,
-    // 出现检测独立于兜底轮询：Windows 的已连接选择器只在枚举时才有结果，
-    // 复用 60s 轮询意味着「连上蓝牙后最多等一分钟才看见设备」。
     presence_poll_ms: BLE_BAS_PRESENCE_POLL_MS,
 };
 
@@ -490,7 +479,6 @@ mod tests {
 
     #[test]
     fn pc1_rejects_non_monotonic_levels() {
-        // 快档不得比标准档更宽松。
         let mut p = base_hid();
         p.thresholds[0] = p.thresholds[2];
         assert!(matches!(
@@ -517,7 +505,6 @@ mod tests {
 
     #[test]
     fn pc2_ble_boundary_is_exact() {
-        // 恰好等于 1.5× 轮询下限时通过，差 1ms 即拒绝。
         let boundary = stale_floor(&base_ble());
         let mut p = base_ble();
         standard_level(&mut p).stale_ms = boundary;
@@ -534,7 +521,6 @@ mod tests {
 
     #[test]
     fn pc3_hid_boundary_is_exact() {
-        // 恰好等于 1.5× 期望间隔时通过，差 1ms 即拒绝。
         let boundary = stale_floor(&base_hid());
         let mut p = base_hid();
         let level = standard_level(&mut p);
@@ -577,8 +563,6 @@ mod tests {
 
     #[test]
     fn pc4_allows_vendor_as_protocol_segment() {
-        // D1：crate 名与目录名不用品牌，但家族 ID 的协议段允许带厂商标识以区分实现。
-        // `hid-vbas` 本身不需要它；这里验证「允许」而非「要求」。
         let mut p = base_hid();
         p.family_id = "hid-vbas-ajazz";
         assert!(p.validate().is_ok());
@@ -605,7 +589,6 @@ mod tests {
 
     #[test]
     fn pc5_charging_unavailable_forces_none() {
-        // 正例：BLE 的充电语义不可得，任何输入都必须是 None。
         assert_eq!(base_ble().sanitize_charging(Some(true)), None);
         assert_eq!(base_ble().sanitize_charging(Some(false)), None);
         assert_eq!(base_ble().sanitize_charging(None), None);
@@ -623,13 +606,11 @@ mod tests {
 
     #[test]
     fn pc6_presence_poll_is_declared_per_family() {
-        // 两个家族都要有独立的枚举周期，否则「连上设备」只能等到下一轮读数轮询。
         assert_eq!(base_hid().presence_poll_ms, Some(5_000));
         assert!(base_hid().validate().is_ok());
         assert_eq!(base_ble().presence_poll_ms, Some(5_000));
         assert!(base_ble().validate().is_ok());
 
-        // 未声明 = 复用轮询周期，仍然合法。
         let mut p = base_ble();
         p.presence_poll_ms = None;
         assert!(p.validate().is_ok());
@@ -709,7 +690,6 @@ mod tests {
                 default_ms: 30_000,
             },
         };
-        // poll.min=30s → 要求 stale >= 45s，BLE 是 90s，通过。
         assert!(p.validate().is_ok());
     }
 
@@ -726,7 +706,6 @@ mod tests {
 
     #[test]
     fn every_level_is_ordered_and_monotonic() {
-        // 三档各自 stale<unavailable<offline，且随档位放宽。
         for p in [HID_VBAS, BLE_BAS] {
             let mut previous = 0;
             for level in levels() {

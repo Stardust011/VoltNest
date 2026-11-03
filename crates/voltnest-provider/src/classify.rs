@@ -343,7 +343,6 @@ fn resolve(
     let mut groups: Vec<(DeviceType, ClassificationMethod, Vec<String>)> = Vec::new();
     for c in standard {
         match groups.iter_mut().find(|(t, _, _)| *t == c.device_type) {
-            // 同类型多来源（例如多个接口都是鼠标集合）：保留先入者的方法。
             Some(slot) => slot.2.push(c.detail),
             None => groups.push((c.device_type, c.method, vec![c.detail])),
         }
@@ -369,7 +368,6 @@ fn resolve(
             evidence.extend(details);
             match (mapping, mapping_text) {
                 (Some(v), Some(text)) if v.device_type == device_type => {
-                    // 一致：标准是主证据，映射作为独立佐证一并留下。
                     evidence.push(text);
                     DeviceClassification::new(device_type, method, evidence)
                 }
@@ -551,8 +549,6 @@ pub fn classify_ble(ev: &BleEvidence, verified: Option<&VerifiedMapping>) -> Dev
         notes.push("服务发现无 SIG 已知服务".to_string());
     }
 
-    // BLE 侧暂无可「跳过」的条目：Appearance 取到但无映射时必须留在 evidence 里，
-    // 它是「为什么还是 unknown」的直接原因（去查表、补映射就从这行入手）。
     resolve(candidates, notes, Vec::new(), verified)
 }
 
@@ -570,7 +566,6 @@ mod tests {
 
     #[test]
     fn hid_usage_hits_standard_types() {
-        // Generic Desktop 页全部设备类应用集合，逐个核对结论与方法。
         for (usage, want, name) in [
             (0x01u16, DeviceType::Mouse, "Pointer"),
             (0x02, DeviceType::Mouse, "Mouse"),
@@ -595,7 +590,6 @@ mod tests {
 
     #[test]
     fn pointer_and_mouse_share_one_slot() {
-        // 指针类集合（Pointer + Mouse）收敛到同一类型，不得被判成复合冲突。
         let mut ev = HidEvidence::new(0x1234, 0x5678);
         ev.push_collection(0x01, 0x01);
         ev.push_collection(0x01, 0x02);
@@ -607,14 +601,12 @@ mod tests {
 
     #[test]
     fn keyboard_family_collections_do_not_conflict() {
-        // 键盘 + 数字键盘是同一族：合并为 keyboard，而不是冲突。
         let mut ev = HidEvidence::new(0x1234, 0x5678);
         ev.push_collection(0x01, 0x06);
         ev.push_collection(0x01, 0x07);
         let c = classify_hid(&ev, None);
         assert_eq!(c.device_type, DeviceType::Keyboard);
 
-        // Joystick + Multi-axis Controller 同属控制器，同样合并。
         let mut ev = HidEvidence::new(0x1234, 0x5678);
         ev.push_collection(0x01, 0x04);
         ev.push_collection(0x01, 0x08);
@@ -629,7 +621,6 @@ mod tests {
         let c = classify_hid(&ev, None);
         assert_eq!(c.device_type, DeviceType::Unknown);
         assert_eq!(c.method, ClassificationMethod::Unknown);
-        // 只解析已支持的组合：未收录的 Usage 不进结论证据，只进 skipped（debug）。
         assert!(
             c.evidence.iter().all(|e| !e.contains("未支持")),
             "未支持的 Usage 不得出现在结论证据里：{:?}",
@@ -641,7 +632,6 @@ mod tests {
 
     #[test]
     fn unavailable_usage_falls_back_to_unknown() {
-        // Linux libusb 后端：usage_page=usage=0，push_collection 不写入。
         let mut ev = HidEvidence::new(0x046D, 0xC077);
         ev.push_collection(0, 0);
         assert!(!ev.usage_available);
@@ -653,7 +643,6 @@ mod tests {
 
     #[test]
     fn usage_page_zero_never_matches_desktop_usage() {
-        // 防御：即使有人硬塞 page=0，也不得把 usage=0x02 判成鼠标。
         let ev = HidEvidence {
             vid: 1,
             pid: 2,
@@ -713,8 +702,6 @@ mod tests {
         assert_eq!(c.method, ClassificationMethod::VerifiedDeviceMapping);
         assert!(c.evidence.iter().any(|e| e.contains("复合集合")));
         assert!(c.evidence.iter().any(|e| e.contains("config.xml 1.0.7.6")));
-        // 7 个集合里只有 2 个命中已支持组合；另外 5 个只进 skipped（debug），
-        // evidence 只留「复合集合 + 映射」这两条真正起作用的。
         assert_eq!(c.skipped.len(), 5, "未收录的 Usage 逐条留痕但不进 evidence");
         assert!(
             c.evidence.iter().all(|e| !e.contains("未支持")),
@@ -783,7 +770,6 @@ mod tests {
         assert!(c.is_unknown());
         assert_eq!(c.device_type, DeviceType::Unknown);
         assert_eq!(c.method, ClassificationMethod::Unknown);
-        // 只留「为什么没有证据」，不编造类型，也不在正文重复 VID:PID（诊断行已有 deviceId）。
         assert_eq!(c.evidence.len(), 1, "证据：{:?}", c.evidence);
         assert!(c.evidence[0].contains("Usage 字段不可用"));
         assert!(c.evidence.iter().all(|e| !e.contains("7768")));
@@ -905,7 +891,6 @@ mod tests {
             "ble_appearance"
         );
         assert_eq!(ClassificationMethod::Unknown.as_str(), "unknown");
-        // Other 是「已确认但不在枚举内」，与 Unknown（证据不足）语义不同。
         assert!(DeviceType::Other.is_known());
         assert!(!DeviceType::Unknown.is_known());
         assert_eq!(DeviceType::default(), DeviceType::Unknown);

@@ -80,7 +80,6 @@ mod tests {
 
         assert_eq!(write(&dir).unwrap(), target);
         let first = fs::read(&target).unwrap();
-        // 内容被外力破坏后（用户/清理工具动过），下一次启动要能自己修回来。
         fs::write(&target, b"broken").unwrap();
         assert_eq!(write(&dir).unwrap(), target);
         assert_eq!(fs::read(&target).unwrap(), first);
