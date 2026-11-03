@@ -1,19 +1,13 @@
 //! HID 报文的十六进制文本表示：只做「字节 ↔ 文本」，不含任何 HID 语义。
 //!
-//! 生成上报数据时，用户可能需要在界面上手填一条查询报文（例如官方驱动里的
-//! `06 FB 00 00 00 03`）。这里负责把这种手写文本解析成字节，并把收到的原始报告
-//! 渲染成 issue 里可直接对照的十六进制串。两种写法必须**互逆**：
-//! `parse(format(bytes)) == bytes`，否则用户复制出去再贴回来就对不上了。
+//! 两个方向必须互逆：`parse(format(bytes)) == bytes`。
 
 /// 一条报文允许的最大字节数（HID 报告远小于此，纯粹防呆）。
 pub const MAX_FRAME_BYTES: usize = 1024;
 
 const DIGITS: &[u8; 16] = b"0123456789ABCDEF";
 
-/// 字节序列 → 大写、空格分隔的十六进制串。空序列得到空串。
-///
-/// 用大写是与 VID/PID 及各家协议文档里的报文字节写法保持一致；
-/// 分隔符统一为单个空格，便于在等宽字体下按列对齐。
+/// 字节序列 → 大写、单空格分隔的十六进制串。空序列得到空串。
 pub fn format(bytes: &[u8]) -> String {
     let mut out = String::with_capacity(bytes.len().saturating_mul(3));
     for (index, byte) in bytes.iter().enumerate() {
@@ -54,9 +48,8 @@ impl std::error::Error for HexError {}
 
 /// 手写报文 → 字节。
 ///
-/// 宽容的分隔符（空格、制表、换行、逗号、冒号、连字符）与可选的 `0x` / `0X` 前缀，
-/// 其余字符必须是十六进制数字。**不宽容奇偶性**：`0x5` 这种「半个字节」直接拒绝 ——
-/// 猜成 `0x05` 会让发出去的报文与用户看到的不是同一条。
+/// 允许空白、`,` `:` `-` `;` `_` 作分隔符，以及可选的 `0x` / `0X` 前缀；
+/// 其余字符必须是十六进制数字，且总位数必须为偶数（`0x5` 报 [`HexError::OddDigits`]）。
 pub fn parse(text: &str) -> Result<Vec<u8>, HexError> {
     let mut digits: Vec<u8> = Vec::with_capacity(text.len());
     let chars: Vec<char> = text.chars().collect();

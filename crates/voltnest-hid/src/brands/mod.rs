@@ -1,15 +1,9 @@
 //! 品牌注册表：`hid-vbas` 家族下的所有已知品牌。
 //!
-//! **新增品牌 = 新增一个模块 + 在 [`BRANDS`] 里加一项**，运行时只按传输类型分派：
-//! 1. `src/brands/<brand>.rs` 声明 BrandSpec；2. `data/mappings/<brand>.json` 型号表；3. `BRANDS` 加一行（唯一要改的既有代码）。
-//!
-//! 型号表不再是编译期常量：注册表在首次枚举前建立一次（[`Registry::embedded`]），建立时
-//! 从型号表目录**运行时加载**全部 `*.json`（定位规则见 [`crate::mappings`]），逐个跑
-//! [`BrandSpec::validate`]，写错字段下标即 panic —— 早于任何设备 I/O。
-//!
-//! 型号表缺失 / 损坏按**品牌粒度跳过**：该品牌不参与匹配，但跳过项留在 [`Registry::skipped`]
-//! 并在 [`Registry::try_embedded`] 里打一条诊断，其余品牌照常采集。只有「一个品牌都不可用」才
-//! 升级为错误（[`RegistryError::NoUsableBrand`]）。
+//! 新增品牌 = 新增 `src/brands/<brand>.rs` 声明 [`BrandSpec`] + 在 `data/mappings/` 放型号表 +
+//! 在 [`BRANDS`] 里加一项。型号表在首次枚举前由 [`Registry::embedded`] 运行时加载并逐份
+//! [`BrandSpec::validate`]；缺失 / 损坏按品牌粒度跳过并记入 [`Registry::skipped`]，
+//! 只有全部品牌不可用才报 [`RegistryError::NoUsableBrand`]。
 
 pub mod ajazz;
 pub mod dareu;
@@ -28,7 +22,7 @@ use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 use voltnest_provider::ProviderProfile;
 
-/// 全部已知品牌（编译期常量数组）。顺序无关匹配结果：同一 VID:PID 被两品牌同时登记属配置错误，[`Registry::embedded`] 会 panic。
+/// 全部已知品牌。同一 VID:PID 被两个品牌同时登记属配置错误，[`Registry::embedded`] 会 panic。
 pub static BRANDS: &[&BrandSpec] = &[&ajazz::SPEC, &rapoo::SPEC, &dareu::SPEC, &mchose::SPEC];
 
 /// 一个品牌：协议描述 + 已加载的型号表。
@@ -40,10 +34,7 @@ pub struct Brand {
     pub table: DeviceTable,
 }
 
-/// 被跳过的品牌：型号表缺失 / 损坏，因而本次运行不参与匹配。
-///
-/// 跳过是**允许**的（一份坏表不该让其它品牌的设备全消失），但绝不静默：
-/// 每一项都留在 [`Registry::skipped`] 里，由宿主日志 / 诊断页展示。
+/// 被跳过的品牌：型号表缺失 / 损坏，本次运行不参与匹配；跳过项一律保留在 [`Registry::skipped`]。
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SkippedBrand {
     /// 品牌标识（[`BrandSpec::id`]）。
@@ -64,14 +55,14 @@ impl fmt::Display for SkippedBrand {
     }
 }
 
-/// 注册表建立失败：协议描述非法、型号表目录不可用，或**所有**品牌都被跳过。
+/// 注册表建立失败：协议描述非法、型号表目录不可用，或所有品牌都被跳过。
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum RegistryError {
     /// 品牌协议描述非法。
     Spec(SpecError),
     /// 型号表目录无法定位 / 读取。
     Mappings(MappingError),
-    /// 每个品牌的型号表都不可用：一个能服务的品牌都没有，属部署事故而非局部损坏。
+    /// 每个品牌的型号表都不可用：一个能服务的品牌都没有。
     NoUsableBrand {
         /// 被跳过的品牌（按声明顺序）。
         skipped: Vec<SkippedBrand>,
@@ -150,10 +141,8 @@ pub struct Registry {
 impl Registry {
     /// 建立注册表：从型号表目录加载全部型号表，并校验每份品牌描述。
     ///
-    /// 型号表缺失 / 损坏的品牌会被跳过并记入 [`Registry::skipped`]，不会拖垮其它品牌；
-    /// panic 只发生在「目录不可用」或「一个品牌都不可用」这类部署事故上 —— 必须在第一次枚举前
-    /// 暴露，而不是运行几小时后才表现为「一个设备都看不到」。需要优雅处理时用
-    /// [`Registry::try_embedded`]。
+    /// 型号表不可用的品牌被跳过并记入 [`Registry::skipped`]；目录不可用或一个品牌都不可用时
+    /// panic。需要优雅处理时用 [`Registry::try_embedded`]。
     pub fn embedded() -> &'static Self {
         match Self::try_embedded() {
             Ok(registry) => registry,
@@ -161,10 +150,9 @@ impl Registry {
         }
     }
 
-    /// [`Registry::embedded`] 的可失败版本：成功才缓存，失败可在下次调用时重试（例如目录稍后才就位）。
+    /// [`Registry::embedded`] 的可失败版本：成功才缓存，失败可在下次调用时重试。
     ///
-    /// 建立成功但**有品牌被跳过**时，跳过项在这里打一条诊断并保留在 [`Registry::skipped`]：
-    /// 静默跳过会让「某品牌设备不见了」变成无从下手的玄学问题。
+    /// 有品牌被跳过时打一条诊断并保留在 [`Registry::skipped`]。
     pub fn try_embedded() -> Result<&'static Self, RegistryError> {
         static REGISTRY: OnceLock<Registry> = OnceLock::new();
         if let Some(registry) = REGISTRY.get() {
@@ -187,9 +175,7 @@ impl Registry {
 
     /// 用给定品牌列表建立注册表：型号表从默认目录加载。
     ///
-    /// 除顶层描述外，每个品牌的 [`BrandSpec::variants`] 也会逐份校验：变体只在 `route` 里用到，
-    /// 少写一份单测就没人管它的下标越界 —— 而这类错误的表现是「读不出电量」，
-    /// 比启动失败难查一个数量级。
+    /// 每个品牌的 [`BrandSpec::variants`] 也会逐份校验。
     pub fn build(specs: &'static [&'static BrandSpec]) -> Result<Self, RegistryError> {
         Self::build_with(specs, &MappingSet::load()?)
     }

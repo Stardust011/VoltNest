@@ -1,5 +1,5 @@
-//! BLE 调度策略：负缓存、退避、跟踪上限、并发上限。纯逻辑：时间由调用方以单调毫秒传入
-//! （Provider 内部巡检用 `Instant`，不参与对外语义，D10），故全部边界都能用假时钟手动推进测出，无需注入时钟抽象。
+//! BLE 调度策略：负缓存、退避、跟踪上限、并发上限。纯逻辑，时间由调用方以单调毫秒传入，
+//! 不注入时钟抽象，全部边界都可用假时钟推进测出。
 
 use crate::{
     BACKOFF_CAP_MS, CONNECT_TIMEOUT_MS, DISCOVER_TIMEOUT_MS, FAILURES_BEFORE_BACKOFF,
@@ -8,7 +8,7 @@ use crate::{
 use std::collections::BTreeMap;
 use voltnest_provider::ErrorCode;
 
-/// BLE 调度参数。默认值来自实测。
+/// BLE 调度参数。默认值见 `crate` 顶层常量。
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct BlePolicy {
     /// 建链超时。
@@ -166,9 +166,7 @@ impl PolicyBook {
         state.last_error = Some(ErrorCode::ServiceMissing);
     }
 
-    /// 链路丢失（对端断电/超距/系统主动断开）：不算我方失败，只清失败计数与退避。
-    ///
-    /// 若按普通失败计，一台频繁休眠的鼠标几次之后就会被退避 2–10 分钟，再插回来看不到电量。
+    /// 链路丢失（对端断电/超距/系统主动断开）：不计我方失败，只清失败计数与退避。
     pub fn on_link_lost(&mut self, addr: [u8; 6]) {
         let state = self.devices.entry(addr).or_default();
         state.failures = 0;

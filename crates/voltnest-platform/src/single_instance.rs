@@ -1,14 +1,7 @@
 //! 单实例：二次启动唤醒首实例，不新建窗口。
 //!
-//! Windows 用当前用户 Local 命名空间的互斥体 + 命名事件：第二个进程给命名事件发信号后立即退出，
-//! 首实例里等待该事件的线程把已有窗口 show + unminimize + 抢焦点。
-//! 用 Local 而非 Global：多用户同时登录时各自应有一个实例。
-//!
-//! Linux 用 Unix domain socket：首实例 bind + listen（$XDG_RUNTIME_DIR/voltnest.sock，
-//! 缺省 /tmp/voltnest-<uid>.sock），第二个进程 connect 成功后直接退出，首实例的监听线程
-//! 收到连接即触发 activation 回调。
-//!
-//! 两平台一致：拿不到锁一律降级为 Unavailable 而不是阻塞启动——宁可多开一个窗口，也不要打不开。
+//! Windows 用当前用户 Local 命名空间的互斥体 + 命名事件；Linux 用 Unix domain socket。
+//! 两平台一致：拿不到锁一律降级为 `Unavailable`，不阻塞启动。
 
 #[cfg(windows)]
 mod imp {
@@ -33,8 +26,8 @@ mod imp {
         s.encode_utf16().chain(std::iter::once(0)).collect()
     }
 
-    /// windows-sys 0.61 起 HANDLE 是裸指针，默认不 Send；内核句柄实际可跨线程用于
-    /// SetEvent / WaitForSingleObject / CloseHandle，故在此显式承担该保证，仅限本模块使用。
+    /// `windows-sys` 的 `HANDLE` 是裸指针，默认不 `Send`；内核句柄实际可跨线程用于
+    /// `SetEvent` / `WaitForSingleObject` / `CloseHandle`，故在此显式承担该保证，仅限本模块。
     #[derive(Clone, Copy)]
     struct Handle(HANDLE);
 
@@ -176,7 +169,7 @@ mod imp_linux {
     pub const SOCKET_FILE_NAME: &str = "voltnest.sock";
     /// XDG_RUNTIME_DIR 不可用时的回退目录。
     pub const FALLBACK_SOCKET_DIR: &str = "/tmp";
-    /// 监听线程的轮询间隔：非阻塞 accept + 小睡，既能及时响应，又不会空转烧 CPU。
+    /// 监听线程的轮询间隔：非阻塞 accept + 小睡，避免空转。
     const POLL_INTERVAL: Duration = Duration::from_millis(50);
 
     /// 单实例判定结果。
@@ -326,8 +319,7 @@ mod imp_linux {
 
     /// bind + listen，并把文件权限收紧到属主可读写。
     ///
-    /// /tmp 回退路径上没有 0700 目录兜底，收紧权限让别的用户连不进来（只能造成拒绝服务，
-    /// 泄漏不了数据，但能收紧就收紧）。
+    /// `/tmp` 回退目录没有 0700 兜底，收紧权限避免其它用户连接。
     fn bind(path: &Path) -> std::io::Result<UnixListener> {
         let listener = UnixListener::bind(path)?;
         let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));

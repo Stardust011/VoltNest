@@ -1,4 +1,4 @@
-//! Tauri 命令：前端唯一的写入入口。纪律：先改内存、再落盘、最后 Wake 一次快照；不直接碰 `voltnest_hid`/`voltnest_ble`，采集线程只由监管模块管理。
+//! Tauri 命令：前端唯一的写入入口。顺序固定：先改内存、再落盘、最后 Wake 一次快照。
 
 use std::sync::Arc;
 
@@ -116,7 +116,7 @@ pub fn test_notification(app: AppHandle) -> Result<(), String> {
     notification::send_test_notification(&app)
 }
 
-/// 开/关开机自启。返回**注册表实际状态**而非请求值：写 `HKCU\...\Run` 可能被组策略/安全软件拦掉，前端用返回值回拨开关，避免「界面显示已开启、实际不自启」。
+/// 开/关开机自启。返回注册表实际状态而非请求值（写入可能被组策略/安全软件拦掉）。
 #[tauri::command]
 pub fn set_autostart(enabled: bool, shared: State<'_, Arc<HostState>>) -> Result<bool, String> {
     let actual = apply_autostart(enabled)?;
@@ -149,7 +149,7 @@ pub fn show_panel(app: AppHandle) {
     tray::show_main(&app);
 }
 
-/// 收进托盘：隐藏主窗口，进程与采集线程照旧。前端不自己调 `hide()` —— 那样会绕开落盘，最后几秒的电量变化可能丢。
+/// 收进托盘：隐藏主窗口并落盘，进程与采集线程照旧。
 #[tauri::command]
 pub fn hide_to_tray(app: AppHandle, shared: State<'_, Arc<HostState>>) -> Result<(), String> {
     let Some(window) = app.get_webview_window("main") else {
@@ -160,7 +160,7 @@ pub fn hide_to_tray(app: AppHandle, shared: State<'_, Arc<HostState>>) -> Result
     Ok(())
 }
 
-/// 退出程序：交给 `app.exit(0)`，由 `RunEvent::Exit` 统一停监管线程并强制落盘。前端不能走 `close()` —— 宿主的 `prevent_close` 把它截成「收托盘」。
+/// 退出程序：交给 `app.exit(0)`，由 `RunEvent::Exit` 统一停监管线程并强制落盘。
 #[tauri::command]
 pub fn quit_app(app: AppHandle) {
     log::info!("用户从标题栏退出");

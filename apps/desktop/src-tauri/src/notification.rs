@@ -1,7 +1,6 @@
-//! 低电量通知投递。策略判定在 `NotificationBook` 里完成；这里只把「应当发送」变成「真的送出」并把真实结果回填状态机 —— 诊断页区分「系统吞了」与「我们没发」靠的就是这层返回值。不做自动降级：`system` 发不出就记 `failed`，不偷偷改托盘气泡。
+//! 低电量通知投递：策略判定在 `NotificationBook`，这里只负责送出并把真实结果回填状态机（诊断页据此区分「系统吞了」与「我们没发」）。不做自动降级。
 //!
-//! # 为什么 Windows 不用 `tauri_plugin_notification`
-//! 发送方传入的 AUMID 决定 Toast 的应用名与图标；该插件在 Windows 上仅「看起来已安装」才设 AUMID，把 `target\debug|release` 下的进程一律当开发运行、直接不设，于是 `notify-rust` 回落 `Toast::POWERSHELL_APP_ID`：开发时通知顶上是 PowerShell 蓝图标与「Windows PowerShell」标题，与我们的 `HKCU\...\VoltNest.Desktop` 注册无关。这里改用 `tauri-winrt-notification`，AUMID 恒定、图标显式给，开发与安装版看到同一个「VoltNest」。
+//! Windows 不用 `tauri_plugin_notification`（其对 AUMID 的处理会让开发态回落 PowerShell 图标），改用 `tauri-winrt-notification` 固定 AUMID 与图标。
 
 use std::sync::Arc;
 
@@ -77,11 +76,7 @@ pub fn dispatch_notifications(
     }
 }
 
-/// 托盘气泡三态 → 写进 `last_result` 的值（诊断页原样展示，前端不做映射）。
-///
-/// 抽成纯函数是为了能直接测：`UnsupportedPlatform` 必须与 `NoIcon` 分成两个值 ——
-/// 让它们共用 `failed`，用户就会把「这个平台的托盘后端没有 tooltip」读成「托盘里没图标」，
-/// 正是本模块开头那条「诊断页要能分辨『系统吞了』与『我们没发』」要禁止的归因混淆。
+/// 托盘气泡三态 → 写进 `last_result` 的值（`UnsupportedPlatform` 不可并入 `failed`）。
 fn tray_bubble_result(outcome: tray::BubbleOutcome) -> &'static str {
     match outcome {
         tray::BubbleOutcome::Sent => "tray_tooltip",
@@ -90,7 +85,7 @@ fn tray_bubble_result(outcome: tray::BubbleOutcome) -> &'static str {
     }
 }
 
-/// 发送一条 Windows Toast。标题是设备+现象、正文是读数与阈值；Windows 会把 AUMID 解析的「VoltNest」渲染在标题上方，标题本身不重复应用名。
+/// 发送一条 Windows Toast：标题是设备+现象，正文是读数与阈值。
 #[cfg(windows)]
 fn send_toast(_app: &AppHandle, notification: &LowBatteryNotification) -> Result<(), String> {
     toast(
@@ -164,8 +159,7 @@ fn push_diag(
 mod tests {
     use super::*;
 
-    /// 三态必须映射成三个互不相同的值：诊断页只原样展示这个字符串，
-    /// 一旦两档共用一个值，用户就分不清「平台不支持」与「托盘里没图标」。
+    /// 三态必须映射成三个互不相同的值。
     #[test]
     fn tray_bubble_outcomes_map_to_distinct_results() {
         assert_eq!(

@@ -15,9 +15,9 @@ pub const CHAR_GAP_APPEARANCE: u16 = 0x2A01;
 /// Battery Level Status：**只用于诊断展示**，失真，不进入状态机。
 pub const CHAR_BATTERY_LEVEL_STATUS: u16 = 0x2BED;
 
-/// 解析 GAP `0x2A01` Appearance：16 位枚举（`category << 6 | subcategory`），小端序传输。
-/// 只有恰好两个字节才算有效；长度不符即 `None`，绝不补默认值。只做长度与字节序的机械解析，
-/// 语义映射集中在 [`voltnest_provider::classify`]，让「标准数值」与「应用层分类」两件事分开可核对。
+/// 解析 GAP `0x2A01` Appearance：16 位小端序（`category << 6 | subcategory`）。
+///
+/// 只有恰好两个字节才算有效，长度不符即 `None`，不补默认值；语义映射见 [`voltnest_provider::classify`]。
 pub fn parse_appearance(bytes: &[u8]) -> Option<u16> {
     match bytes.len() {
         2 => Some(u16::from_le_bytes([bytes[0], bytes[1]])),
@@ -25,10 +25,10 @@ pub fn parse_appearance(bytes: &[u8]) -> Option<u16> {
     }
 }
 
-/// 解析 `0x2A19` 读数：`[0x64]` → 100%，`[0x00]` → 0%。
+/// 解析 `0x2A19` 读数：单字节值即百分比，`0x00` 是合法的 0%。
 ///
-/// 单字节 `0x00` 是合法的 0% 而非「全零 payload」；HID 侧「全零 payload 判不可读」针对三字节 payload，
-/// 套用在此会把真没电的设备判成不可读。长度 > 1 且全零才按不可读处理。
+/// 空 payload 或多字节全零返回 `EmptyPayload`，其它多字节返回 `MalformedFrame`，
+/// 超过 100 返回 `PercentOutOfRange`。
 pub fn parse_battery_level(bytes: &[u8]) -> Result<Percent, ErrorCode> {
     if bytes.is_empty() {
         return Err(ErrorCode::EmptyPayload);
@@ -42,8 +42,9 @@ pub fn parse_battery_level(bytes: &[u8]) -> Result<Percent, ErrorCode> {
     Percent::new(bytes[0]).ok_or(ErrorCode::PercentOutOfRange)
 }
 
-/// 解析 GAP `0x2A00` 设备名：去尾部 NUL 与首尾空白。
-/// `model_name_raw` 原文由 Provider 上报，`modelKey` 归一化只在宿主做；此处只为避免填充字节进入展示名。
+/// 解析 GAP `0x2A00` 设备名：截断到首个 NUL、去首尾空白，空串返回 `None`。
+///
+/// 只做展示名清洗，不做 `modelKey` 归一化（由宿主完成）。
 pub fn parse_device_name(bytes: &[u8]) -> Option<String> {
     let text: String = bytes
         .iter()

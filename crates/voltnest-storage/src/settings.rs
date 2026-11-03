@@ -1,8 +1,7 @@
 //! `settings.json`：用户资产（阈值档位、通知方式、自启、托盘顺序与隐藏列表）。
 //!
-//! 规则：带整数 `schemaVersion`；未知字段读入后原样保留
-//! （`#[serde(flatten)]` 收进 `extra`），降级运行不静默清空；损坏或版本过高时备份 → 默认值启动 →
-//! 诊断告警，绝不阻塞启动；配置不出现任何毫秒值，只存档位字符串。
+//! 规则：带整数 `schemaVersion`；未知字段原样保留（`extra`）；损坏或版本过高时备份 → 默认值启动 →
+//! 诊断告警，绝不阻塞启动；只存档位字符串，不存毫秒值。
 
 use crate::SCHEMA_VERSION;
 use crate::atomic::{archive_corrupt, read_optional, write_json_atomic};
@@ -67,9 +66,7 @@ pub struct TraySettings {
 pub struct Settings {
     /// 整数 schema 版本。
     pub schema_version: u32,
-    /// 阈值档位字符串（`sensitive` / `standard` / `loose`）。
-    ///
-    /// 存字符串而不是枚举，是为了让未知值能安全回落到标准档而不是解析失败。
+    /// 阈值档位字符串（`sensitive` / `standard` / `loose`）；存字符串以便未知值安全回落标准档。
     pub sensitivity: String,
     /// 通知设置。
     pub notifications: NotificationSettings,
@@ -102,8 +99,7 @@ impl Default for Settings {
 }
 
 impl Settings {
-    /// 损坏恢复 / 版本过高时用于重建的默认值：
-    /// `onboardingCompleted = true`，避免每次启动都弹一次引导。
+    /// 损坏恢复 / 版本过高时用于重建的默认值：`onboardingCompleted = true`，避免重复弹引导。
     pub fn recovered() -> Self {
         Self {
             onboarding_completed: true,

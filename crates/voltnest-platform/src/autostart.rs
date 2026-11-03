@@ -1,11 +1,6 @@
 //! 开机自启：Windows 写 HKCU 的 Run 项，Linux 写 XDG Autostart 条目。
 //!
-//! Windows：HKCU\Software\Microsoft\Windows\CurrentVersion\Run 下的 VoltNest 值，由系统在登录后拉起。
-//! Linux：$XDG_CONFIG_HOME/autostart/voltnest.desktop（缺省 ~/.config/autostart/），
-//! 由桌面环境的 XDG Autostart 实现按条目里的 Exec 拉起进程。
-//!
-//! 永不默认开启，仅用户在引导页或设置页显式勾选才写入；卸载须清除；改动立即生效。
-//! 命令恒带 --autostart，但首屏显隐与手动启动一致，统一由「启动时最小化到托盘」决定。
+//! 永不默认开启，仅用户显式勾选才写入；卸载须清除。命令恒带 `--autostart`。
 
 use std::path::{Path, PathBuf};
 
@@ -23,7 +18,7 @@ pub const DISPLAY_NAME: &str = "VoltNest";
 
 /// 生成注册表命令 `"路径" --autostart`。
 ///
-/// 路径可能含空格（用户可改安装目录）故按需加引号；结尾多余反斜杠会转义引号，先削掉。
+/// 路径可能含空格故按需加引号；结尾多余反斜杠会转义引号，先削掉。
 pub fn run_command(exe: &Path) -> String {
     let mut path = exe.display().to_string();
     if !path.contains(' ') && !path.contains('\t') {
@@ -38,10 +33,8 @@ pub fn run_command(exe: &Path) -> String {
 /// Exec 参数里必须加双引号的保留字符（Desktop Entry 规范 3.3 节）。
 const EXEC_RESERVED: &str = " \t\n\"'\\><~|&;$*?#()`";
 
-/// 单个 Exec 参数按 Desktop Entry 规范转义。
-///
-/// 含保留字符时整体加双引号，引号内的 " ` $ \ 再各自转义；% 一律写成 %%（否则会被当成域代码，
-/// 例如 %f）；字面反斜杠写四个——值级转义先把一个反斜杠变成两个，Exec 级再各转义一次。
+/// 单个 Exec 参数按 Desktop Entry 规范转义：含保留字符时整体加双引号，
+/// 引号内的 `"` `` ` `` `$` `\` 再各自转义，`%` 一律写成 `%%`。
 fn escape_exec_arg(arg: &str) -> String {
     let plain = !arg.is_empty() && !arg.chars().any(|c| EXEC_RESERVED.contains(c));
     if plain {
@@ -67,8 +60,8 @@ fn escape_exec_arg(arg: &str) -> String {
 
 /// 生成 .desktop 条目内容（纯函数，便于测试）。
 ///
-/// Exec 指向当前可执行文件并恒带 --autostart；X-GNOME-Autostart-enabled=true 让 GNOME 系桌面
-/// 不会因为用户此前在「启动应用程序」里手动禁用过而忽略本条目。
+/// Exec 指向当前可执行文件并恒带 `--autostart`；`X-GNOME-Autostart-enabled=true`
+/// 避免条目被 GNOME 的既有禁用记录忽略。
 pub fn desktop_entry(exe: &Path) -> String {
     let exec = format!(
         "{} {}",
@@ -133,7 +126,7 @@ pub fn exec_value(content: &str) -> Option<String> {
 
 /// Exec 值里的第一个参数（可执行文件路径），按规范去掉引号与转义。
 ///
-/// 只用来回读本模块写出的条目，因此不展开 %f/%u 之类的域代码——本项目从不写它们。
+/// 只用于回读本模块写出的条目，故不展开 `%f` / `%u` 等域代码。
 pub fn exec_program(exec: &str) -> Option<String> {
     let chars: Vec<char> = exec.chars().collect();
     let mut i = 0;
@@ -195,9 +188,6 @@ pub fn is_enabled() -> bool {
 }
 
 /// 是否已启用（Linux）：条目存在且 Exec 指向当前可执行文件。
-///
-/// 只判存在会把「装到旧路径的遗留条目」也算成已启用，界面就会说谎：条目在但指向别的可执行文件，
-/// 下次登录拉起的是那个程序，不是本进程。
 #[cfg(target_os = "linux")]
 pub fn is_enabled() -> bool {
     let Some(path) = desktop_path() else {
@@ -245,7 +235,7 @@ pub fn enable(exe: &Path) -> std::io::Result<()> {
 
 /// 写入自启条目（Linux）。
 ///
-/// 先写临时文件再 rename：桌面环境随时可能读这个目录，半截条目会被当成坏条目。
+/// 先写临时文件再 rename，避免桌面环境读到半截条目。
 #[cfg(target_os = "linux")]
 pub fn enable(exe: &Path) -> std::io::Result<()> {
     let path = desktop_path().ok_or_else(|| {
@@ -262,7 +252,7 @@ pub fn enable(exe: &Path) -> std::io::Result<()> {
     std::fs::rename(&tmp, &path)
 }
 
-/// 其它平台报错，不静默假装成功。
+/// 其它平台返回 `Unsupported` 错误，不静默假装成功。
 #[cfg(all(not(windows), not(target_os = "linux")))]
 pub fn enable(_exe: &Path) -> std::io::Result<()> {
     Err(std::io::Error::new(

@@ -1,67 +1,9 @@
-//! BLE Provider 运行时：1 协调线程 + 2 I/O 执行器。
+//! BLE Provider 运行时：1 个协调线程 + 2 个 I/O 执行器，per-device 状态只归协调线程所有。
 //!
-//! 线程数依据：单线程巡检最坏 8×(4s 建链+3s 发现+2s 读取)=72s，已超 60s 保底周期；2 执行器最坏 4×9s=36s，留余量。`MAX_CONCURRENT == IO_WORKERS == 2`，无需额外信号量。
-//!
-//! 行为约束：
-//! - **只跟随不拉起**：仅枚举「Windows 已连接」的设备建会话；对已配对未连接设备调 `connect()` 实测 7.97s 才失败。
-//! - **断链事件优先、巡检兜底**：链路断开由 `CentralEvent::DeviceDisconnected` 实时上报，
-//!   60s 巡检只负责「漏事件时最终一致」与「发现新设备」，见下文《实时断链检测》。
-//! - **枚举必须走 `retrieve_peripherals`**：`Adapter::peripherals()` 只返回本次会话**扫描到的广播设备**
-//!   （btleplug WinRT 后端的 manager 缓存，由 `start_scan` 填充），已连接设备通常不再广播 → 恒为空。
-//!   实测同一台鼠标：`peripherals()` = 0 台，`retrieve_peripherals(services=[0x180F])` = 1 台。
-//!   （以上是 Windows/WinRT 的结论；bluez 的枚举来源完全不同，见下方复核表。）
-//! - **只读**：只 READ + 订阅 `0x2A19`，不写特征、不触发配对。
-//! - **负缓存**：无 `0x180F` 的设备 30 分钟内不再摸。
-//! - **名称只取 GAP `0x2A00`**：不用 Windows 缓存的 `local_name`，也不用 bluez 的 `Device1.Alias`
-//!   （两者都是用户可改的系统级名字）。
-//!
-//! # 实时断链检测
-//!
-//! 检测原理：链路一断，系统链路层（supervision timeout 到期或收到 HCI Disconnect Complete）就会
-//! 把「已连接」状态翻成 false，btleplug 把这个变化翻成 `CentralEvent::DeviceDisconnected`，
-//! 经 `adapter.events()` 送到这里 → 去抖 → `ProviderEvent::LinkLost`。60s 巡检保留为兜底，
-//! 于是「实时性」的定义是「链路一断就收到通知」，而不是「亚秒级」——后者受限于链路层，任何库都给不了。
-//!
-//! 事件桥只在**协调线程之外**的一个 task 里 drain，原因：事件流容量有限且无重放
-//! （Windows/Android 是 `broadcast(16)`，lag 的事件被静默丢弃），drain 侧不能有任何阻塞工作。
-//!
-//! 各后端语义差异（决定谁能收到事件，见 `spawn_event_bridge` 的注释）：
-//!
-//! | 后端 | 事件来源 | 覆盖范围 |
-//! | --- | --- | --- |
-//! | Windows / WinRT | `BluetoothLEDevice.ConnectionStatusChanged`，在 `connect()` 内注册 | **仅有本进程 `connect()` 过的设备** |
-//! | Linux / bluez | bluer 的 `Device1.Connected` 属性变更 | 系统级，含别的进程连的设备 |
-//!
-//! 因此：① 任何平台都必须对本会话跟踪的设备调过 `connect()`，否则 Windows 收不到事件；
-//! ② bluez 的事件可能指向本进程从未跟踪的地址，必须按会话表过滤；
-//! ③ 事件只做「变化通知」，设备清单仍然只能来自 `retrieve_peripherals`（bluez 会回放已连接设备，Windows 不会，
-//!    二者不可互换）。
-//!
-//! 重连策略：不主动拉起。断链后清掉会话与策略计数（`PolicyBook::on_link_lost`，不计失败、不进退避），
-//! 等系统自己把设备重连回来，由下一轮枚举重新建会话；系统重连发生在去抖窗口内时，直接吞掉这次断链，不对外发事件。
-//!
-//! # 设备类型识别（与电量采集解耦）
-//! 证据只来自本会话已做的事：服务发现 + 一次 GAP `0x2A01` 只读，故不额外建链、不订阅、不写特征。
-//! - Appearance 与名称并发读（`tokio::join!`），共用单次读超时；失败/缺失当「未取得」，不影响 `Ready`。
-//! - 判定是纯函数 `classify_ble`，在协调线程做，会话只回传原始证据。
-//! - 广播的 `manufacturer_data` / `local_name` 不参与判定：前者无协议文档，后者是用户可改的系统缓存名。
-//!
-//! # Windows 语义在 bluez 后端下的复核（逐条对应实现处的 cfg 注释）
-//!
-//! 依据 btleplug 0.13.5 源码（src/bluez/*、src/api/mod.rs）与 BlueZ Device1 API 推定；
-//! 当前环境（WSL2，无适配器、bluetoothd 未运行）**无法真机实测**，故只把源码可直接证实的差异
-//! 写成平台分支，其余平台共用同一套逻辑。
-//!
-//! | Windows 既有语义 | bluez 下是否成立 | 本文件的做法 |
-//! | --- | --- | --- |
-//! | 枚举必须走 retrieve_peripherals；peripherals() 只回放本次扫描的广播 | **不成立**：bluez 的 peripherals() 直接查 bluetoothd 的 ObjectManager，返回全部已知设备（含未连接） | 仍用 retrieve_peripherals，但 bluez 侧不带服务选择器，改由 is_connected() 过滤 → 「只跟随已连接」 |
-//! | 选择器带 services=[0x180F] 即「已连接且有电池服务」 | **只部分成立**：bluez 的 Device1.UUIDs 只在 bluetoothd 解析过服务后才含 0x180F，首次枚举可能为空 → 电池设备会被永久排除 | 不把服务当选择器；UUIDs 非空且不含 0x180F 的直接跳过（不打扰用户已连的手机/耳机），为空则留给会话内服务发现判定 |
-//! | 名称只取 GAP 0x2A00，不用 local_name（Windows 注册表缓存名） | **成立且更必要**：bluez 的 Device1.Alias 同样是用户可改的系统级名字 | 不分平台，一律读 0x2A00，读不到留空 |
-//! | 读取一律 Uncached，缓存值不进状态机 | **结论成立、机制不同**：bluez 的 read() → Characteristic1.ReadValue，由 bluetoothd 现场执行 ATT 读，不存在 WinRT 那层 GATT 缓存 | 无需额外参数；CachedValueRejected 在 bluez 侧不会被触发 |
-//! | manager 缓存由 start_scan 填充 | **不成立**：bluez 没有这层缓存，本模块也从不 start_scan | 无影响 |
-//! | 已连接设备重复 connect() 是幂等 no-op | **不成立**：bluez 对已连接设备再 Connect 返回 org.bluez.Error.AlreadyConnected | 先 is_connected()，已连接则跳过 connect()；失败清理只断开自己建立的链路 |
-//! | 发现失败 = 无服务，直接负缓存 30 分钟 | **不成立**：bluez 的 discover_services() 读的是已解析的服务树，未解析时为空集，与「没有 0x180F」是两件事 | 服务列表为空时不进负缓存，按 IoTimeout 退避重试 |
-//! | `DeviceDisconnected` 只覆盖本进程连的设备 | **不成立**：bluez 是 `Device1.Connected` 属性变更，系统级，含别的进程连的设备 | 事件入协调线程前按会话表过滤，未跟踪地址直接丢弃 |
+//! 只跟随不拉起：仅枚举系统已连接的设备，只读 `0x2A19` 与 GAP `0x2A00`，不写特征、不触发配对；
+//! 断链由 `CentralEvent::DeviceDisconnected` 实时上报，60s 巡检只做兜底与新设备发现。
+//! Windows（WinRT）与 Linux（bluez）在枚举来源、`connect()` 幂等性、事件覆盖范围与失败清理上语义不同，
+//! 差异逐条写在对应实现的 `cfg` 分支注释里；新增平台需逐条核对 btleplug 各后端语义。
 
 use crate::bas;
 use crate::policy::{Admission, BlePolicy, PolicyBook};
@@ -91,28 +33,25 @@ use voltnest_provider::{
     classify_ble, hex_bytes,
 };
 
-/// 后端不可用时写进 `detail` 的平台提示：诊断页要能直接告诉用户该查什么。
+/// 后端不可用时写进 `detail` 的平台提示，供诊断页直接告诉用户该查什么。
 #[cfg(target_os = "linux")]
 const PLATFORM_HINT: &str = "（Linux/bluez：需 bluetoothd 运行且系统 dbus 可用；当前用户需在 bluetooth 组或有 polkit 授权；无适配器时请检查 rfkill / WSL2 蓝牙直通）";
 
-/// 后端不可用时写进 `detail` 的平台提示：诊断页要能直接告诉用户该查什么。
+/// 后端不可用时写进 `detail` 的平台提示，供诊断页直接告诉用户该查什么。
 #[cfg(target_os = "windows")]
 const PLATFORM_HINT: &str = "（Windows：请检查蓝牙服务是否运行、适配器是否启用）";
 
-/// 失败清理时是否可以断开链路。
-///
-/// Windows：列表里的设备一律由本会话 `connect()`（对已连接设备是 no-op），沿用既有的「失败即断开」行为；
-/// bluez：链路是系统级共享的，把用户正在用的耳机/手机踢下线是破坏性副作用，故只断开自己建立的链路。
+/// 失败清理时是否可以断开链路（Windows：列表内设备均由本会话 `connect()`，允许断开）。
 #[cfg(target_os = "windows")]
 const DISCONNECT_SHARED_LINKS: bool = true;
 
-/// 失败清理时是否可以断开链路，见同名的 Windows 定义。
+/// 失败清理时是否可以断开链路（bluez：链路系统级共享，只断开自己建立的）。
 #[cfg(target_os = "linux")]
 const DISCONNECT_SHARED_LINKS: bool = false;
 
 /// Provider 启动/运行期的结构化失败：`run` 把它原样转成 `ProviderEvent::TransportDown`。
 ///
-/// 不 panic、不静默返回：宿主只按错误码分类，`detail` 进诊断页与日志。
+/// 不 panic、不静默返回；宿主只按 `code` 分类，`detail` 进诊断页与日志。
 #[derive(Debug)]
 struct TransportFailure {
     code: ErrorCode,
@@ -127,8 +66,8 @@ impl TransportFailure {
         }
     }
 
-    /// btleplug 错误 → 结构化失败。权限被拒（polkit / 不在 bluetooth 组）单独区分，
-    /// 其余归 `Internal`——宿主只做分类，可读原因留在 `detail` 里。
+    /// btleplug 错误 → 结构化失败：权限被拒映射为 `AccessDenied`，其余归 `Internal`，
+    /// 可读原因留在 `detail` 里。
     fn from_btleplug(context: &str, e: &btleplug::Error) -> Self {
         let code = match e {
             btleplug::Error::PermissionDenied => ErrorCode::AccessDenied,
@@ -238,11 +177,11 @@ enum BleSessionEvent {
 
 struct SessionHandle {
     task: tokio::task::JoinHandle<()>,
-    /// 去抖窗口到期后用来复核「是否真的还断着」；`is_connected()` 在 `connect()` 之后才可信。
+    /// 去抖窗口到期后用来复核「是否真的还断着」。
     peripheral: Peripheral,
 }
 
-/// 协调线程退出时（含 `?` 提前返回）必须停掉事件桥，否则会一直持有事件流。
+/// 协调线程退出时（含 `?` 提前返回）停掉事件桥，避免一直持有事件流。
 struct AbortOnDrop(tokio::task::JoinHandle<()>);
 
 impl Drop for AbortOnDrop {
@@ -251,12 +190,10 @@ impl Drop for AbortOnDrop {
     }
 }
 
-/// 事件桥：全进程唯一的事件流消费者。
+/// 事件桥：全进程唯一的事件流消费者，只做「取 `PeripheralId` → 转发」。
 ///
-/// 只做「取 `PeripheralId` → 转发」，不要在 drain 循环里做任何耗时工作：
-/// Windows/Android 的事件是 `broadcast(16)`，消费者慢了会 lag，而 lag 错误被 btleplug 静默丢弃。
-///
-/// 事件流结束（后端重启、dbus 断流）后自动重订阅：实时检测不能因为一次断流就永久退化成巡检。
+/// drain 循环里不能有阻塞或耗时工作（事件流容量有限、lag 会被静默丢弃）；
+/// 事件流结束后自动重订阅，避免实时检测永久退化成巡检。
 fn spawn_event_bridge(
     adapter: Adapter,
     tx: tokio_mpsc::UnboundedSender<BleSessionEvent>,
@@ -303,10 +240,8 @@ fn spawn_event_bridge(
 
 /// 事件里的 `PeripheralId` → 本会话跟踪的地址。
 ///
-/// 不能直接用 `PeripheralId` 转地址：WinRT 的 `address()` 是 `pub(crate)`（外部拿不到），
-/// bluez 的 `PeripheralId` 里根本没有 MAC（只有 `DeviceId`）。也不能调 `adapter.peripheral(&id)`：
-/// WinRT 后端在 emit `DeviceDisconnected` 之前就把它从 manager 表里删掉了，反查必然失败。
-/// 故只能拿会话表的 `Peripheral::id()` 反查（≤ `MAX_TRACKED` 台，线性扫描足够）。
+/// 不能靠地址转换或 `adapter.peripheral(&id)` 反查，只能线性扫描会话表比对 `Peripheral::id()`
+/// （≤ `MAX_TRACKED` 台，足够）。
 fn addr_of(sessions: &HashMap<[u8; 6], SessionHandle>, id: &PeripheralId) -> Option<[u8; 6]> {
     sessions
         .iter()
@@ -314,18 +249,14 @@ fn addr_of(sessions: &HashMap<[u8; 6], SessionHandle>, id: &PeripheralId) -> Opt
         .map(|(addr, _)| *addr)
 }
 
-/// 去抖到期后的判定：只有**明确读到仍然连接**才放弃上报。
-///
-/// 读失败/超时按断链处理——`DeviceDisconnected` 是比一次查询更强的证据（bluez 侧查询可能刚好撞上 dbus 抖动）。
+/// 去抖到期后的判定：只有**明确读到仍然连接**才放弃上报；读失败/超时按断链处理。
 fn keep_link(reconnected: Option<bool>) -> bool {
     matches!(reconnected, Some(true))
 }
 
-/// 协调线程：枚举、策略裁决、事件映射。独占全部 per-device 状态。
+/// 协调线程：枚举、策略裁决、事件映射，独占全部 per-device 状态。
 ///
-/// `poll_ms` 只决定**读数**节奏（会话内的兜底轮询），`presence_ms` 决定**枚举**节奏。
-/// 两者必须分开：枚举是「设备在不在」的唯一来源（Windows 下连系统级连接事件都收不到），
-/// 若跟着 60s 走，用户连上蓝牙后要等一分钟才看得见设备。
+/// `poll_ms` 只决定**读数**节奏，`presence_ms` 决定**枚举**节奏，两者必须分开。
 async fn coordinator(
     tx: Sender<ProviderEvent>,
     stop: Arc<AtomicBool>,
@@ -594,9 +525,7 @@ async fn coordinator(
     Ok(())
 }
 
-/// 候选设备枚举。
-///
-/// Windows：必须用 `retrieve_peripherals` 的「已连接 + 含 `0x180F`」选择器（WinRT 的已连接设备选择器）。
+/// 候选设备枚举：`retrieve_peripherals` 的「已连接 + 含 `0x180F`」选择器（WinRT 的已连接设备选择器）。
 #[cfg(target_os = "windows")]
 async fn candidate_peripherals(adapter: &Adapter) -> Result<Vec<Peripheral>, btleplug::Error> {
     adapter
@@ -607,11 +536,9 @@ async fn candidate_peripherals(adapter: &Adapter) -> Result<Vec<Peripheral>, btl
         .await
 }
 
-/// 候选设备枚举。
+/// 候选设备枚举：取全量已知设备 → 按 `Device1.Connected` 过滤 → 按 `UUIDs` 排除明确非电池设备。
 ///
-/// bluez：`Device1.Connected` 才是「已在链上」的权威判据，而 `Device1.UUIDs` 只在 bluetoothd
-/// 解析过服务后才含 `0x180F`，把它当选择器会让电池设备在首次枚举时被永久排除（详见模块文档复核表）。
-/// 故这里取全量已知设备 → 本地按「已连接」过滤 → 再按 `UUIDs` 排除明确不是电池设备的设备。
+/// bluez 的 `Device1.UUIDs` 在服务解析前为空，当选择器会永久排除电池设备，故不用服务选择器。
 #[cfg(target_os = "linux")]
 async fn candidate_peripherals(adapter: &Adapter) -> Result<Vec<Peripheral>, btleplug::Error> {
     let all = adapter
@@ -626,11 +553,9 @@ async fn candidate_peripherals(adapter: &Adapter) -> Result<Vec<Peripheral>, btl
     Ok(connected)
 }
 
-/// 已连接的设备是否值得建会话。
+/// 已连接的设备是否值得建会话：`UUIDs` 已解析且不含 `0x180F` 则跳过，为空（尚未解析）则放行。
 ///
-/// bluez 的 `UUIDs` 已解析且不含 `0x180F` → 不是电池设备，直接跳过：不去读它的特征，
-/// 更不会在失败清理时打扰用户正在用的耳机/手机。`UUIDs` 为空 = 尚未解析，交给会话内服务发现判定。
-/// Windows 侧同样的筛选由 `retrieve_peripherals` 的选择器完成，故本函数只在 Linux 编译。
+/// 只在 Linux 编译；Windows 侧同样的筛选由 `retrieve_peripherals` 的选择器完成。
 #[cfg(target_os = "linux")]
 async fn worth_probing(p: &Peripheral) -> bool {
     match p.properties().await {
@@ -733,7 +658,7 @@ async fn cleanup_link(peripheral: &Peripheral, already_connected: bool) {
 
 /// 单设备会话：建链 → 发现服务 → 读名称 → 订阅通知 → 保底轮询。
 ///
-/// 它是**无状态执行器**：只回传结果，不写任何共享状态（D6）。
+/// 它是**无状态执行器**：只回传结果，不写任何共享状态。
 async fn session_task(
     peripheral: Peripheral,
     addr: [u8; 6],
@@ -978,8 +903,7 @@ async fn poll_once(
     }
 }
 
-/// 读取 `0x2A19`。btleplug 在 Windows 上走 `ReadValueAsync`（非缓存读取路径），
-/// 因此返回值不是 GATT 缓存；缓存值只允许出现在诊断页。
+/// 读取 `0x2A19`（走非缓存读取路径，返回值不是 GATT 缓存）。
 async fn read_battery(
     peripheral: &Peripheral,
     ch: &btleplug::api::Characteristic,
@@ -998,9 +922,6 @@ fn uuid16(short: u16) -> Uuid {
 }
 
 /// 完整 UUID → SIG 16 位短 UUID；非 SIG 分配（厂商 128 位）返回 `None`。
-///
-/// 服务发现会同时返回标准服务与厂商自定义服务，证据里只收标准短 UUID，
-/// 避免把私有 UUID 当成「标准服务」参与说明。
 fn sig_u16(uuid: &Uuid) -> Option<u16> {
     const SIG_BASE_LOW: u128 = 0x0000_1000_8000_0080_5f9b_34fb;
     const LOW_96_MASK: u128 = 0x0000_0000_ffff_ffff_ffff_ffff_ffff_ffff;
@@ -1009,10 +930,9 @@ fn sig_u16(uuid: &Uuid) -> Option<u16> {
     (short <= 0xffff && (raw & LOW_96_MASK) == SIG_BASE_LOW).then_some(short as u16)
 }
 
-/// 读取一个可选特征：特征缺失、无 READ 属性、超时、读失败一律 `None`。
+/// 读取一个可选特征：特征缺失、无 READ 属性、超时或读失败一律 `None`。
 ///
-/// 「读不到」与「读到空值」必须区分开：这里返回 `None` 后，调用方走
-/// 「未取得」分支（分类里的证据会写明原因），绝不补默认值。
+/// 「读不到」与「读到空值」必须区分开，返回 `None` 后由调用方走「未取得」分支，绝不补默认值。
 async fn read_optional(
     peripheral: &Peripheral,
     ch: Option<&btleplug::api::Characteristic>,
@@ -1032,7 +952,7 @@ async fn read_optional(
 mod tests {
     use super::*;
 
-    /// 权限被拒必须与「后端不可用」区分开：前者只能靠用户改权限解决。
+    /// 权限被拒映射为 `AccessDenied`，其它错误归 `Internal`。
     #[test]
     fn permission_denied_maps_to_access_denied() {
         let failure =
@@ -1054,7 +974,7 @@ mod tests {
         );
     }
 
-    /// 去抖到期后只有「明确仍连接」才取消上报：读失败不能当成还连着。
+    /// 去抖到期后只有「明确仍连接」才取消上报。
     #[test]
     fn keep_link_only_trusts_explicit_true() {
         assert!(keep_link(Some(true)));
@@ -1062,7 +982,7 @@ mod tests {
         assert!(!keep_link(None), "查询失败按断链处理");
     }
 
-    /// bluez 的候选筛选：UUIDs 为空 = 尚未解析，必须放行；已解析且不含 0x180F 才排除。
+    /// 候选筛选：`UUIDs` 为空视为尚未解析必须放行，已解析且不含 `0x180F` 才排除。
     #[test]
     fn worth_probing_uses_battery_service_when_uuids_known() {
         assert!(worth_probing_uuids(&[]), "UUIDs 未解析时不得排除设备");

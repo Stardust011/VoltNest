@@ -1,9 +1,6 @@
-//! Windows Toast 图标落盘。Windows 的 `appLogoOverride` 与 AUMID 的 `IconUri` 只认磁盘真实图片、不认 exe 内嵌资源；安装目录运行时只读，故把打包的 128×128 PNG 幂等落到数据目录。图标缺失非致命：Toast 照发，头图回落 AUMID 解析结果。
+//! Windows Toast 图标落盘。`appLogoOverride` 只认磁盘图片、不认 exe 内嵌资源，故把 128×128 PNG 幂等写到数据目录。图标缺失非致命：Toast 照发。
 //!
-//! 平台归属：**Windows 落盘并缓存；其他平台不落盘**（`init` 是真空操作，直接返回 `None`）。
-//! Linux 走 `tauri-plugin-notification`（libnotify），应用名与图标由 `.desktop` 的
-//! `Icon=` / `Name=` 解析，没有「把 PNG 路径交给系统」这一步；数据目录里留一个没人读的
-//! Windows 资产，只会让用户和后续维护者误判这里存在 Linux 路径。
+//! 平台归属：Windows 落盘并缓存；其他平台 `init` 是空操作，直接返回 `None`（图标由 `.desktop` 解析）。
 
 #[cfg(any(windows, test))]
 use std::fs;
@@ -35,20 +32,13 @@ pub fn init(_root: &Path) -> Option<PathBuf> {
     None
 }
 
-/// 已落盘的图标路径（`init` 之前调用得到 `None`）。
-///
-/// 唯一的消费方是 Windows Toast 的 `appLogoOverride`：它只认磁盘上的图片文件。
-/// 非 Windows 平台（`tauri-plugin-notification` → libnotify）由桌面环境按
-/// `.desktop` 的 `Icon=` / `Name=` 解析应用名与图标，没有「把 PNG 路径交给系统」
-/// 这一步，所以这个函数在那些平台上不存在。
+/// 已落盘的图标路径（`init` 之前调用得到 `None`）。仅 Windows Toast 消费。
 #[cfg(windows)]
 pub fn path() -> Option<&'static Path> {
     CACHE.get().and_then(|cached| cached.as_deref())
 }
 
-/// 内容不同才写，避免每次启动都碰一次磁盘。
-///
-/// 只在 Windows 编译；`test` 下也编译，好让落盘契约（幂等/自愈）与平台无关地直接测。
+/// 内容不同才写。`test` 下也编译，便于直接测落盘契约。
 #[cfg(any(windows, test))]
 fn write(root: &Path) -> std::io::Result<PathBuf> {
     let target = root.join(FILE_NAME);

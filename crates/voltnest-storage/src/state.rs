@@ -1,8 +1,7 @@
 //! `state.json`：可丢弃缓存（设备最后已知电量、时间、路径、通知冷却与 `armed`）。
 //!
-//! 规则：写入节流 5s，退出、隐藏到托盘、状态退化时由宿主强制 flush；
-//! 随时删除功能不受影响，只失去启动回填（有自动化测试，不靠人工记得）；按 `stableId` 条目超 32 条时
-//! 淘汰最久未出现项（地址轮换产生的孤儿）。
+//! 写入节流 5s，退出、隐藏到托盘、状态退化时由宿主强制 flush；随时删除不影响功能，只失去启动回填；
+//! 按 `stableId` 条目超 32 条时淘汰最久未出现项（地址轮换产生的孤儿）。
 
 use crate::SCHEMA_VERSION;
 use crate::atomic::{archive_corrupt, read_optional, write_json_atomic};
@@ -119,9 +118,7 @@ impl StateFile {
         }
     }
 
-    /// 按 `lastSeenAt` 淘汰最久未出现的条目，保留 `limit` 条。
-    ///
-    /// 这是「地址轮换产生的孤儿交给 32 条上限」的落地。
+    /// 按 `lastSeenAt` 淘汰最久未出现的条目，保留 `limit` 条（针对地址轮换产生的孤儿）。
     pub fn prune(&mut self, limit: usize) {
         if self.devices.len() <= limit {
             return;

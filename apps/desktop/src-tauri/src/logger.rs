@@ -1,11 +1,11 @@
-//! 极简文件日志（`%APPDATA%\VoltNest\logs\voltnest.log`）。不引入 `tauri-plugin-log`：其目录 `%APPDATA%\<identifier>\logs` 会与本应用的数据根分叉、多写一个目录。只需「出问题时拿到时间线」，三十行足够。时间戳一律走 `clock::now_utc_ms()`（全仓唯一时间源）。
+//! 极简文件日志（`%APPDATA%\VoltNest\logs\voltnest.log`），时间戳走 `clock::now_utc_ms()`。
 
 use std::fs::{File, OpenOptions};
 use std::io::Write;
 use std::path::Path;
 use std::sync::Mutex;
 
-/// 超过该大小就在启动时截断：这是诊断日志，不是审计日志。
+/// 超过该大小就在启动时截断（诊断日志，不是审计日志）。
 const MAX_BYTES: u64 = 4 * 1024 * 1024;
 
 /// 日志文件名。
@@ -50,7 +50,7 @@ impl log::Log for FileLogger {
     }
 }
 
-/// 初始化全局日志。目录不存在时静默降级为「不写日志」，绝不阻塞启动。
+/// 初始化全局日志。目录不可写时降级为不写日志。
 pub fn init(logs_dir: &Path) {
     let path = logs_dir.join(LOG_FILE);
     let _ = std::fs::create_dir_all(logs_dir);

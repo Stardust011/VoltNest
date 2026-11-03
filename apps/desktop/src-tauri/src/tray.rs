@@ -1,20 +1,8 @@
-//! 托盘图标：每个可见设备一个环形电量图。
+//! 托盘图标：每个可见设备一个环形电量图（32×32 RGBA 手工光栅化，配色与前端 `batteryColor()` 一致）。
 //!
-//! 设备图标用 32×32 RGBA 手工光栅化，不引入图形渲染依赖；语义与前端 `batteryColor()` 一一对应：在线主题色、<20% 橙、<10% 红、充电绿弧加环心闪电、等待读数蓝、过期琥珀、读取失败橙，离线但物理存在时为灰环加横线。图标**存在性只由物理存在决定**：`visibleDeviceIds` 已由核心按 `present && !hidden` 截断到 4 个算好，这里只跟随、不二次判断。
+//! 没有设备图标时露基础图标（应用图标），有设备图标就让位；设备全部离线时也回到应用图标。每张图标挂同一份菜单（打开面板 / 退出）。
 //!
-//! # 平台差异（Linux 托盘走 libayatana-appindicator / StatusNotifierItem）
-//! - `set_tooltip` 在该后端是**空实现**（`tray-icon` 直接返回 `Ok`，Tauri 文档标注
-//!   「Linux: Unsupported」）：设备 tooltip 与基础图标的汇总 tooltip 都不显示；
-//!   「气泡模式」在那里返回 [`BubbleOutcome::UnsupportedPlatform`]，诊断页记
-//!   `unsupported_platform`（与「没有落脚图标」的 `failed` 分开），而不是一条假的 `tray_tooltip`。
-//! - `TrayIconEvent` 在 Linux 不派发（同样标注 Unsupported）：左键点图标开面板只在
-//!   Windows 生效；Linux 上打开面板走每张图标都带的菜单项。
-//! - `show_menu_on_left_click(false)` 在 Linux 无效：点击由 AppIndicator 自己弹菜单，
-//!   菜单内容与 Windows 完全一致，所以行为仍然可达。
-//! - 图标要有菜单才稳定显现（Tauri 文档）：这里每张图标都挂同一份菜单，正好满足。
-//!
-//! # 基础图标（应用图标）何时显现
-//! 窗口关掉只剩托盘时，**一张图标都没有等于进程失联**（打不开面板也无法退出），故托盘必须始终至少有一张可用图标。占位图标即**应用图标本身**（与任务栏/开始菜单同 PNG）：无设备时用户看到「应用在跑」而非需解读的小图形；手绘蓝环只留给「设备已在列表、还没拿到读数」那一种状态。它仅在「没有设备图标」时现身：有设备图标就让位（电量环本身就是入口，再挂一个会像第二台设备）；设备全拔、全被隐藏或**全部离线**时再回来。全离线也让位 —— 一串灰环加横线既读不出电量也读不出「线还插着」，不如回到认得出的应用图标。每张图标右键菜单一致（打开面板 / 退出 VoltNest），任意一张都能退出。
+//! Linux（AppIndicator）限制：`set_tooltip` 为空实现，「气泡模式」返回 [`BubbleOutcome::UnsupportedPlatform`]；`TrayIconEvent` 不派发，左键开面板仅 Windows 生效。
 
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -43,7 +31,7 @@ const BUBBLE_MS: u64 = 6_000;
 const MENU_OPEN: &str = "tray:open";
 const MENU_QUIT: &str = "tray:quit";
 
-/// 与前端 `lib/format.ts` 色值逐字对应（托盘与面板须能并排看）。充电时两侧都用 `EMERALD`（即面板 `CHARGING_GREEN`），靠闪电形状而非颜色表达「在充电」。
+/// 与前端 `lib/format.ts` 色值一一对应；充电统一用 `EMERALD`，靠闪电形状表达「在充电」。
 const EMERALD: [u8; 3] = [16, 185, 129];
 const ORANGE: [u8; 3] = [249, 115, 22];
 const RED: [u8; 3] = [239, 68, 68];
@@ -51,7 +39,7 @@ const AMBER: [u8; 3] = [245, 158, 11];
 const SKY: [u8; 3] = [56, 189, 248];
 const GRAY: [u8; 3] = [148, 163, 184];
 
-/// 充电闪电：lucide `zap` 折点近似（24×24，形心 12,12）。原图带圆角描边，这里直接连圆弧端点 —— 32px 上差不到半像素，却省掉贝塞尔光栅化器。
+/// 充电闪电：lucide `zap` 折点近似（24×24，形心 12,12）。
 const BOLT: [(f32, f32); 12] = [
     (15.914, 4.0),
     (13.44, 2.439),
@@ -67,18 +55,18 @@ const BOLT: [(f32, f32); 12] = [
     (14.031, 9.333),
 ];
 
-/// 还没拿到任何读数时，整环按这个透明度画：蓝得看得见，又明显不是一次真实读数。
+/// 等待读数时整环的透明度：看得见，但明显不是一次真实读数。
 const PENDING_ALPHA: f32 = 0.7;
 
-/// 应用图标：`bundle.icon` 里 32×32 那张，与任务栏/开始菜单同源。无设备时显示它而非另画图形：用户认的是应用图标，托盘里出现同款方块即说明「这只是应用本身」。
+/// 应用图标：`bundle.icon` 里 32×32 那张，无设备时占位。
 const APP_ICON_PNG: &[u8] = include_bytes!("../icons/32x32.png");
 
-/// 每张图标「本该显示」的 tooltip：气泡提示只占用 6 秒，之后要原样还回去。
+/// 每张图标应有的 tooltip（气泡提示 6 秒后据此还原）。
 static BASELINE_TOOLTIPS: Mutex<BTreeMap<String, String>> = Mutex::new(BTreeMap::new());
-/// 基础图标当前是否露在托盘里（隐身的图标不能当气泡的落点）。
+/// 基础图标当前是否可见（隐身的图标不能当气泡的落点）。
 static BASE_VISIBLE: AtomicBool = AtomicBool::new(true);
 
-/// 解出打包的应用图标。解不开（文件坏掉）时退回蓝色等待环：难看总比托盘空着好，且只是占位图、不影响任何设备图标。
+/// 解出打包的应用图标；解码失败退回蓝色等待环。
 fn app_icon() -> Image<'static> {
     Image::from_bytes(APP_ICON_PNG).unwrap_or_else(|err| {
         log::warn!("解码应用图标失败，退回等待环: {err}");
@@ -165,15 +153,12 @@ pub fn sync_tray_icons(app: &AppHandle, shared: &Arc<HostState>, snap: &Snapshot
     update_base(app, snap, has_device_icons);
 }
 
-/// 全部设备都在 `Offline`：此时托盘不画电量环，改由应用图标占位。
-///
-/// 空列表不算：没有设备时本来就是应用图标。`Unknown`/`Unavailable` 也不算 ——
-/// 那些状态各有自己的环，「等待读数」与「读取失败」都要能一眼看出来。
+/// 全部设备都在 `Offline`（空列表与 `Unknown`/`Unavailable` 不算）。
 fn all_devices_offline(snap: &Snapshot) -> bool {
     !snap.devices.is_empty() && snap.devices.iter().all(|d| d.state == DeviceState::Offline)
 }
 
-/// 基础图标显隐：有设备图标就隐身让位，没有就出来占位。只切可见性不重建：重建会让图标跳到托盘末尾甚至溢出区，比多看一眼占位图标更难受。
+/// 基础图标显隐：有设备图标就隐身让位，没有就出来占位（只切可见性，不重建）。
 fn update_base(app: &AppHandle, snap: &Snapshot, has_device_icons: bool) {
     let tooltip = summary_tooltip(snap);
     let visible = !has_device_icons;
@@ -202,7 +187,7 @@ fn base_tray(app: &AppHandle, tooltip: &str) -> Option<TrayIcon> {
     app.tray_by_id(&TrayIconId::new(BASE_TRAY_ID))
 }
 
-/// 建一张托盘图标：统一菜单 + 左键开面板。菜单与图标均为主线程资源（Tauri `Menu` Drop 也要回主线程），故整段搬到主线程做：`sync` 跑在宿主线程，而 `run_on_main_thread` 在主线程就地执行、不会自锁。
+/// 建一张托盘图标：统一菜单 + 左键开面板。菜单与图标为主线程资源，故整段搬到主线程执行。
 fn build_tray(
     app: &AppHandle,
     tray_id: &str,
@@ -269,26 +254,20 @@ fn current_tooltip(tray_id: &str) -> Option<String> {
     lock(&BASELINE_TOOLTIPS).get(tray_id).cloned()
 }
 
-/// 托盘气泡投递的三态结果。
-///
-/// 诊断页要靠它分辨「这个平台的托盘后端没有 tooltip」与「托盘里真的没有落脚图标」——
-/// 两种原因对用户的可行动作完全不同（前者只能改用系统通知，后者是设备图标/基础图标都不在）。
+/// 托盘气泡投递的三态结果（诊断页据此区分「平台不支持」与「没有落脚图标」）。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BubbleOutcome {
-    /// 提示真的写进了对应图标的 tooltip（6 秒后还原）。
+    /// 提示已写进对应图标的 tooltip（6 秒后还原）。
     Sent,
     /// 没有可用落脚图标：设备图标不在，基础图标也隐身。
     NoIcon,
-    /// 平台的托盘后端没有 tooltip 实现（Linux / AppIndicator），写进去也不会显示。
+    /// 平台的托盘后端没有 tooltip 实现（Linux / AppIndicator）。
     UnsupportedPlatform,
 }
 
-/// 托盘气泡模式：把提示写进对应图标 tooltip，6 秒后恢复原样。
+/// 托盘气泡模式：把提示写进对应图标 tooltip，6 秒后恢复。
 ///
-/// 判定顺序就是三态的语义顺序：先找落脚图标（没有 → [`BubbleOutcome::NoIcon`]，
-/// 不假装发出去），再看平台（Linux 的托盘后端把 `set_tooltip` 实现成空操作，见模块文档的
-/// 「平台差异」→ [`BubbleOutcome::UnsupportedPlatform`]），最后才真写 tooltip →
-/// [`BubbleOutcome::Sent`]。
+/// 判定顺序：先找落脚图标（无 → [`BubbleOutcome::NoIcon`]），再看平台（Linux → [`BubbleOutcome::UnsupportedPlatform`]），最后写 tooltip → [`BubbleOutcome::Sent`]。
 pub fn bubble(app: &AppHandle, stable_id: &str, text: &str) -> BubbleOutcome {
     let Some(tray) = notification_tray(app, stable_id) else {
         return BubbleOutcome::NoIcon;
@@ -342,7 +321,7 @@ fn tray_id_for(stable_id: &str) -> String {
     format!("tray:{stable_id}")
 }
 
-/// tooltip 文案：`型号 · 92%` / `型号 · —（离线）` / `型号 · 87%（上次读数）`。读数与图标共用同一个 `displayed_battery()`：图标画了 87% 蓝弧，悬停文字就不能还写「—」，否则用户以为百分比凭空来的。`extra > 0` 表示还有设备没进托盘（「还有 N 台」），挂最后一张图标上；整串（含后缀）≤128 字符。
+/// tooltip 文案：`型号 · 92%` / `型号 · —（离线）` / `型号 · 87%（上次读数）`。`extra > 0` 表示还有设备没进托盘，挂在最后一张图标上；整串 ≤128 字符。
 fn tooltip_for(device: &DeviceDto, extra: usize) -> String {
     let reading = displayed_battery(device);
     let battery = match reading {
@@ -379,17 +358,15 @@ fn clamp_chars(text: String, limit: usize) -> String {
 }
 
 /// 托盘要展示的一次电量读数（实时值或 `state.json` 缓存值）。
-///
-/// 曾名 `DisplayedBattery`，与 `ProviderEvent::DisplayedBattery`（采集事件）撞词，故按用途命名。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct DisplayedBattery {
     /// 百分比。
     percent: u8,
-    /// 本次会话是否还没拿到实时读数（来自 `state.json` 缓存）。
+    /// 是否来自 `state.json` 缓存（尚未拿到实时读数）。
     from_cache: bool,
 }
 
-/// 与前端 `displayedBattery()` 同规则：首读未到（`state == Unknown`）时用 `lastKnownBattery` 撑住图标与 tooltip，免得启动瞬间托盘变成无比例、无读数的空环。`Unavailable`/`Offline` 不算 —— 那是「确定读不到」，不能假装还有实时读数。
+/// 与前端 `displayedBattery()` 同规则：首读未到时用 `lastKnownBattery` 撑住图标与 tooltip；`Unavailable`/`Offline` 不算。
 fn displayed_battery(device: &DeviceDto) -> Option<DisplayedBattery> {
     if let Some(percent) = device.battery {
         return Some(DisplayedBattery {
@@ -406,7 +383,7 @@ fn displayed_battery(device: &DeviceDto) -> Option<DisplayedBattery> {
     }
 }
 
-/// 环的颜色：除充电外与前端 `batteryColor()` 逐条对应。只有 `Online`/`Stale` 有「当前读数」可按阈值着色，其余状态沿用状态色（即面板「等待读数」蓝环、「读取失败」橙环那套）。充电不看电量高低一律绿：闪电已说清「在充电」、弧长继续表达充到哪了；面板同色（`CHARGING_GREEN`），两侧一致。
+/// 环的颜色：与前端 `batteryColor()` 逐条对应。只有 `Online`/`Stale` 按电量阈值着色，其余用状态色；充电一律绿。
 fn ring_tone(battery: Option<u8>, charging: bool, state: DeviceState) -> [u8; 3] {
     let tone = match state {
         DeviceState::Online => EMERALD,
@@ -433,7 +410,7 @@ fn is_charging_glyph(charging: bool, state: DeviceState) -> bool {
     charging && matches!(state, DeviceState::Online | DeviceState::Stale)
 }
 
-/// 生成一张 32×32 环形电量图：`battery == None` 等待环（整圈状态色、透明度压低一档）；`offline` 灰环+横线（物理存在链路不在）；`unknown` 蓝环（与面板「等待读数」同色，启动回填也走这条）；`charging` 绿弧+环心闪电，**弧长仍随电量走**、只把环收窄给闪电让位；其余按 20%/10% 分档着色。
+/// 生成一张 32×32 环形电量图：`None` 为等待环（整圈状态色、压低透明度）；`offline` 灰环+横线；`unknown` 蓝环；`charging` 绿弧+环心闪电（弧长仍随电量）；其余按 20%/10% 分档着色。
 pub fn ring_image(battery: Option<u8>, charging: bool, state: DeviceState) -> Image<'static> {
     let size = ICON_SIZE as f32;
     let center = size / 2.0;

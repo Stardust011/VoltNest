@@ -1,5 +1,5 @@
 //! 设备标识与电量 newtype。`stableId` 只用最稳定的物理标识：HID 不带 `mi`/`col`，
-//! BLE 取配对后的 identity address，绝不用设备名或注册表路径。
+//! BLE 取配对后的 identity address。
 
 use crate::transport::Transport;
 use std::fmt;
@@ -37,8 +37,7 @@ impl StableId {
             .and_then(|(p, _)| Transport::from_prefix(p))
     }
 
-    /// 严格解析：只接受小写十六进制、`hid:` 后恰好两段 4 位、`ble:` 后恰好六段 2 位。
-    /// 不做大小写宽容——宽容会让冲突检测漏判（同一设备出现两条大小写不同的记录而不报警）。
+    /// 严格解析：只接受小写十六进制、`hid:` 后两段 4 位、`ble:` 后六段 2 位，不做大小写宽容。
     pub fn parse(raw: &str) -> Option<Self> {
         let (prefix, rest) = raw.split_once(':')?;
         let transport = Transport::from_prefix(prefix)?;
@@ -75,14 +74,13 @@ impl FromStr for StableId {
     }
 }
 
-/// 电量百分比 newtype：`> 100` 在构造期被拒绝。`u8` 已让「负数」不可表达，
-/// 故实现侧只剩 `> 100` 与全零 payload 两种拒绝理由。
+/// 电量百分比 newtype：`> 100` 在构造期被拒绝。
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
 pub struct Percent(u8);
 
 impl Percent {
-    /// 构造：`raw > 100` 返回 `None`，调用方必须映射为
-    /// [`ErrorCode::PercentOutOfRange`](crate::ErrorCode::PercentOutOfRange)，不得 `?` 后静默丢帧。
+    /// 构造：`raw > 100` 返回 `None`，调用方须映射为
+    /// [`ErrorCode::PercentOutOfRange`](crate::ErrorCode::PercentOutOfRange)，不得静默丢帧。
     pub fn new(raw: u8) -> Option<Self> {
         (raw <= 100).then_some(Self(raw))
     }

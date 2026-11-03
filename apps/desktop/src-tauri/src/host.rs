@@ -1,6 +1,6 @@
-//! 宿主事件循环：唯一持有 `Engine` 的地方。
+//! 宿主事件循环：唯一持有 `Engine` 的地方，也是唯一的时钟调用点。
 //!
-//! 职责边界：唯一时钟调用点（每批只取一次 `now_utc_ms()` 向下透传）；1s tick 驱动退化且仅真变化才发布；250ms 合并窗口把多次变化合成一次快照（≤4Hz）；所有快照在同一把锁里生成保证 `rev` 单调。Provider 线程只往 `tx` 塞事件、永不碰 `Engine`；`state.json` 只在发布路径写，状态机里不做 I/O。
+//! 1s tick 驱动状态退化，250ms 合并窗口把多次变化合成一次快照；快照在同一把锁内生成以保证 `rev` 单调，`state.json` 只在发布路径写。Provider 线程只往 `tx` 塞事件、不碰 `Engine`。
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -48,14 +48,11 @@ pub enum HostEvent {
     },
     /// 强制发布一次快照（设置变更、手动重启等用户动作）。
     Wake,
-    /// 采集线程组状态变化（重启次数/状态/最近错误），诊断页据此重拉。
-    /// 只发信号不带载荷：诊断数据唯一来源是 `get_diagnostics`，事件通道不复制缓冲。
+    /// 采集线程组状态变化（重启次数/状态/最近错误）；只发信号不带载荷，数据从 `get_diagnostics` 拉。
     Diagnostics,
 }
 
 /// 跨线程共享的宿主状态。
-///
-/// 曾名 `Shared`（不含任何信息），现按职责命名；同名变量 `shared` 保持不变。
 pub struct HostState {
     /// 设备状态唯一所有者。
     pub engine: Mutex<Engine>,
@@ -83,7 +80,7 @@ pub struct HostState {
     pub shutting_down: AtomicBool,
 }
 
-/// 取锁并忽略「中毒」：Provider 侧 panic 不该让宿主跟着瘫痪。
+/// 取锁并忽略「中毒」。Provider 侧 panic 不该让宿主跟着瘫痪。
 pub fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
     match m.lock() {
         Ok(guard) => guard,
@@ -213,8 +210,7 @@ pub fn publish_snapshot(app: &AppHandle, shared: &Arc<HostState>, now: u64) {
     persist_state(shared, now, false);
 }
 
-/// 通知前端诊断数据已变。`restarts`/`status` 不属于设备、不在快照里，
-/// 缺这条信号诊断页就只能切页时重拉，后台退避/手动重启的计数变化不会自动上界面。
+/// 通知前端诊断数据已变。`restarts`/`status` 不在快照里，靠这条信号驱动诊断页刷新。
 fn emit_diagnostics(app: &AppHandle) {
     if let Err(err) = app.emit(DIAGNOSTICS_EVENT, ()) {
         log::warn!("诊断事件发送失败: {err}");
@@ -275,7 +271,7 @@ pub fn persist_state(shared: &HostState, now: u64, force: bool) {
     }
 }
 
-/// 由设置构造引擎配置。「阈值」一词两义：状态退化阈值来自 Provider/档位，用户的 `lowThresholds` 只影响通知、不参与退化。
+/// 由设置构造引擎配置。用户的 `lowThresholds` 只影响通知，不参与状态退化。
 pub fn engine_config(settings: &Settings) -> EngineConfig {
     EngineConfig {
         sensitivity: settings.sensitivity(),

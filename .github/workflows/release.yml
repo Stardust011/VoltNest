@@ -1,6 +1,6 @@
 name: Release
 
-# 版本号、tag、Release 正文全部由 release-please 生成；本工作流只负责 release 创建后的双平台打包。
+# 版本号、tag 与 Release 正文由 release-please 生成；本工作流只做双平台打包。
 on:
   push:
     branches: [master]
@@ -42,7 +42,6 @@ jobs:
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             platform: windows
-          # 固定 22.04：24.04 的 t64 库重命名会让 deb 运行期依赖名变化。
           - os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
             platform: linux
@@ -69,7 +68,7 @@ jobs:
           cache-dependency-path: pnpm-lock.yaml
           install: false
 
-      # Tauri 打包期依赖：webkit2gtk / gtk3 / libsoup3、托盘、bluez、libudev。
+      # Tauri 打包期依赖。
       - name: Install Linux bundling dependencies
         if: matrix.platform == 'linux'
         working-directory: .
@@ -79,12 +78,10 @@ jobs:
             libudev-dev libdbus-1-dev libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev \
             libayatana-appindicator3-dev patchelf
 
-      # 锁文件在仓库根，安装必须在根跑；beforeBuildCommand 由 tauri-action 在 apps/desktop 执行。
+      # 锁文件在仓库根，安装需在根目录执行。
       - run: pnpm install --frozen-lockfile
         working-directory: .
 
-      # beforeBuildCommand（npm run build）由 tauri-action 负责执行。
-      # 不传 releaseName / releaseBody：v1 会用空串覆盖 release-please 生成的正文。
       - uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

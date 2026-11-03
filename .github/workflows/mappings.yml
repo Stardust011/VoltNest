@@ -1,6 +1,6 @@
 name: Mappings
 
-# 每月抓取厂商网页驱动里的型号表，有变化就开 PR。
+# 每月抓取厂商型号表，有变化则开 PR。
 on:
   schedule:
     # 每月 1 日 03:00 UTC（北京时间 11:00）
@@ -34,23 +34,20 @@ jobs:
           python-version: "3.12"
 
       - uses: dtolnay/rust-toolchain@stable
-      # 与 CI 共用同一条缓存，只读不写：每月跑一次，自建缓存必然活不过 7 天淘汰线。
+      # 复用 CI 缓存，只读。
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: linux-test
           save-if: "false"
 
-      # hidapi 的 hidraw 后端构建期需要 libudev 开发文件。
+      # libudev 开发文件（hidraw 后端构建用）。
       - name: Install libudev
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libudev-dev
 
-      # PR 正文直接读这个文件，先建空文件避免 action 因文件缺失报错。
+      # 预建空报告文件，供 PR 正文引用。
       - name: Prepare report file
         run: truncate -s 0 "$RUNNER_TEMP/report.md"
 
-      # 单品牌失败只跳过该品牌：旧表留着也比没有表强，失败率由最后一步汇总暴露。
-      # 只有 devices 内容变化才落盘；仅 config_version / source 变化不算，不会开 PR。
-      # 报告每品牌一行，原样进 PR 正文与 run summary，不写任何其它说明。
       - name: Fetch mappings
         id: fetch
         shell: bash
@@ -72,7 +69,7 @@ jobs:
               failed=1
               continue
             fi
-            # 0 = devices 有变化；3 = 与旧表一致（保留旧表与其抓取时刻）；其它 = 表非法
+            # 0=devices 有变化；3=与旧表一致；其它=表非法
             rc=0
             python mappings/scripts/mapping_report.py "$tmp" --old "$dest" --require-change >> "$report" || rc=$?
             if [ "$rc" -eq 0 ]; then
@@ -87,27 +84,25 @@ jobs:
           echo "changed=$changed" >> "$GITHUB_OUTPUT"
           cat "$report" >> "$GITHUB_STEP_SUMMARY"
 
-      # 抓取脚本产出的是 json.dumps 原始排版，落盘前统一成仓库 prettier 口径。
+      # 落盘前统一成 prettier 格式。
       - uses: pnpm/setup@v3
         if: steps.fetch.outputs.changed == '1'
         with:
           runtime: node@24
-          # 只跑 pnpm dlx，不装工作区依赖。
+          # 不装工作区依赖。
           install: false
 
       - name: Format tables
         if: steps.fetch.outputs.changed == '1'
         run: pnpm dlx prettier@3.9.10 --write crates/voltnest-hid/data/mappings
 
-      # 型号表格式由 crate 的测试守，不靠抓取脚本自证。
+      # 校验型号表可解析。
       - name: Verify tables parse
         id: verify
         if: steps.fetch.outputs.changed == '1'
         continue-on-error: true
         run: cargo test -p voltnest-hid
 
-      # 上次检测的 PR 可能一直没合并，旧分支上的表会挡在本次结果前面。
-      # 先把分支强推回当前基线，让本次抓取整体覆盖旧内容，而不是叠在旧提交上。
       - name: Force-reset pull request branch
         if: steps.fetch.outputs.changed == '1'
         run: |
@@ -126,7 +121,6 @@ jobs:
           add-paths: crates/voltnest-hid/data/mappings/
           commit-message: "chore(mappings): 同步厂商型号表"
           title: "chore(mappings): 同步厂商型号表"
-          # 正文就是逐品牌摘要，不加任何其它说明。
           body-path: ${{ runner.temp }}/report.md
           labels: dependencies
           sign-commits: true

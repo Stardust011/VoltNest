@@ -1,7 +1,6 @@
-//! 前端 DTO。
+//! 前端 DTO：一次全量快照。
 //!
-//! 全量快照，不含 UI 状态（选中项、滚动位置、弹窗开关）；命名、分组、排序全由 Rust 决定，前端不重复推导。
-//! 时间统一 UTC 毫秒整数，`serverNowMs` 供前端对齐本地单调计时器；`battery == null` 表示无有效读数，绝不用 0 代替。
+//! 不含 UI 状态；命名、分组、排序全由 Rust 决定。时间统一 UTC 毫秒，`battery == null` 表示无有效读数。
 //! `rev` 仅在进程内单调递增，重启归零，不持久化。
 
 use crate::state::DeviceState;
@@ -17,8 +16,7 @@ pub struct Snapshot {
     pub server_now_ms: u64,
     /// 设备记录（已按 `settings.tray.order` 排序）。
     pub devices: Vec<DeviceDto>,
-    /// 呈现分组卡片：仅满足分组谓词的两条记录才出现。未分组设备由前端直接渲染
-    /// `devices` 中未被任何卡片引用的成员，不做二次归一化。
+    /// 呈现分组卡片：仅满足分组谓词的两条记录才出现。未分组设备由前端从 `devices` 中取未被引用的成员。
     pub cards: Vec<CardDto>,
     /// 托盘可见集合。
     pub tray: TraySnapshotDto,
@@ -32,17 +30,13 @@ pub struct DeviceDto {
     pub stable_id: String,
     /// `hid` / `ble`。
     pub transport: String,
-    /// 协议家族 ID，值取自 `DeviceRecord::family_id`。
-    ///
-    /// 字段名固定为 `provider`（wire 契约，前端 `types.ts` 依赖），**不得**跟随内部改名。
+    /// 协议家族 ID，值取自 `DeviceRecord::family_id`；字段名固定为 `provider`（wire 契约）。
     pub provider: String,
     /// 型号名（Provider 表查得 / GAP 原文）。
     pub display_name: String,
     /// 归一化型号键，参与呈现分组。`null` = 未命中型号表。
     pub model_key: Option<String>,
-    /// 设备类型（应用层枚举小写，如 `mouse` / `keyboard`）。
-    ///
-    /// `unknown` 表示证据不足，前端不得用型号名或链路推断类型。
+    /// 设备类型（应用层枚举小写，如 `mouse` / `keyboard`）；`unknown` 表示证据不足。
     pub device_type: String,
     /// 得出 `deviceType` 的方法（`hid_usage` / `ble_appearance` / `verified_device_mapping` / `unknown`），仅用于溯源。
     pub classification_method: String,

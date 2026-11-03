@@ -535,7 +535,7 @@ fn tray_order_is_pruned_to_limit_keeping_recent() {
 
 // ---------- 诊断：坏帧数据 ----------
 
-/// 坏帧被拒时诊断行必须带成因与原始字节，而非只有一个错误码（否则答不了「为什么坏」）。
+/// 坏帧被拒时诊断行必须带成因与原始字节，而非只有一个错误码。
 fn unreadable_frame(detail: &str) -> ProviderEvent {
     ProviderEvent::Unreadable {
         stable_id: hid_id(),

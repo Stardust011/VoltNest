@@ -1,4 +1,4 @@
-//! 桌面应用入口。启动顺序不可调换：单实例互斥 → 数据目录/日志 → AUMID → 设置/状态（损坏不阻塞）→ Tauri/托盘/宿主/Provider。
+//! 桌面应用入口。启动顺序：单实例互斥 → 数据目录/日志 → AUMID → 设置/状态（损坏不阻塞）→ Tauri/托盘/宿主/Provider。
 #![cfg_attr(all(not(debug_assertions), windows), windows_subsystem = "windows")]
 #![deny(clippy::disallowed_types)]
 

@@ -1,6 +1,4 @@
 //! Provider 能力声明：能力与节奏是编译期常量，不是 `settings.json`。
-//! 型号表加一行不改这里，而阈值链与状态机不变量强耦合，写坏即「永不过期」。
-//!
 //! 可调数值（采集节奏、出现检测间隔、三档阈值链）集中在 `data/profiles.json`，
 //! 由 `build.rs` 生成本文件的常量；充电语义仍写死在下方声明里。
 
@@ -26,9 +24,8 @@ pub enum ChargingSupport {
 
 /// 状态机退化阈值链（毫秒）。
 ///
-/// 不变量 `stale < unavailable < offline` 由 [`ProviderProfile::validate`] 在构造期保证。
-///
-/// 与低电量百分比档位（`NotificationConfig::low_battery_levels`）无关：曾名 `Thresholds`，两义同词，故加 `Degradation` 前缀。
+/// 不变量 `stale < unavailable < offline` 由 [`ProviderProfile::validate`] 在构造期保证；
+/// 与低电量百分比档位无关。
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct DegradationThresholds {
     /// 超过该时长未收到有效读数 → `Stale`。
@@ -81,7 +78,7 @@ impl Sensitivity {
     }
 }
 
-/// 保底轮询区间。下限由 Provider 给出（它才知道一轮刷新的耗电代价），宿主不得放宽。
+/// 保底轮询区间。下限由 Provider 给出，宿主不得放宽。
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct PollPolicy {
     /// 用户可调下限。
@@ -92,12 +89,12 @@ pub struct PollPolicy {
     pub default_ms: u64,
 }
 
-/// 采集节奏（**从宿主视角命名**：节奏由谁发起、本端做什么）。
+/// 采集节奏（自宿主视角命名：谁发起、本端做什么）。
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Cadence {
-    /// 纯监听：宿主从不向设备发报文，读数节奏完全由设备决定（2.4G 实测：不发包也有数据）。
+    /// 纯监听：宿主不发报文，读数节奏由设备决定。
     ListenOnly {
-        /// 实测期望间隔，仅用于诊断偏离告警。
+        /// 期望间隔，仅用于诊断偏离告警。
         expected_interval_ms: u64,
     },
     /// 周期查询：宿主按 `interval_ms` 主动发查询报文，节奏由宿主决定。
@@ -105,7 +102,7 @@ pub enum Cadence {
         /// 查询周期。
         interval_ms: u64,
     },
-    /// 订阅通知 + 兜底轮询（BLE 实测：两条路都要有）。
+    /// 订阅通知 + 兜底轮询。
     NotifyWithPoll {
         /// 轮询区间。
         poll: PollPolicy,
@@ -125,9 +122,7 @@ pub struct ProviderProfile {
     pub thresholds: [DegradationThresholds; 3],
     /// 充电状态可获得性。
     pub charging: ChargingSupport,
-    /// 出现检测间隔（枚举周期）；`None` = 复用轮询周期。
-    ///
-    /// 与采集节奏解耦：枚举只决定「设备什么时候出现/消失」，读数节奏仍由 `cadence` 决定。
+    /// 出现检测间隔（枚举周期）；`None` = 复用轮询周期。只决定出现/消失，与读数节奏解耦。
     pub presence_poll_ms: Option<u64>,
 }
 
@@ -137,8 +132,8 @@ impl ProviderProfile {
         self.thresholds[sensitivity.index()]
     }
 
-    /// 充电语义收敛的唯一实现点：充电不可得时把任何 `Some(bool)` 压成 `None`。
-    /// 宿主在把读数写进状态机前必须经过这里，否则 BLE 会被渲染成未充电。
+    /// 充电语义收敛点：充电不可得时把任何 `Some(bool)` 压成 `None`。
+    /// 宿主写进状态机前必须经过这里。
     pub fn sanitize_charging(&self, raw: Option<bool>) -> Option<bool> {
         match self.charging {
             ChargingSupport::FromReading => raw,
@@ -377,13 +372,8 @@ impl core::fmt::Display for ProfileError {
 impl std::error::Error for ProfileError {}
 
 /// `hid-vbas` 的能力声明。节奏与三档阈值链在 `data/profiles.json`，有测试断言防止漂移。
-/// 家族级能力声明只有一份：品牌再多也不新增家族；品牌各自的上报节奏由
-/// `voltnest-hid` 的品牌描述声明，并在启动期与本声明做兼容校验。
-///
-/// 家族内既有**纯监听**品牌（AJAZZ、雷柏纯监听族：宿主从不发包，节奏由设备决定），
-/// 也有**周期查询**品牌（达尔优、迈从、雷柏 AP：宿主每 30s 问一次）。家族级只声明
-/// 同一个 30s 预算（stale 阈值链按它校验），谁发起由各品牌的
-/// `BrandSpec::cadence()` 说明。
+/// 家族级只有一份声明，不按品牌拆分；各品牌的上报节奏由 `voltnest-hid` 的
+/// `BrandSpec::cadence()` 声明，并在启动期与本声明做兼容校验。
 pub static HID_VBAS: ProviderProfile = ProviderProfile {
     family_id: crate::FAMILY_HID_VBAS,
     transport: Transport::Hid,
@@ -403,8 +393,7 @@ pub static BLE_BAS: ProviderProfile = ProviderProfile {
     presence_poll_ms: BLE_BAS_PRESENCE_POLL_MS,
 };
 
-/// 启动期自检，断言 `(family_id, transport)` 唯一。违反时宿主不启动该 Provider，
-/// 诊断页红条 + 稳定错误码 `PROFILE_CONFLICT`，宿主照常运行；v1 不做运行期优先级仲裁。
+/// 启动期自检，断言 `(family_id, transport)` 唯一；冲突时宿主跳过该 Provider 并报 `PROFILE_CONFLICT`。
 pub fn validate_registry(profiles: &[&'static ProviderProfile]) -> Result<(), ProfileError> {
     for p in profiles {
         p.validate()?;

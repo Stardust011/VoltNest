@@ -1,19 +1,15 @@
 //! 品牌：达尔优 Dareu（VID `0x260D`）。
 //!
-//! 达尔优同一张型号表下混着**互不兼容的固件家族**，网页驱动按型号表的 `fwType` 造不同的
-//! HID 类（`device.js:419-489`）。本模块用 [`crate::spec::RouteFn`] 钩子把这份分派留在
-//! 品牌内部 —— 通用层只问「这个设备用哪套协议」，不认任何厂商字段：
+//! 同一张型号表下混着互不兼容的固件家族，按型号表的 `fwType` 分派（由 `route` 钩子完成，
+//! 通用层只问「这个设备用哪套协议」）：
 //!
 //! | `fwType` | 家族 | 通道 | 报文 |
 //! |---|---|---|---|
-//! | `0x02` | 匠盟 Jm（`jmdevice.js`） | `0xFF02` output 查询 + 输入报告 | 17B（1B ID + 16B body） |
-//! | `0x00` / `0x06` | 自研 Tg（`tgdevice.js`） | `0x0C` feature 查询 | 64B |
-//! | `0x01` | 海思 Hs（`tgdevice.js:3980` 继承 Tg） | `0x0C` feature 查询 | 64B，报告 ID `0x0A` |
+//! | `0x02` | 匠盟 Jm | `0xFF02` output 查询 + 输入报告 | 17B（1B ID + 16B body） |
+//! | `0x00` / `0x06` | 自研 Tg | `0x0C` feature 查询 | 64B |
+//! | `0x01` | 海思 Hs（继承 Tg） | `0x0C` feature 查询 | 64B，报告 ID `0x0A` |
 //!
-//! 其余家族（`0x04` / `0x05` 合盈 OHID 等）未验证，[`route`] 返回 `None`：宁可不采集，
-//! 也不拿别的家族指令去猜。
-//!
-//! 证据：`C:\Users\HT_Code\rea-dr-analysis\js\device\*.js`（网页驱动 v1.3.26，与线上一致）。
+//! 其余家族（`0x04` / `0x05` 合盈 OHID 等）未验证，`route` 返回 `None`。
 
 use crate::brands::checksum;
 use crate::spec::{
@@ -21,11 +17,7 @@ use crate::spec::{
 };
 use crate::table::Entry;
 
-/// 匠盟查询报文载荷：末字节 `[15]` 是厂商校验和。
-///
-/// `CheckSum(buffer)`（`jmdevice.js:1449`）= `0x55 - Σ(buffer[0..15])`，其中 `buffer[0..2]`
-/// 是 `0x08`（报告 ID）+ `0x04`（命令），故结果为 `0x55 - 0x0C = 0x49`。**必须带校验和**：
-/// 官方每条 JM 命令都写 `pkt[16]`，缺了设备按坏帧丢弃，表现是「查询永远无应答」。
+/// 匠盟查询报文载荷：末字节是厂商校验和 `0x55 - Σ`，其余全零。
 const JM_QUERY_PAYLOAD: [u8; 15] = {
     let mut payload = [0u8; 15];
     payload[14] = checksum::neg_sum8(&[0x08, 0x04]);
@@ -34,8 +26,7 @@ const JM_QUERY_PAYLOAD: [u8; 15] = {
 
 /// 匠盟（`fwType 0x02`）：报告 ID `0x08`，17 字节帧，输出报告查询 + 输入报告应答。
 ///
-/// 应答 body（去掉报告 ID 后）`[5]` = `Level`、`[6]` = `Status`（`jmdevice.js:2187-2191`；
-/// 官方把 `MaxLevel` / `Critical` 硬编码为 100，所以 `Level` 本身就是百分比）。
+/// 应答 body（去掉报告 ID 后）`[5]` = 电量百分比、`[6]` = 充电状态（`≥0x03` 为错误态）。
 pub const JM: BrandSpec = BrandSpec {
     id: "dareu-jm",
     label: "达尔优 · 匠盟固件（fwType 0x02）",
@@ -95,12 +86,10 @@ pub const JM: BrandSpec = BrandSpec {
 
 /// 自研 Tg（`fwType 0x00`、磁轴 `0x06`）：64 字节 feature 查询，`0x0C` 通道。
 ///
-/// 帧体：`[0]` 状态（应答 `& 0x0F == 0x02` 表示命令已完成）、`[1]` 长度、`[2]` 类 `0x07`、
-/// `[3]` 命令 `0x80`（`PWR_CMD_BAT_STATUS | GET_CMD`）、`[6..]` payload =
-/// `Status / Level / MaxLevel / Critical`（`tgdevice.js:2521-2533`）。
+/// 帧体：`[0]` 状态（`& 0x0F == 0x02` 表示命令已完成）、`[1]` 长度、`[2]` 类 `0x07`、
+/// `[3]` 命令 `0x80`、`[7..]` payload = `Status / Level / MaxLevel / Critical`。
 ///
-/// 报告 ID 随连接方式变化：有线 `0x00`、2.4G 接收器 `0x07`（`device.js:1109-1113`）。
-/// 枚举结果里没有 `WirelessFlag`，故主用 `0x00`、备用 `0x07`，由运行时按「主 → 备」试。
+/// 报告 ID 随连接方式变化：有线 `0x00`、2.4G 接收器 `0x07`（作为 `fallback_report_id`）。
 pub const TG: BrandSpec = BrandSpec {
     id: "dareu-tg",
     label: "达尔优 · 自研固件（fwType 0x00 / 0x06）",
@@ -162,12 +151,9 @@ pub const TG: BrandSpec = BrandSpec {
     route: None,
 };
 
-/// 海思（`fwType 0x01`）：协议与自研 Tg 完全一致（`HsMouseHidDevice` 只是 `TgMouseHidDevice`
-/// 的空子类，`tgdevice.js:3980-3994`），唯一差别是报告 ID 固定 `0x0A`（`device.js:1116-1119`）。
+/// 海思（`fwType 0x01`）：协议与 [`TG`] 完全一致，只有报告 ID 固定 `0x0A`（无备用 ID）。
 ///
-/// 因此这里只覆盖**四处**：标识、展示名、报告 ID、以及「不换 ID 重问」（`0x0A` 是固定值，
-/// 没有 `0x07` 那种接收器备用 ID）。其余字段整体继承 [`TG`] —— 改动 Tg 的字段时海思自动跟随，
-/// 这正是官方「空子类」的事实对应物；写成第二份完整字面量则会随固件升级悄悄分叉。
+/// 其余字段整体继承 [`TG`]。
 pub const HS: BrandSpec = BrandSpec {
     id: "dareu-hs",
     label: "达尔优 · 海思固件（fwType 0x01）",
@@ -180,10 +166,7 @@ pub const HS: BrandSpec = BrandSpec {
     ..TG
 };
 
-/// 达尔优自己的 `fwType → 协议` 分派。
-///
-/// **只有达尔优的型号表带 `fwType`**，所以这张表只存在于本模块内；其它品牌 `route: None`，
-/// 通用层那侧永远走不到这里。
+/// 达尔优自己的 `fwType → 协议` 分派；未验证家族返回 `None`。
 fn route(entry: &Entry) -> Option<&'static BrandSpec> {
     match entry.declared_fw_type() {
         Some(0x02) => Some(&JM),
@@ -193,10 +176,9 @@ fn route(entry: &Entry) -> Option<&'static BrandSpec> {
     }
 }
 
-/// 注册表登记的达尔优协议描述（匠盟为字段默认项，实际由 [`route`] 按 `fwType` 分派）。
+/// 注册表登记的达尔优协议描述（匠盟为字段默认项，实际由 `route` 按 `fwType` 分派）。
 ///
-/// `id` 保持品牌级 `dareu`（日志 / 诊断里的品牌身份）；单套协议的精确标识在
-/// [`JM`] / [`TG`] / [`HS`] 上。
+/// `id` 保持品牌级 `dareu`；单套协议的标识在 [`JM`] / [`TG`] / [`HS`] 上。
 pub const SPEC: BrandSpec = BrandSpec {
     id: "dareu",
     label: "达尔优 Dareu（按 fwType 分派）",

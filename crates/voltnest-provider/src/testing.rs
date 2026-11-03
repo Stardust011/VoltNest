@@ -1,7 +1,5 @@
-//! 测试用 Provider（`pub mod testing`，**不用** `cfg(test)`）。
-//!
-//! Phase 2 的全部状态机测试都通过这些实现驱动，因此它们必须随 crate 一起发布，
-//! 而不是只存在于本 crate 的测试二进制里。
+//! 测试用 Provider（`pub mod testing`，不用 `cfg(test)`）：随 crate 一起发布，
+//! 供本 crate 之外的状态机测试驱动。
 
 use crate::Provider;
 use crate::event::{DeviceFact, ProviderEvent, ValidReading};

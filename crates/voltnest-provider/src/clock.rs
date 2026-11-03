@@ -1,8 +1,6 @@
-//! 全仓唯一时间源：状态机退化、时间戳、通知冷却一律用 UTC 墙钟，且只在宿主调用本函数；
-//! `voltnest-core` 通过参数接收 `now_ms`，从不读时钟。Provider 内部巡检节奏与退避用
-//! [`std::time::Instant`]（单调），不参与对外语义，不受本模块约束。
+//! 全仓唯一时间源：UTC 墙钟毫秒，只由宿主调用；`voltnest-core` 通过参数接收 `now_ms`，从不读时钟。
 
-/// 当前 UTC 毫秒。系统时间早于 Unix 纪元（理论上不可能）时返回 0 而非 panic——启动崩溃比时间戳为 0 更糟。
+/// 当前 UTC 毫秒。系统时间早于 Unix 纪元时返回 0 而非 panic。
 #[allow(clippy::disallowed_types)]
 pub fn now_utc_ms() -> u64 {
     std::time::SystemTime::now()

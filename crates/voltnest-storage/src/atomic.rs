@@ -1,6 +1,4 @@
-//! 原子写入：`.tmp` → `fsync` → `rename`。
-//!
-//! 禁止「试写文件探测权限」：会被杀软当成可疑行为，且只在写入时才发现失败，等于把问题推迟到用户已改完设置之后。
+//! 原子写入：`.tmp` → `fsync` → `rename`。禁止用「试写文件探测权限」。
 
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};

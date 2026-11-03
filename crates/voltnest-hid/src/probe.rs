@@ -1,16 +1,11 @@
-//! 生成上报数据用的 HID 诊断面：枚举**全部**集合 + 录制原始报告字节。
+//! 生成上报数据用的 HID 诊断面：枚举全部集合 + 录制原始报告字节。
 //!
-//! 与 [`crate::runtime`] 的分工必须说清，否则两边会长出重复逻辑：
-//! - `runtime` 只服务型号表里**已知**的设备，产出的是解析后的电量读数（`ProviderEvent`）。
-//! - 本模块面向「型号表里没有、自动识别失败」的设备，**不匹配品牌、不解析帧、不猜字段**，
-//!   只把「哪个集合、什么时刻、收发到了哪些字节」按顺序记下来，交给用户贴进 issue。
+//! 与 [`crate::runtime`] 的分工：那个只服务型号表里已知的设备并产出电量读数；本模块面向
+//! 「型号表里没有、自动识别失败」的设备，不匹配品牌、不解析帧、不猜字段，只按顺序记录
+//! 「哪个集合、什么时刻、收发到哪些字节」。因此不依赖 [`crate::spec::BrandSpec`]。
 //!
-//! 因此这里没有任何 [`crate::spec::BrandSpec`] 依赖：录到的数据是否像电量帧，由人在报告里判断。
-//!
-//! # 平台
-//! 枚举与录制只有 Windows / Linux 有实现（与 `runtime` 一致，走 hidapi）；其它平台
-//! [`enumerate`] / [`capture`] 返回 [`CaptureError::Unsupported`]。帧结构、分组与字节分析
-//! 与平台无关，任何平台都能编译和测试。
+//! 枚举与录制只有 Windows / Linux 实现，其它平台返回 [`CaptureError::Unsupported`]；
+//! 帧结构、分组与字节分析与平台无关。
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
@@ -19,14 +14,12 @@ use crate::READ_BUFFER_LEN;
 use crate::hex;
 
 /// 一次录制最多记录的帧数（默认值，可由调用方下调）。
-///
-/// 鼠标在 1kHz 上报下 2 秒就能刷满，故上限只是防止内存失控，不是「够用」的估计。
 pub const CAPTURE_MAX_FRAMES: usize = 2_000;
 
-/// 录制时长下界：太短的抓取几乎必然一帧没有，属误操作。
+/// 录制时长下界。
 pub const CAPTURE_MIN_DURATION_MS: u64 = 1_000;
 
-/// 录制时长上界：再长就该让用户分段抓，避免一条报告几千帧。
+/// 录制时长上界。
 pub const CAPTURE_MAX_DURATION_MS: u64 = 300_000;
 
 /// 主动查询报文的默认发送间隔。
@@ -45,10 +38,7 @@ pub struct Usage {
 }
 
 impl Usage {
-    /// 是否落在标准 UsagePage 段（`< 0xFF00`）。
-    ///
-    /// 标准页（鼠标 `0x0001/0x0002`、键盘 `0x0001/0x0006`）通常不承载厂商私有电量协议；
-    /// 报告里单独标出来，便于用户确认自己选的是不是私有集合。
+    /// 是否落在标准 UsagePage 段（`< 0xFF00`）。标准页通常不承载厂商私有电量协议。
     pub const fn is_standard(self) -> bool {
         self.page < 0xFF00
     }
@@ -62,9 +52,7 @@ impl core::fmt::Display for Usage {
 
 /// 枚举结果里的一台（或一个集合）HID 设备。
 ///
-/// 唯一标识是 `path`：同一物理设备的多个接口/多个 Usage 在 Windows 上是不同集合、
-/// 不同 path，在 Linux hidraw 上是同一 path 的多条记录 —— 后者必须合并，否则一个
-/// `/dev/hidraw3` 会在列表里出现好几次。
+/// 唯一标识是 `path`：同一物理设备的多个 Usage 在 Linux hidraw 上共用一条 path，必须合并。
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct CollectionInfo {
     /// 平台路径（`\\?\hid#vid_...` / `/dev/hidraw3`），用于打开与去重。
@@ -119,9 +107,6 @@ impl CollectionInfo {
     }
 
     /// 记录/展示时代表的那个 Usage：优先厂商私有页（`>= 0xFF00`），否则取第一个。
-    ///
-    /// 同一 path 上可能并存标准鼠标集合与厂商私有集合（复合 HID），用户关心的是后者 ——
-    /// 电量协议几乎都在私有页上。
     pub fn primary_usage(&self) -> Option<Usage> {
         self.usages
             .iter()
@@ -131,8 +116,7 @@ impl CollectionInfo {
     }
 }
 
-/// 枚举的原始一条记录（一个集合）。暴露出来是为了让「合并 Usage」这段逻辑可被单测覆盖，
-/// 不必真的插一堆设备。
+/// 枚举的原始一条记录（一个集合），暴露出来便于单测覆盖合并逻辑。
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct RawCollection {
     /// 平台路径。
@@ -155,10 +139,7 @@ pub struct RawCollection {
     pub usage: u16,
 }
 
-/// 把枚举记录按 `path` 合并成设备列表，并排序。
-///
-/// 排序键是 `(VID, PID, 产品名, path)`：同型号的多只设备因此相邻，界面上的顺序也不会
-/// 随每次刷新变来变去（hidapi 的枚举顺序是系统给的，不稳定）。
+/// 把枚举记录按 `path` 合并成设备列表，并按 `(VID, PID, 产品名, path)` 排序。
 pub fn merge_collections(raw: Vec<RawCollection>) -> Vec<CollectionInfo> {
     let mut out: Vec<CollectionInfo> = Vec::with_capacity(raw.len());
     for item in raw {
@@ -196,9 +177,7 @@ pub fn merge_collections(raw: Vec<RawCollection>) -> Vec<CollectionInfo> {
 
 /// 同一 VID:PID 的全部集合 —— 用户视角的「一台设备」。
 ///
-/// 现在的交互是两步：先选设备（VID:PID），再选集合。理由是一个物理设备常同时暴露
-/// 标准鼠标集合与厂商私有集合（复合 HID），它们共用 VID:PID 但只有私有集合里可能有电量协议；
-/// 先按 VID:PID 收敛，用户才不会在几十行 `0xFF00/0x0001` 里挑。
+/// 复合 HID 会同时暴露标准集合与厂商私有集合，先按 VID:PID 收敛，用户再选具体集合。
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct TargetGroup {
     /// 厂商 ID。
@@ -249,10 +228,7 @@ impl TargetGroup {
     }
 }
 
-/// 把扁平集合列表聚合为「按 VID:PID 的设备列表」，并排序。
-///
-/// 聚合是纯函数：同一份枚举结果在任何机器上都得到同一份列表，界面不需要再排一次序。
-/// 单集合设备同样保留在 `collections` 里（长度为 1），前端不用为两种情况写两套逻辑。
+/// 把扁平集合列表聚合为「按 VID:PID 的设备列表」，并按 VID:PID 排序。
 pub fn group_targets(devices: Vec<CollectionInfo>) -> Vec<TargetGroup> {
     let mut targets: Vec<TargetGroup> = Vec::new();
     for collection in devices {
@@ -323,8 +299,7 @@ pub fn group_targets(devices: Vec<CollectionInfo>) -> Vec<TargetGroup> {
 
 /// 枚举当前的 HID 集合。
 ///
-/// 失败只有一种：hidapi 初始化不了（系统层问题）。**枚举为空不是错误** —— 没有设备时返回
-/// 空表，由界面提示用户插设备。
+/// 失败只有一种：hidapi 初始化失败。枚举为空不是错误，返回空表由界面提示。
 pub fn enumerate() -> Result<Vec<CollectionInfo>, CaptureError> {
     #[cfg(any(target_os = "windows", target_os = "linux"))]
     {
@@ -461,8 +436,8 @@ impl std::error::Error for CaptureError {}
 
 /// 录制一段时间的原始报告。
 ///
-/// 每收到一帧就调用一次 `sink`（调用方据此流式显示 / 落内存），因此**即使返回 `Err`，
-/// 之前 `sink` 收到的帧也有效**：中途拔线时用户仍能拿到拔线前的数据，这是最有价值的那部分。
+/// 每收到一帧就调用一次 `sink`；即使返回 `Err`，之前 `sink` 收到的帧也有效
+/// （中途拔线时用户仍能拿到拔线前的数据）。
 pub fn capture(
     request: &CaptureRequest,
     stop: &AtomicBool,
@@ -609,10 +584,7 @@ pub struct FrameGroup<'a> {
     pub count: usize,
 }
 
-/// 把连续完全相同的帧折叠成一组（方向与字节都相同才算相同）。
-///
-/// 鼠标滚轮/位移会产生大量一模一样的报告，原样贴进 issue 会把有用的那几帧淹掉。
-/// 折叠是**有损的展示**，但每组的重复次数写得出来，读者能还原出「设备一直在发同样的东西」。
+/// 把连续完全相同的帧（方向与字节都相同）折叠成一组。展示有损，但保留重复次数。
 pub fn group_frames(frames: &[CapturedFrame]) -> Vec<FrameGroup<'_>> {
     let mut groups: Vec<FrameGroup<'_>> = Vec::new();
     for frame in frames {

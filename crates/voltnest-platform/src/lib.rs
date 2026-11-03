@@ -1,12 +1,8 @@
 //! 平台适配：开机自启、单实例唤醒、AUMID 兜底注册。
 //!
-//! Windows 走注册表 HKCU 的 Run 项（自启）、当前用户 Local 命名空间的互斥体 + 命名事件（单实例）、
-//! HKCU 的 AppUserModelId 项（AUMID 兜底）。
-//! Linux 走 XDG Autostart 的 $XDG_CONFIG_HOME/autostart/voltnest.desktop（自启）、
-//! Unix domain socket（单实例）；通知归属由 freedesktop 通知服务按 .desktop 的 Name/Icon 决定，
-//! 没有 AUMID 这个开关，故为成功返回的空操作。
-//!
-//! 只放平台 API，不含业务状态与 UI 规则；时间戳由调用方传入，本 crate 不读时钟。
+//! Windows 走 HKCU 注册表 Run / AppUserModelId 项与 Local 命名空间互斥体 + 命名事件；
+//! Linux 走 XDG Autostart、Unix domain socket，通知归属由 `.desktop` 决定（AUMID 为空操作）。
+//! 只放平台 API，不含业务状态与 UI 规则；时间戳由调用方传入。
 
 #![warn(missing_docs)]
 

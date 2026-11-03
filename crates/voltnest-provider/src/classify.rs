@@ -1,32 +1,13 @@
 //! 设备类型识别：纯函数，零 I/O、零时钟、零线程。输入是本轮实际取到的标准字段，输出 [`DeviceClassification`]。
 //!
-//! 三条不可协商的规则：① 证据不足 → `Unknown`，不做启发式猜测；② 每条结论都带证据，未命中也记录原因，便于追溯；
-//! ③ 冲突不静默，两条可信证据指向不同类型时返回 `Unknown` 并写明冲突，绝不按优先级偷偷择一。
-//!
-//! 规则优先级（应用层约定，非 USB-IF / SIG 规定）：HID Usage → BLE Appearance → BLE 标准服务 → 可核验设备映射。
-//! 名称类字符串（`local_name`、ProductString）不参与判定——厂商改名、系统缓存、串名都会让「名字像鼠标」变成不可靠判断。
-//!
-//! 复合集合：实测同一 `VID:PID`（本仓库 `7768:6426`）同时声明多个集合级功能声明（Mouse/Keyboard/Consumer/厂商页），
-//! 它们说明「同时具备这些功能」而非「是哪种产品」，故标准侧不收敛到单一类型，交由产品级可核验映射裁决；无映射即 `Unknown`。
-//!
-//! 证据来源与可验证性：
-//!
-//! | 规则 | 来源 | 实测状态 |
-//! |---|---|---|
-//! | HID Usage `0x01/0x01,0x02,0x04..0x08` | USB-IF HID Usage Tables 1.4（Generic Desktop） | 单测覆盖；本机为厂商自定义 UsagePage，未命中 |
-//! | BLE Appearance `0x03C1..0x03C4 / 0x0841..0x0844 / 0x0942,0x0943` | Bluetooth SIG Assigned Numbers，值 = `category << 6 \| subcategory` | 单测覆盖；本机 BLE 设备为 Unknown |
-//! | BLE 服务 `0x180F / 0x1812 / 0x180A` | Battery Service / HOGP / DIS 规范 | 只作上下文证据，不单独定型 |
-//! | 可核验设备映射 | 品牌型号表（官方驱动 `config.xml` 的 `deviceType`） | 仅 `deviceType` 恰为规范类型词时生效 |
-//!
-//! 未列入上表的 Usage / Appearance / 服务一律不映射：标准没定义或本项目未验证的组合，返回 `Unknown` 比猜一个类型更有价值。
+//! 规则优先级（应用层约定，非标准规定）：HID Usage → BLE Appearance → BLE 标准服务 → 可核验设备映射。
+//! 证据不足或两条可信证据冲突时返回 `Unknown` 并记录原因；名称类字符串不参与判定。
 
 use std::fmt;
 
 /// 应用层设备类型。
 ///
-/// **不是** USB / Bluetooth 标准枚举：USB-IF 只有 HID Usage，Bluetooth SIG 只有
-/// Appearance / 服务，两者都描述「功能声明」，不描述完整产品。因此这里是应用层
-/// 收敛后的分类，随时可以按业务增减（`Unknown` 必须保留）。
+/// 不是 USB / Bluetooth 标准枚举：标准只描述「功能声明」，这里按业务收敛（`Unknown` 必须保留）。
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash, Default)]
 pub enum DeviceType {
     /// 键盘。
@@ -43,10 +24,9 @@ pub enum DeviceType {
     Speaker,
     /// 泛称的游戏控制器（HID Joystick 一类）。
     Controller,
-    /// 有证据确认属于已知范围之外的类型。
+    /// 有证据确认属于已知范围之外的类别。
     ///
-    /// 仅在**确实取到**了标准里的类别、而本枚举没有对应项时使用；
-    /// 「只确认是 HID 外设」不属于此列（那是 [`DeviceType::Unknown`]）。
+    /// 仅在确实取到标准类别而本枚举无对应项时使用；「只确认是 HID 外设」属于 [`DeviceType::Unknown`]。
     Other,
     /// 证据不足，无法判定。**默认值**。
     #[default]
@@ -90,10 +70,7 @@ pub enum ClassificationMethod {
     BleAppearance,
     /// BLE 标准服务（`0x180F` / `0x1812` / `0x180A`）。
     ///
-    /// 当前**没有**规则产出它：上表中的服务只能确认设备「提供某项功能」，
-    /// 不足以单独确定产品类别（例如 `0x1812` 只说明是 HID 类设备）。
-    /// 保留该取值是为了让将来的服务级规则有明确归类，而不是把服务证据
-    /// 硬塞进 Appearance 或映射里。
+    /// 目前没有规则产出它：服务只能确认「提供某项功能」，不足以单独定型；保留给将来的服务级规则。
     BleService,
     /// 可核验的设备映射（品牌型号表 / 官方驱动配置）。
     VerifiedDeviceMapping,
@@ -129,11 +106,7 @@ pub struct DeviceClassification {
     pub method: ClassificationMethod,
     /// 逐条证据 / 未命中原因，按收集顺序。**只含参与判定（或解释未判定）的条目**。
     pub evidence: Vec<String>,
-    /// 标准字段里**存在但本项目不支持**的组合，未参与判定。
-    ///
-    /// 与 [`Self::evidence`] 分开是为了让结论行保持可读：一台复合 HID 设备一次能
-    /// 报出 5~7 个厂商/消费者集合，全都塞进结论行会把真正的证据淹掉。这些条目
-    /// 仍然可追溯，但只进 **debug 级**诊断。
+    /// 标准字段里存在但本项目不支持、未参与判定的组合，只进 debug 级诊断。
     pub skipped: Vec<String>,
 }
 
@@ -176,10 +149,7 @@ impl DeviceClassification {
         self.evidence.join("；")
     }
 
-    /// 完整留痕文本：`evidence` + `skipped`。**仅供 debug 级诊断**。
-    ///
-    /// 结论行走的是「类型 + 方法」，证据与未支持清单一律走这里，避免把
-    /// 一台复合设备 5~7 行的枚举细节塞进结论行。
+    /// 完整留痕文本：`evidence` + `skipped`，仅供 debug 级诊断。
     pub fn debug_text(&self) -> String {
         let mut parts = self.evidence.clone();
         parts.extend(self.skipped.iter().cloned());
@@ -203,10 +173,7 @@ fn unknown_with(evidence: Vec<String>) -> DeviceClassification {
     }
 }
 
-/// 一个 HID 集合（接口顶层集合）声明的 Usage。
-///
-/// 注意它描述的是**集合声明的功能**，不是完整物理产品：键盘带一个鼠标集合
-/// 是常见形态，因此见 [`classify_hid`] 的冲突规则。
+/// 一个 HID 集合（接口顶层集合）声明的 Usage：描述集合功能，不是完整物理产品。
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct HidCollection {
     /// Usage Page。
@@ -217,8 +184,7 @@ pub struct HidCollection {
 
 /// HID 侧证据：同一 `VID:PID` 全部接口的 Usage 汇总。
 ///
-/// 按 `VID:PID` 聚合而不是按接口聚合，是因为 `stableId` 也只到 `VID:PID`：
-/// 一个接收器有多个接口，物理上仍是一台设备。
+/// 按 `VID:PID` 聚合（与 `stableId` 一致）：一个接收器多接口，物理上仍是一台设备。
 #[derive(Clone, PartialEq, Eq, Debug, Default)]
 pub struct HidEvidence {
     /// VID。
@@ -227,10 +193,9 @@ pub struct HidEvidence {
     pub pid: u16,
     /// 已枚举到的全部集合（去重）。空 = 没有可用的 Usage 信息。
     pub collections: Vec<HidCollection>,
-    /// `usage_page` / `usage` 字段在本平台是否真的可用。
+    /// `usage_page` / `usage` 字段在本平台是否可用。
     ///
-    /// hidapi 官方文档：Linux libusb 后端不提供这两个字段（恒为 0），
-    /// 因此**不得**把它们当成「合法的 0x0000 集合」参与匹配。
+    /// hidapi 的 Linux libusb 后端恒为 0，不得当成合法集合参与匹配。
     pub usage_available: bool,
 }
 
@@ -245,8 +210,7 @@ impl HidEvidence {
         }
     }
 
-    /// 记录一个集合。`usage_page == 0` 视为字段不可用（hidapi 在 Linux libusb
-    /// 后端不填该字段），不写入集合列表。
+    /// 记录一个集合。`usage_page == 0` 视为字段不可用，不写入集合列表。
     pub fn push_collection(&mut self, usage_page: u16, usage: u16) {
         if usage_page == 0 {
             return;
@@ -262,10 +226,9 @@ impl HidEvidence {
 /// BLE 侧证据。
 #[derive(Clone, PartialEq, Eq, Debug, Default)]
 pub struct BleEvidence {
-    /// 本轮服务发现**实际返回**的 16 位 SIG UUID（去重、升序）。
+    /// 本轮服务发现实际返回的 16 位 SIG UUID（去重、升序）。
     ///
-    /// 只含连接后 GATT 发现的结果，不含广播里出现的 UUID，也不代表设备全部能力
-    /// （发现失败/被裁剪都会少列）。
+    /// 只含连接后 GATT 发现结果，不含广播 UUID，也不代表设备全部能力。
     pub services: Vec<u16>,
     /// GAP `0x2A01` 的实际取值。`None` = 特征不存在、读取失败或长度非法。
     pub appearance: Option<u16>,
@@ -288,8 +251,7 @@ impl BleEvidence {
 
 /// 有可核验来源的设备映射（VID/PID → 类型）。
 ///
-/// `source` 是给人看的溯源信息（文件 + 版本），必须能对上实物或官方数据，
-/// 否则不允许构造。**不得**把没有出处的映射塞进来。
+/// `source` 是给人看的溯源信息（文件 + 版本），必须能对上实物或官方数据。
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct VerifiedMapping {
     /// 映射出的类型。
@@ -331,9 +293,7 @@ fn mapping_detail(v: &VerifiedMapping) -> String {
 /// | 多类型（复合） | 有 | 用映射 + 冲突记录（标准自身无法收敛到单一产品类型） |
 /// | 多类型（复合） | 无 | `Unknown` + 冲突 |
 ///
-/// 「多类型」是实测常态：游戏鼠标常同时声明 `0x01/0x0002`（鼠标）与 `0x01/0x0006`（键盘/宏键）；
-/// 集合声明的是功能而非完整产品，故标准侧不下结论，交给产品级映射，无映射即 `Unknown`。
-/// `skipped` 是字段存在但本项目不支持、未参与判定的条目，带进 [`DeviceClassification::skipped`]（debug 级），不进 `evidence`。
+/// `skipped` 是字段存在但未支持、未参与判定的条目，回填到 [`DeviceClassification::skipped`]（debug 级）。
 fn resolve(
     standard: Vec<Candidate>,
     notes: Vec<String>,
@@ -415,22 +375,11 @@ fn resolve(
 
 /// HID Generic Desktop 页的标准 Usage → 类型。
 ///
-/// 收录 HID Usage Tables 1.4 在 `0x0001` 页定义的**全部**设备类应用集合
-/// （`0x01` Pointer … `0x08` Multi-axis Controller）。`0x03` 在标准里是
-/// Reserved，没有设备含义，因此不映射；`0x80` System Control 不是设备类别，
-/// 同样不映射。除此之外的组合一律 `None`。
+/// 收录 HID Usage Tables 1.4 在 `0x0001` 页定义的全部设备类应用集合（`0x01` Pointer …
+/// `0x08` Multi-axis Controller）；`0x03` Reserved 与 `0x80` System Control 不映射。
 ///
-/// 三处映射是**项目粒度上的收敛**，不是标准里的等价关系：
-///
-/// - `0x01` Pointer：通用指针集合（鼠标 / 触控板 / 指点杆都可能声明它）。
-///   本项目只有「鼠标」这一个指针槽位，故归入 `Mouse`，证据保留 `Pointer` 原文。
-/// - `0x07` Keypad：独立数字键盘，属键盘族，归入 `Keyboard`。
-/// - `0x04` Joystick / `0x08` Multi-axis Controller：标准里都是游戏控制器，
-///   本项目只有粗粒度的 `Controller`。
-///
-/// 这样收敛的好处是同一台设备的多个相关集合不会互相冲突：指针类
-/// （`0x01`+`0x02`）、键盘类（`0x06`+`0x07`）、控制器类（`0x04`+`0x08`）
-/// 各自合并为一种候选，而不是被判成「复合冲突」。
+/// `0x01`→`Mouse`、`0x07`→`Keyboard`、`0x04`/`0x08`→`Controller` 是项目粒度上的收敛，
+/// 非标准等价关系，好处是同类集合合并为一种候选，不被判成复合冲突。
 pub fn usage_type(usage_page: u16, usage: u16) -> Option<(DeviceType, &'static str)> {
     const PAGE_GENERIC_DESKTOP: u16 = 0x0001;
     match (usage_page, usage) {
@@ -447,17 +396,9 @@ pub fn usage_type(usage_page: u16, usage: u16) -> Option<(DeviceType, &'static s
 
 /// BLE Appearance → 类型。
 ///
-/// 取值来自 SIG Assigned Numbers（Appearance Values），16 位值的构成为
-/// `category << 6 | subcategory`。只收录**具体子类**：
-///
-/// - HID 类（category `0x0F`）：Keyboard `0x03C1`、Mouse `0x03C2`、
-///   Joystick `0x03C3`、Gamepad `0x03C4`；
-/// - Audio Sink（category `0x21`）的具体音箱子类 `0x0841..=0x0844`；
-/// - Wearable Audio Device（category `0x25`）：Headset `0x0942`、Headphones `0x0943`。
-///
-/// 通用类别（`0x03C0` Generic HID、`0x0840` Generic Audio Sink、`0x0940`
-/// Generic Wearable Audio Device）以及未收录子类（Earbud、Touchpad 等）
-/// **不映射**：它们只说明设备属于某一大类，猜具体产品形态就是过度推断。
+/// 取值来自 SIG Assigned Numbers，16 位值为 `category << 6 | subcategory`，只收录具体子类：
+/// HID 类 `0x03C1..=0x03C4`、Audio Sink `0x0841..=0x0844`、Wearable Audio `0x0942` / `0x0943`。
+/// 通用类别与未收录子类一律返回 `None`。
 pub fn appearance_type(value: u16) -> Option<(DeviceType, &'static str)> {
     match value {
         0x03C1 => Some((DeviceType::Keyboard, "HID Keyboard")),
@@ -474,10 +415,7 @@ pub fn appearance_type(value: u16) -> Option<(DeviceType, &'static str)> {
     }
 }
 
-/// BLE 标准服务的「能说明什么 / 不能说明什么」，仅作为证据文本。
-///
-/// 这三个服务都**不产出候选类型**：`0x180F` 与产品类别无关，`0x180A` 只是设备
-/// 信息服务，`0x1812` 只能确认「HID 类设备」而不能区分键盘/鼠标/手柄。
+/// BLE 标准服务的证据文本，不产出候选类型。
 pub fn service_note(short: u16) -> Option<&'static str> {
     match short {
         0x180F => Some("0x180F Battery Service（与类别无关）"),
@@ -487,13 +425,9 @@ pub fn service_note(short: u16) -> Option<&'static str> {
     }
 }
 
-/// HID 设备分类。
+/// HID 设备分类：先按 Usage 收集候选，再叠加可核验映射，最后统一裁决。
 ///
-/// 顺序：先按 Usage 收集候选，再叠加可核验映射；最后统一做冲突裁决。
-///
-/// **只解析已支持的组合**：窗口里没收录的 Usage Page / Usage 一律不映射，也不写进
-/// 结论证据（那是每台复合设备 5~7 行的噪音），而是收进
-/// [`DeviceClassification::skipped`]，只出现在 debug 级诊断里。
+/// 未收录的 Usage 不映射，收进 [`DeviceClassification::skipped`]，只出现在 debug 级诊断里。
 pub fn classify_hid(ev: &HidEvidence, verified: Option<&VerifiedMapping>) -> DeviceClassification {
     let mut candidates = Vec::new();
     let mut notes = Vec::new();

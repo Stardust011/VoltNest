@@ -1,13 +1,5 @@
 //! VoltNest Provider 抽象层：纯类型与常量，是 HID / BLE 与宿主（`voltnest-core`、`src-tauri`）之间唯一的接口面。
-//! 不含 I/O、线程、平台 API 与状态机。
-//!
-//! 两条最易写错的规则由类型消灭而非靠评审记住：
-//! [`Percent`] 是 newtype，`> 100` 在构造期拒绝 → 状态机不可能收到越界电量；
-//! [`ProviderProfile::charging`] 为 [`ChargingSupport::Unavailable`] 时，
-//! [`ProviderProfile::sanitize_charging`] 把任何 `Some(bool)` 压成 `None` → BLE 不会被渲染成未充电。
-//!
-//! 设备类型识别（[`classify`]）同样是纯类型 + 纯函数：Provider 只把实际取到的标准字段填进
-//! [`HidEvidence`] / [`BleEvidence`]，判定规则与冲突处理不依赖 I/O，也不影响电量采集。
+//! 不含 I/O、线程、平台 API 与状态机；设备类型识别（[`classify`]）同样是纯函数。
 
 #![forbid(unsafe_code)]
 #![deny(clippy::disallowed_types)]
@@ -43,8 +35,7 @@ use std::sync::mpsc::Sender;
 
 /// 协议家族 ID：`hid-vbas`（HID Vendor Battery Access Spec）。
 ///
-/// 同时是日志前缀、诊断分组键与 `Snapshot.provider` 值。家族层面不含品牌：
-/// 任何走 HID 私有协议报电量的设备都归入此处，品牌差异由 `voltnest-hid` 内的品牌描述表达。
+/// 同时是日志前缀、诊断分组键与 `Snapshot.provider` 值；家族层面不含品牌区分。
 pub const FAMILY_HID_VBAS: &str = "hid-vbas";
 
 /// 协议家族 ID：`ble-bas`。
@@ -58,6 +49,6 @@ pub trait Provider: Send + 'static {
 
     /// 阻塞运行，直到 `stop` 置位。
     ///
-    /// 返回前必须释放全部句柄与 GATT 订阅；实现内部不得调用 `std::process::exit`。
+    /// 返回前必须释放全部句柄与 GATT 订阅；不得调用 `std::process::exit`。
     fn run(self: Box<Self>, tx: Sender<ProviderEvent>, stop: Arc<AtomicBool>);
 }

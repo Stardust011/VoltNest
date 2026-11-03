@@ -1,13 +1,8 @@
 //! AUMID 注册：让 Windows Toast 显示「VoltNest」与应用图标，而非 `powershell.exe`。
 //!
-//! Toast 归属完全由发送方给的 AUMID 决定：系统拿它解析「显示名 + 图标」，解析失败则回落到 powershell 的 AUMID。
-//! 解析途径有二：开始菜单快捷方式携带 `System.AppUserModel.ID`（正常路径），或
-//! `HKCU\Software\Classes\AppUserModelId\<AUMID>` 下的 `DisplayName` + `IconUri`（兜底）。
-//! 兜底必须成对写：只写 `DisplayName` 时系统仍拿 powershell 图标填位，名字也未必生效。
-//!
-//! Linux 没有 AUMID 这个概念：freedesktop 通知服务按发送通知的进程所对应的 `.desktop` 文件里的
-//! `Name`/`Icon` 决定应用名与图标（该文件由 `autostart` 模块在启用自启时写入），
-//! 因此本模块在 Linux 上只有成功返回的空操作，不需要也没有等价注册表项。
+//! 解析途径：开始菜单快捷方式携带 `System.AppUserModel.ID`（正常路径），或
+//! `HKCU\Software\Classes\AppUserModelId\<AUMID>` 下的 `DisplayName` + `IconUri`（兜底，须成对写）。
+//! Linux 无 AUMID 概念，应用名与图标由 `.desktop` 决定，本模块只有空操作。
 
 use std::path::Path;
 
@@ -24,7 +19,7 @@ const ICON_URI_VALUE: &str = "IconUri";
 
 /// 幂等注册，每次启动调用一次。
 ///
-/// `icon` 须为绝对路径且文件已存在；`None` 会清掉旧 `IconUri`——指向已删除文件的 URI 比没有更糟。
+/// `icon` 须为绝对路径且文件已存在；`None` 会清掉旧 `IconUri`。
 #[cfg(windows)]
 pub fn register(display_name: &str, icon: Option<&Path>) -> std::io::Result<()> {
     use winreg::RegKey;
@@ -44,8 +39,7 @@ pub fn register(display_name: &str, icon: Option<&Path>) -> std::io::Result<()> 
 
 /// 非 Windows（含 Linux）：成功返回的空操作。
 ///
-/// Linux 上通知的应用名/图标由 freedesktop 通知服务按 `.desktop` 的 `Name`/`Icon` 解析，
-/// 没有需要预注册的标识；这里返回 `Ok` 是「不需要做」，不是「假装做成了」。
+/// Linux 上应用名与图标由 freedesktop 通知服务按 `.desktop` 解析，无需预注册。
 #[cfg(not(windows))]
 pub fn register(_display_name: &str, _icon: Option<&Path>) -> std::io::Result<()> {
     Ok(())

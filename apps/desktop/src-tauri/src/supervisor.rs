@@ -1,4 +1,6 @@
-//! Provider 线程组监管：panic 隔离与退避重启。每个 transport 一个监管线程，自身不做 I/O，只做三件事：用 `catch_unwind` 包住 `Provider::run` 起采集线程；把上报事件原样转发宿主；采集线程异常结束时保证有 `TransportDown`（provider 自己报过就不重复、只沿用它的 code/detail）并按 5s/15s/60s 退避重启，连续 5 次失败标记「不可用」等手动重启。**panic 不得跨 transport 传播**：HID 解析器崩溃时蓝牙必须照常，故隔离在采集线程边界而非宿主里 catch。
+//! Provider 线程组监管：panic 隔离与退避重启。每个 transport 一个监管线程，只做三件事：用 `catch_unwind` 起采集线程、把事件转发宿主、异常退出时补报 `TransportDown` 并按 5s/15s/60s 退避重启，连续 5 次失败转「不可用」。
+//!
+//! panic 隔离在采集线程边界，不跨 transport 传播。
 
 use std::panic::AssertUnwindSafe;
 use std::sync::Arc;
@@ -27,14 +29,12 @@ pub enum SupervisorCmd {
 }
 
 /// 一个 transport 的采集参数。
-///
-/// 曾名 `Spec`，会与 `voltnest_hid::spec`（HID 协议描述 `BrandSpec`）混淆，故按职责改名为 `TransportSpec`。
 pub struct TransportSpec {
     /// 传输层。
     pub transport: Transport,
     /// 协议家族 ID（诊断展示）。
     pub family: &'static str,
-    /// 构造采集器。用函数指针而非闭包：采集器必须可以在每次重启时重新构造。
+    /// 构造采集器。函数指针而非闭包：每次重启都要重新构造。
     pub make: fn() -> Box<dyn Provider>,
 }
 
@@ -64,10 +64,7 @@ enum RunOutcome {
     Stopped,
     /// 收到 `Restart` 指令，需要重置失败计数。
     Restarted,
-    /// `run()` 自行返回（未收到停止指令）→ 按失败处理。
-    ///
-    /// 携带本轮已转发给宿主的 `TransportDown`（`code`, `detail`）：provider 自己报过
-    /// 失败原因时，监管线程不能再拿 `Internal` / 「采集线程自行退出」覆盖它。
+    /// `run()` 自行返回（未收到停止指令）→ 按失败处理；携带本轮已转发的 `TransportDown`。
     Returned(Option<(ErrorCode, String)>),
     /// `run()` panic。
     Panicked(String),
@@ -83,9 +80,7 @@ struct Failure {
     report: bool,
 }
 
-/// 启动一个 transport 的监管线程，返回用于发送指令的通道。
-///
-/// 曾名 `start`，与 `host::spawn_host_loop` 一样都是「起线程」，但名字不含对象。
+/// 启动一个 transport 的监管线程，返回指令通道。
 pub fn spawn_supervisor(shared: Arc<HostState>, spec: TransportSpec) -> Sender<SupervisorCmd> {
     spawn_supervisor_with_backoff(shared, spec, &BACKOFF_MS).0
 }
@@ -228,7 +223,7 @@ fn supervise(
     }
 }
 
-/// 第 `failures` 次连续失败后的退避时长；达到上限返回 `None`（转人工重启）。抽成纯函数以便用毫秒级退避表测完整序列，不必真等 60 秒。
+/// 第 `failures` 次连续失败后的退避时长；达到上限返回 `None`（转人工重启）。
 pub fn backoff_for(failures: u32, table: &[u64]) -> Option<u64> {
     if failures == 0 || failures >= MAX_CONSECUTIVE_FAILURES || table.is_empty() {
         return None;
@@ -525,8 +520,7 @@ mod tests {
         handle.join().expect("监管线程应能正常退出");
     }
 
-    /// 「先自己上报 `TransportDown` 再 `run()` 返回」的采集器：Linux 上 BLE 权限被拒 /
-    /// 无 bluetoothd 时就是这条路径（provider 报结构化失败，然后退出）。
+    /// 「先上报 `TransportDown` 再 `run()` 返回」的采集器（Linux BLE 权限被拒即此路径）。
     struct DownThenExit;
 
     /// provider 给出的可读原因：监管线程不得把它换成「采集线程自行退出」。

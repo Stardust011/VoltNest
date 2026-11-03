@@ -1,29 +1,19 @@
 //! 品牌：雷柏 RAPOO（VID `0x24AE`，网咖/OEM 线 `0x2E3C`）。
 //!
-//! 官方网页驱动（RAPOO HUB，`index-3ShGzFuu.js`）按 manifest 的 `driver` 字段造不同的 HID 类，
-//! 各家族的**取电方式、报告 ID、字段下标**都不同 —— 型号表里的 `driver` 就是官方自己的家族码。
-//! 本模块用 [`crate::spec::RouteFn`] 把这份分派留在品牌内部，通用层只问「这个设备用哪套协议」：
+//! 型号表的 `driver` 字段是官方的家族码，各家族的通道、报告 ID、字段下标都不同，由 `route`
+//! 在品牌内部完成分派：
 //!
-//! | `driver` | 条目 | 采集方式 | 通道 / 报告 | 电量字段 |
-//! |---|---|---|---|---|
-//! | `VT_nrf54L` | 146 | 纯监听（功能态快照） | `0xFF00`/`0x0002`，报告 ID `0x07` | `data[6]`=状态、`data[7]`=百分比 |
-//! | `VT_CH584` | 4 | 纯监听 | `0xFF00`/`0x000F`，报告 ID `0x08` | `data[7]`=百分比 |
-//! | `LM20RT` | 4 | 纯监听 | `0xFF00`/`0x0002`，报告 ID `0x07` | `data[7]`=百分比 |
-//! | `Telink3228C_Mouse` | 2 | **主动查询**（维盛 AP 协议） | `0xFF1C`/`0x0092`，报告 ID `0x04` | 应答 `DATA[0]`=百分比、`DATA[1]`=充电 |
+//! | `driver` | 采集方式 | 通道 / 报告 | 电量字段 |
+//! |---|---|---|---|
+//! | `VT_nrf54L` | 纯监听（功能态快照） | `0xFF00`/`0x0002`，报告 ID `0x07` | `data[6]`=状态、`data[7]`=百分比 |
+//! | `VT_CH584` | 纯监听 | `0xFF00`/`0x000F`，报告 ID `0x08` | `data[7]`=百分比 |
+//! | `LM20RT` | 纯监听 | `0xFF00`/`0x0002`，报告 ID `0x07` | `data[7]`=百分比 |
+//! | `Telink3228C_Mouse` | 主动查询（维盛 AP 协议） | `0xFF1C`/`0x0092`，报告 ID `0x04` | `DATA[0]`=百分比、`DATA[1]`=充电 |
 //!
-//! 未接入（`route` 返回 `None`，不采集也不猜）：
-//! - `TelinkKeyboard`（10）：功能态报告首字节是事件子类型（`0x01` = 用户参数），且 `V700diy-*`
-//!   系列另有一套 `V700` 布局（电量在 `data[6]`），需先按能力表分流，见 `mk.dispatchEvent`。
-//! - `CH585M`（3）：同为「首字节事件子类型 + 截掉一字节」的键盘布局，未实测。
-//! - `GCOME_AP`（1）/ `OHID`（1）：网页驱动里也没有 `BatteryFeature`（键盘返回 `NOT_SUPPORTED`）。
+//! 未接入（`route` 返回 `None`）：`TelinkKeyboard`、`CH585M`、`GCOME_AP`、`OHID`。
 //!
-//! 充电状态的官方取值：`batStatus` / AP 的 `DATA[1]` 中 `1` = 未充电、`2` = 充电中、`0` = 未上报
-//! （网页驱动 UI 用 `batteryStatus !== 1` 判充电，等于把「未上报」也算成充电，本模块不跟这条
-//! 捷径：只有 `2` 报「充电中」，`0` 按未充电处理，绝不把未知说成充电中）。
-//! 老布局（`VT_CH584` / `LM20RT`）把 `batStatus` 藏在 16 位状态字的 bit14-15 里
-//! （`(data[11]<<8|data[10])>>14&3`），整字节取值表达不了 → 这两套协议只读电量、充电状态留空。
-//!
-//! 证据：`https://hid.rapoo.cn/AHUB_WEB/dist/assets/js/index-3ShGzFuu.js`（v3，与线上一致）。
+//! 充电状态取值：`1` = 未充电、`2` = 充电中、`0` = 未上报（按未充电处理）。老布局
+//! （`VT_CH584` / `LM20RT`）的 `batStatus` 在 16 位状态字的 bit14-15 里，故只读电量。
 
 use crate::brands::checksum;
 use crate::spec::{
@@ -31,11 +21,9 @@ use crate::spec::{
 };
 use crate::table::Entry;
 
-/// VT_nrf54L（146 条，雷柏主力鼠标）：监听功能态快照，报告 ID `0x07`。
+/// VT_nrf54L（主力鼠标）：监听功能态快照，报告 ID `0x07`，`data[6]` 充电状态、`data[7]` 电量。
 ///
-/// 网页驱动 `VTNrf54LMouseDevice.handleReport`：报告 ID `7` → `parseUserCustomData`-等价解析
-/// `Nf(data)`，其中 `batStatus = data[6]`、`batPercent = data[7]`。没有主动查询报文，
-/// 打开设备后由设备按自身节奏上报。
+/// 无主动查询报文，打开设备后由设备按自身节奏上报。
 pub const NRF54L: BrandSpec = BrandSpec {
     id: "rapoo-nrf54l",
     label: "雷柏 · VT_nrf54L 固件",
@@ -81,7 +69,7 @@ pub const NRF54L: BrandSpec = BrandSpec {
     route: None,
 };
 
-/// LM20RT（4 条）：报告 ID 与字段位置和 [`NRF54L`] 相同，仅充电状态藏在状态字位域里 → 不提供。
+/// LM20RT：报告 ID 与字段位置同 [`NRF54L`]，充电状态在状态字位域里 → 不提供。
 pub const LM20RT: BrandSpec = BrandSpec {
     id: "rapoo-lm20rt",
     label: "雷柏 · LM20RT 固件",
@@ -94,7 +82,7 @@ pub const LM20RT: BrandSpec = BrandSpec {
     ..NRF54L
 };
 
-/// VT_CH584（4 条）：同一套用户参数布局，报告 ID 换成 `0x08`、采集接口 Usage 换成 `0x0F`。
+/// VT_CH584：同套用户参数布局，报告 ID `0x08`、Usage `0x0F`，不提供充电状态。
 pub const CH584: BrandSpec = BrandSpec {
     id: "rapoo-ch584",
     label: "雷柏 · VT_CH584 固件",
@@ -115,22 +103,13 @@ pub const CH584: BrandSpec = BrandSpec {
     ..NRF54L
 };
 
-/// 维盛 AP 电量查询报文的校验和（`[csum_lo, csum_hi]`）。
-///
-/// 官方 `WL(payload)` = 从报文第 2 字节起逐字节求和（u16 回卷）；本查询只有命令字 `0xAD` 与
-/// `LEN 6` 两个非零字节（地址与数据区全零），故恒等于 `0xAD + 0x06 = 0x00B3`。
-/// 校验和不随设备变化，但**由字段算出来**而不是写死：载荷一改，这里自动跟随。
+/// 维盛 AP 电量查询报文的校验和（`[csum_lo, csum_hi]`）：`0xAD + 0x06` 的 u16 小端和。
 const AP_QUERY_CHECKSUM: [u8; 2] = checksum::sum16_le(&[0xAD, 0x06]);
 
-/// Telink3228C_Mouse（2 条，如 VT2 ULTRA V2）：维盛 AP 协议，唯一需要**主动查询**的雷柏家族。
+/// Telink3228C_Mouse（如 VT2 ULTRA V2）：维盛 AP 协议，唯一需要主动查询的雷柏家族。
 ///
-/// 网页驱动 `Telink3228CMouseDevice.readBatteryStatus`：在原子队列里发
-/// `getBatteryLevel(0xAD)`，`LEN = 6`、`ADDR = 0`，等同一报告 ID 的输入报告；
-/// 应答 `DATA[0]` = 电量（>100 抛 `READ_FAILED`）、`DATA[1]` = 充电（只允许 `0` / `1`，
-/// 其余抛 `READ_FAILED` —— 即「未定义值」是错误态，不是「未充电」）。
-///
-/// 边角：电量为 0 且未充电的应答，payload 恰好全零，会被解析器判成 `empty_payload`
-/// （设备在场但无数据）而不是 0% —— 这是全品牌的统一口径，不为此开特例。
+/// 发 `getBatteryLevel(0xAD)`（`LEN = 6`、`ADDR = 0`），等同一报告 ID 的输入报告；
+/// 应答 `DATA[0]` = 电量（>100 为错）、`DATA[1]` = 充电（只认 `0` / `1`，其余为错）。
 pub const AP: BrandSpec = BrandSpec {
     id: "rapoo-ap",
     label: "雷柏 · 维盛 AP 固件（Telink3228C）",
@@ -188,9 +167,7 @@ pub const AP: BrandSpec = BrandSpec {
     route: None,
 };
 
-/// 雷柏自己的 `driver → 协议` 分派。
-///
-/// **只有雷柏的型号表带 `driver`**，所以这张表只存在于本模块内。
+/// 雷柏自己的 `driver → 协议` 分派；未验证家族返回 `None`。
 fn route(entry: &Entry) -> Option<&'static BrandSpec> {
     match entry.declared_driver() {
         Some("VT_nrf54L") => Some(&NRF54L),
@@ -201,10 +178,9 @@ fn route(entry: &Entry) -> Option<&'static BrandSpec> {
     }
 }
 
-/// 注册表登记的雷柏协议描述（nrf54L 为字段默认项，实际由 [`route`] 按 `driver` 分派）。
+/// 注册表登记的雷柏协议描述（nrf54L 为字段默认项，实际由 `route` 按 `driver` 分派）。
 ///
-/// `id` 保持品牌级 `rapoo`（日志 / 诊断里的品牌身份）；单套协议的精确标识在
-/// [`NRF54L`] / [`CH584`] / [`LM20RT`] / [`AP`] 上。
+/// `id` 保持品牌级 `rapoo`；单套协议的标识在 [`NRF54L`] / [`CH584`] / [`LM20RT`] / [`AP`] 上。
 pub const SPEC: BrandSpec = BrandSpec {
     id: "rapoo",
     label: "雷柏 RAPOO（按 driver 分派）",

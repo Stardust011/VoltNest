@@ -1,20 +1,15 @@
-//! HID Provider 运行时：1 枚举线程 + N 读取线程。
+//! HID Provider 运行时：1 个枚举线程 + N 个读取线程。
 //!
-//! **品牌无关**：设备匹配、帧解析、充电标志全部来自 [`BrandSpec`] 与 [`Registry`]，无品牌分支，新增品牌不改这里。
+//! 品牌无关：设备匹配、帧解析、充电标志全部来自 [`BrandSpec`] 与 [`Registry`]。
+//! 隔离靠读超时上界而非线程池，一个接收器挂死只会拖慢自己的读取线程。
+//! 只按「VID/PID 精确 → 品牌声明的 UsagePage」两步选集合，不使用 `open(vid, pid)`。
 //!
-//! 隔离靠**时间上界**而非线程池：`read_timeout = 120ms`，实测拔线后句柄立刻失效，故一个接收器挂死只会拖慢自己的读取线程。
+//! 设备类型识别只用枚举字段（纯函数 [`voltnest_provider::classify`]），不额外开句柄、
+//! 不发报文；证据不足时结论为 `Unknown`。
 //!
-//! 三条实测结论：1. **禁止** `open(vid, pid)`：会静默打开错误集合（枚举顺序里第一个 `0x0C/0x01` 集合），拿到「成功但读不到」的句柄；2. 集合选择须「VID/PID 精确 → 品牌声明的 UsagePage」两步，型号表只按 `VID:PID` 提供型号，不含接口号；3. 只写通道不得用读句柄打开，主动查询（若品牌声明）走写通道。
-//!
-//! # 设备类型识别（与电量采集解耦）
-//! 分类只用枚举结果里的字段（`usage_page` / `usage` / `VID` / `PID`），不额外开句柄、不发光报文、不改读取线程，对采集节奏与续航零影响。判定是纯函数（[`voltnest_provider::classify`]),本文件只做：1. 把同一 `VID:PID` 的全部接口集合聚合成证据（多接口≠多设备）；2. 从型号表取「有出处」的厂商声明（`deviceType` 恰为规范类型词时）。枚举不到标准 Usage 且型号表无类型声明时结论 `Unknown`——这就是「不猜」的全部承诺。
-//!
-//! # Linux（hidraw 后端）
-//! Linux 走 hidapi 的静态 hidraw 后端（特性 `linux-static-hidraw`），集合路径形如 `/dev/hidraw3`：
-//! 1. **权限**：读写 `/dev/hidraw*` 需要当前用户被放行，发行版通常靠 `plugdev` 组或 udev 规则做到。**本实现不安装任何 udev 规则**；权限缺失时 `open_path` 失败并上报 `access_denied`，不会静默。
-//! 2. **能力**：hidraw 从报告描述符解析出真实 `usage_page`/`usage`（只有 libusb 后端恒为 0）；这两项是集合选择的唯一判据，`interface_number` 不再参与匹配。
-//! 3. **无设备**：机器上没有 `/dev/hidraw*` 时枚举为空——不报错、不 panic、不阻塞，只打一条诊断后继续按 [`PRESENCE_POLL_MS`] 轮询。
-//! 4. **构建期依赖**：hidapi 的 hidraw 后端用 pkg-config 探测 `libudev`，故构建机须装 libudev 开发文件（Debian / Ubuntu `libudev-dev`，Fedora `systemd-devel`）；运行期只用到系统已装的 `libudev.so.1`。
+//! Linux 走 hidraw 后端：读写 `/dev/hidraw*` 需当前用户被放行（本实现不安装 udev 规则），
+//! 权限缺失时 `open_path` 失败并上报 `access_denied`；无设备时枚举为空并按
+//! [`PRESENCE_POLL_MS`] 轮询。构建期需 libudev 开发文件。
 
 use crate::brands::{Brand, Registry};
 use crate::spec::{BrandSpec, ReplyTransport, RequestTemplate};
@@ -208,8 +203,6 @@ impl Provider for HidProvider {
 }
 
 /// 一条采集会话的句柄：停止标志 + 线程句柄。
-///
-/// 与 `voltnest_ble::runtime::SessionHandle` 职责一致（曾名 `Session`）。
 struct SessionHandle {
     stop: Arc<AtomicBool>,
     join: JoinHandle<()>,
@@ -227,11 +220,10 @@ struct HidTarget {
     classification: DeviceClassification,
 }
 
-/// 把**同一 VID:PID 的全部接口**的 Usage 聚合成一份证据。
+/// 把同一 `VID:PID` 全部接口的 Usage 聚合成一份证据。
 ///
-/// 遍历整张枚举表而非只看命中的集合：设备可能是复合 HID（厂商私有集合在 MI_01、标准鼠标集合在 MI_00），只看一个接口会漏标准证据。聚合键是 `VID:PID`（= `stableId` 粒度），故**多接口不会被当成多台设备**。
-///
-/// `usage_page()` / `usage()` 在 Linux **libusb** 后端恒为 0（hidapi 官方文档）；Windows 的 hid.dll 与 Linux 的 **hidraw** 后端都从报告描述符解析出真实值，故这两类平台的 Usage 规则必须照常生效。字段到底可不可用由 [`HidEvidence::push_collection`] 判定（`usage_page == 0` 即不可用），平台差异不在这里分支。
+/// 聚合键是 `VID:PID`，故多接口不会被当成多台设备。Usage 字段是否可用由
+/// [`HidEvidence::push_collection`] 判定，平台差异不在这里分支。
 fn usage_index(api: &HidApi) -> HashMap<(u16, u16), HidEvidence> {
     let mut index: HashMap<(u16, u16), HidEvidence> = HashMap::new();
     for info in api.device_list() {
@@ -244,7 +236,7 @@ fn usage_index(api: &HidApi) -> HashMap<(u16, u16), HidEvidence> {
     index
 }
 
-/// 生成一台设备的分类：先收集 Usage 候选，再叠加**有出处**的厂商声明。型号表映射仅当 `deviceType` 恰好是规范类型词时生效（见 [`crate::table::Entry::declared_device_type`]），来源串写进证据便于事后核对。
+/// 生成一台设备的分类：Usage 证据 + 有出处的厂商声明（`deviceType` 恰为规范类型词时生效）。
 fn classify_target(
     brand: &Brand,
     spec: &'static BrandSpec,
@@ -269,11 +261,10 @@ fn classify_target(
     classify_hid(evidence, verified.as_ref())
 }
 
-/// 枚举结果里的一条**集合记录**。
+/// 枚举结果里的一条集合记录。
 ///
-/// `device_list()` 的每一项对应一个 HID 集合，但两个后端的展开方式不同：Windows 上每个集合是独立设备记录；
-/// Linux hidraw 上同一个 `/dev/hidraw*` 节点里的多个 Usage 会展开成多条记录、**共用同一 `path`**。
-/// 先把枚举收敛成这个平台无关的最小结构，集合选择才能写成可测的纯函数。
+/// 同一平台节点在 hidraw 上会展开成多条共用 `path` 的记录，收敛成这个平台无关结构后
+/// 集合选择才能写成可测的纯函数。
 struct EnumeratedCollection {
     vid: u16,
     pid: u16,
@@ -309,9 +300,10 @@ fn collect_targets(
     select_targets(&enum_entries(api), usages)
 }
 
-/// 按「VID/PID 精确 → 品牌声明的 UsagePage（+ 可选 Usage）」筛选候选集合。返回 `(本轮候选, 冲突告警)`：同一轮出现两个相同 `stableId`（两只同型号接收器）时只保留先发现的一条并上报 `BindingConflict`。
+/// 按「VID/PID 精确 → 品牌声明的 UsagePage（+ 可选 Usage）」筛选候选集合。
 ///
-/// 平台差异在这里收口：`stableId` 相同但 `path` 相同 = 同一物理集合的多条 Usage 记录（hidraw 特性），不算冲突；只有 `path` 不同才是真的两只同型号接收器。
+/// 返回 `(本轮候选, 冲突告警)`：同一轮出现两个相同 `stableId` 但 `path` 不同时只保留先发现的
+/// 一条并上报冲突；`path` 相同是同一物理集合的多条 Usage 记录，不算冲突。
 fn select_targets(
     entries: &[EnumeratedCollection],
     usages: &HashMap<(u16, u16), HidEvidence>,
@@ -331,7 +323,7 @@ fn select_targets(
 
 /// 单条枚举记录参与一次候选筛选。
 ///
-/// `alt = true` 表示这一遍只认品牌声明的**备用** UsagePage，且不得覆盖已选中的集合。
+/// `alt = true` 表示这一遍只认品牌声明的备用 UsagePage，且不得覆盖已选中的集合。
 fn consider_target(
     info: &EnumeratedCollection,
     alt: bool,
@@ -440,13 +432,12 @@ fn compose_display_name(brand: Option<&str>, model: Option<&str>, vid: u16, pid:
 /// 换报告 ID 后的等待（毫秒）。
 const REPORT_ID_SWITCH_GAP_MS: u64 = 50;
 
-/// 档位探测最多听几帧：够容纳「一条无关推送 + 一条 base 应答」，再多就是在等一个不会来的应答。
+/// 档位探测最多听几帧：够容纳「一条无关推送 + 一条 base 应答」。
 const PROFILE_PROBE_FRAMES: usize = 4;
 
 /// 在报告里找出命令字为 `cmd` 的应答，返回它的 payload。
 ///
-/// 偏移容错同 [`frame::decode_listen`]：带报告 ID 的集合里 `cmd` 在 `cmd_index`，
-/// 无编号报告的集合可能被平台补了一个 ID 槽。
+/// 偏移容错同 [`frame::decode_listen`]。
 fn probe_payload<'a>(brand: &BrandSpec, cmd: u8, report: &'a [u8]) -> Option<&'a [u8]> {
     let layout = &brand.frame;
     let bases: &[usize] = if layout.report_id.is_some() {
@@ -490,11 +481,7 @@ type Flow = Result<(), Exit>;
 /// 推送为主的协议：多久没拿到有效读数，就值得主动问一次。
 ///
 /// 锚点取「上次有效读数」与「上次探活」里较晚的那个：设备持续推送时永远不到这里；
-/// 一旦静默超过 `expected_interval_ms` 就探一次，探完再静默同样的时长才探下一次 ——
-/// 否则读数一直不来时会变成每轮都发报文，又回到了轮询。
-///
-/// **探活失败不自行判死**：读数不更新，老化照常推进，`stale` / `unavailable` 由引擎按阈值链
-/// 判定。本端只负责「再问一次」，不负责「猜设备还活着」。
+/// 静默超过 `expected_interval_ms` 才探一次。探活失败不自行判死，状态由引擎按阈值链判定。
 fn lazy_probe_due(
     expected_interval_ms: u64,
     last_reading: Option<Instant>,
@@ -516,8 +503,7 @@ fn lazy_probe_due(
 
 /// 一台设备的读取会话：句柄 + 身份 + 事件出口 + 停止标志。
 ///
-/// 四种 [`ReplyTransport`] 各对应一个 `run_*` 方法，分派只在 [`Reader::run`] 一处；
-/// 收发原语、事件上报、可打断等待各只有一份，四个循环不再各自重复样板。
+/// 四种 [`ReplyTransport`] 各对应一个 `run_*` 方法，分派只在 [`Reader::run`] 一处。
 struct Reader {
     dev: HidDevice,
     stable_id: StableId,
@@ -583,11 +569,8 @@ impl Reader {
 
     /// `InterruptQuery`：会话建立时先问一次，之后按协议声明的节奏补问。
     ///
-    /// 两种节奏：
-    /// - `interval_ms: Some(..)` —— 周期轮询，节奏由宿主决定（老族键鼠都是这种）。
-    /// - `interval_ms: None` —— **推送为主**：不按固定节奏打扰设备，只在「读数快过期」时
-    ///   探活问一次（[`Self::probe_due`]）。键盘处理一条电量命令要唤醒固件，而推送由设备
-    ///   自己决定何时发 —— 常态下零查询，故障时才多发几条，这是省电的关键。
+    /// 两种节奏：`interval_ms: Some(..)` 为周期轮询；`None` 为推送为主，只在读数快过期时
+    /// 探活问一次（[`Self::probe_due`]）。
     fn run_interrupt_query(&mut self) -> Flow {
         let mut next = Instant::now();
         while !self.halted() {
@@ -629,9 +612,7 @@ impl Reader {
 
     /// 读一次 base，解出当前板载档位。
     ///
-    /// 官方 `getBase()` 是「发一问、收一答」，答帧与电量应答共用同一个头、靠命令字区分。
-    /// 每次探活都重读：用户切换板载档位后设备不会主动告诉我们，而 `0x05` 是按档位偏移读的，
-    /// 沿用旧档位会一直读同一块。探活本身是低频兜底（常态零查询），多一问可以接受。
+    /// 每次探活都重读：用户切换档位后设备不会主动告知，而查询按档位偏移构造。
     fn ensure_profile(&mut self) -> Flow {
         let Some(probe) = self.brand.profile_probe else {
             return Ok(());
@@ -737,7 +718,7 @@ impl Reader {
     }
 
     /// 一帧输入报告 → 最多一条事件。四条通道按声明优先级互斥：
-    /// 无头上报 → 推送帧 → 多包重组（命令字过滤 + 拼包）→ 单帧应答（查询通道再看命令字）。
+    /// 无头上报 → 推送帧 → 多包重组 → 单帧应答。
     fn on_input(&mut self, n: usize) -> Flow {
         let report = &self.buf[..n];
         if self.brand.listen.is_some()
@@ -775,8 +756,7 @@ impl Reader {
 
     /// 监听帧 → 事件。
     ///
-    /// 只通报充电状态的帧（迈从 GLW `FA FB FF`）沿用上一次电量：还没有任何电量时丢掉，
-    /// 因为「充电中」配一个编出来的百分比比不显示更糟。
+    /// 只通报充电状态的帧沿用上一次电量；还没有任何电量时直接丢弃。
     fn on_listen(&mut self, event: frame::ListenEvent) -> Flow {
         match event {
             frame::ListenEvent::Reading(reading) => self.emit_reading(reading),
@@ -956,9 +936,7 @@ mod tests {
         assert!(c.skipped.iter().any(|e| e.contains("未支持")));
     }
 
-    /// 真实设备端到端：`DeviceInfo` 枚举 → Usage 聚合 → 分类。
-    ///
-    /// `#[ignore]`：需插着已验证接收器，默认不跑。手动：`cargo test -p voltnest-hid -- --ignored real_receiver`。断言「枚举到的真实集合」而非写死期望值：该接收器同时声明鼠标与键盘集合，必走「复合集合 + 可核验映射」路径。
+    /// 真实设备端到端：枚举 → Usage 聚合 → 分类。`#[ignore]`，需插着已验证接收器。
     #[test]
     #[ignore = "需要接上已验证的 AJAZZ 2.4G 接收器"]
     fn real_receiver_classifies_from_live_enumeration() {
@@ -1033,8 +1011,7 @@ mod tests {
     }
 
     /// 迈从 CZ/GLW 族键盘正常挂在标准页 `0x0001`，官方过滤器里还有一条 `0xFF00`（boot 模式）：
-    /// 主页面零命中时必须降级到备用页面，否则这批设备会「枚举得到但一个候选都没有」——
-    /// 静默消失，比读不到更难查。
+    /// 主页面零命中时必须降级到备用页面。
     #[test]
     fn alt_usage_page_covers_devices_with_only_the_secondary_page() {
         let entries = vec![entry(0x19F5, 0xFC30, 0xFF00, 0x0001, "/dev/hidraw7")];
@@ -1220,8 +1197,7 @@ mod tests {
         }
     }
 
-    /// `run()` 在无设备机器上必须立刻可用：收到 stop 后按 backoff 步长返回，不 panic、不阻塞、
-    /// 也不把「没有设备」当成传输层故障（`TransportDown` 会让上层把既有设备全转 Offline）。
+    /// `run()` 在无设备机器上必须立刻可用：收到 stop 后按 backoff 步长返回，不 panic、不阻塞。
     #[test]
     fn run_returns_promptly_without_devices() {
         if HidApi::new().is_err() {
@@ -1252,10 +1228,7 @@ mod tests {
 
     // ---- 推送型协议：惰性探活 ----
 
-    /// 连上先探一次，之后**只有在读数静默超过期望间隔时才再探**。
-    ///
-    /// qhw 族的查询不按节奏发：键盘处理一条电量命令要唤醒固件，常态下应当零查询，
-    /// 由设备自己推送。这条判据是「省电」与「别让读数烂在那里」之间的唯一开关。
+    /// 连上先探一次，之后只有在读数静默超过期望间隔时才再探。
     #[test]
     fn lazy_probe_waits_for_silence_before_asking_again() {
         let t0 = Instant::now();

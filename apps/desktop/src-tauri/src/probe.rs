@@ -1,16 +1,6 @@
-//! 生成上报数据：枚举候选集合、录制原始 HID 报告、把数据整理成可直接贴进 issue 的报告。
+//! 生成上报数据：枚举候选集合、录制原始 HID 报告、整理成可直接贴进 issue 的报告。
 //!
-//! # 为什么这条链路独立于采集线程
-//! 采集线程只处理型号表里的设备（`voltnest_hid::runtime`）。手动添加面对的恰恰是**表里没有**
-//! 的设备，且动作是「逐个集合试、录一段原始字节」，与采集的分享句柄、节奏、错误码都不兼容。
-//! 因此这里自己开临时句柄：抓包结束即关闭，不影响正在跑的采集线程（hidapi 允许共享打开）。
-//!
-//! # 数据完整性
-//! 报告是用户自己的证据，不能「看起来完整、其实少一半」：
-//! - 帧数有上限（[`CAPTURE_MAX_FRAMES`]），撞上限时报告里必须明写「已截断」；
-//! - 报告正文有字符预算（[`REPORT_MAX_CHARS`]，对齐 GitHub issue 正文上限），超出时明写
-//!   「只列出前 N 组」并给出完整文件的路径，让用户改走附件；
-//! - 报告同时落盘：界面复制的是正文，文件才是完整数据。
+//! 抓包自成临时句柄，独立于采集线程。帧数上限 [`CAPTURE_MAX_FRAMES`]、正文字符预算 [`REPORT_MAX_CHARS`]，超限时在报告中明示；复制的是正文，落盘文件才是完整数据。
 
 use std::collections::HashMap;
 use std::fmt::Write as _;
@@ -65,10 +55,7 @@ struct Session {
     finished_at_ms: Mutex<Option<u64>>,
 }
 
-/// 生成上报数据相关的跨命令状态。
-///
-/// 与 `HostState` 分开挂：抓包是「用户手工触发的临时诊断」，不参与采集生命周期，
-/// 也不需要被 `Engine` 看到。
+/// 生成上报数据相关的跨命令状态（不参与采集生命周期）。
 pub struct ProbeState {
     paths: DataPaths,
     store: ManualDeviceStore,
@@ -118,9 +105,7 @@ impl ProbeState {
     }
 }
 
-/// 列出设备（按 VID:PID 聚合后的集合组）—— 生成上报数据的第一步。
-///
-/// **枚举为空不是错误**：界面据此提示「没有检测到 HID 设备」并给出排查建议。
+/// 列出设备（按 VID:PID 聚合的集合组）。枚举为空不是错误。
 #[tauri::command]
 pub fn list_hid_targets() -> Result<Vec<HidTargetDto>, String> {
     let devices = probe::enumerate().map_err(|err| err.to_string())?;
@@ -281,13 +266,7 @@ pub fn list_manual_devices(state: State<'_, Arc<ProbeState>>) -> Vec<ManualDevic
     list
 }
 
-/// 删除一条手动设备记录，并把它的报告文件一并删掉。
-///
-/// 先落盘记录、后删文件：文件删失败只记日志，不回滚记录——否则会出现「列表里还在、
-/// 文件已经没了」的记录，用户点开只会看到读文件失败。
-///
-/// 路径必须落在 `reports/` 且是 `.md`：`manual_devices.json` 可被手工编辑，
-/// 不能让一条记录指到 `C://Windows` 之类的地方，删记录就等于删任意文件。
+/// 报告文件是否可删：必须在 `reports/` 下且为 `.md`（记录可被手工编辑，防删任意文件）。
 fn removable_report_path(reports: &Path, stored: Option<&str>) -> Option<PathBuf> {
     let path = PathBuf::from(stored?);
     let under_reports = path.starts_with(reports);
@@ -458,10 +437,7 @@ struct SampleInput {
     captured_at_ms: u64,
 }
 
-/// 取出全部采样，并挡住「一帧都没有」「多次采样却不是同一个集合」这类必然出错的报告。
-///
-/// 集合一致性必须在这里挡住：两次采样来自不同集合，字节对照就毫无意义，
-/// 而用户会以为「数据对不上是设备的问题」。
+/// 取出全部采样，并挡住「一帧都没有」「多次采样不是同一集合」这类必然出错的报告。
 fn collect_samples(
     state: &ProbeState,
     requests: &[ReportSampleDto],
@@ -748,9 +724,7 @@ fn battery_text(battery: Option<u8>) -> String {
     }
 }
 
-/// 采集方式一行：听 / 发分别说清，别让维护者猜。
-///
-/// 「发了但全失败」必须与「本来就没发」区分开：两者的排查方向完全不同。
+/// 采集方式一行：纯监听 / 主动查询，并区分「发了但全失败」。
 fn capture_mode(summary: Option<&CaptureSummary>) -> String {
     match summary {
         Some(summary) if summary.output_frames > 0 => format!(
@@ -766,9 +740,7 @@ fn capture_mode(summary: Option<&CaptureSummary>) -> String {
     }
 }
 
-/// 「异常」列：把截断与发送失败合并成一句话，没问题就写 `—`。
-///
-/// 两者都是「数据可能不完整」的信号，分两列会让表格过宽，而空单元格又会被误读成「没查」。
+/// 「异常」列：合并截断与发送失败，无问题时为 `—`。
 fn anomaly_text(summary: Option<&CaptureSummary>) -> String {
     let Some(summary) = summary else {
         return "未知（抓取未正常结束）".to_string();
@@ -832,10 +804,7 @@ fn truncate_to_chars(text: String, limit: usize, report_path: Option<&str>) -> S
     )
 }
 
-/// UTC 时间戳：`2026-10-29 03:10:44 UTC`。
-///
-/// 手写日历换算而不是引入 `chrono`：这里只需要一个给人看的 UTC 时间，
-/// 为一行格式化拉一个依赖不划算，且时钟来源必须仍是 `voltnest_provider::clock`。
+/// UTC 时间戳：`2026-10-29 03:10:44 UTC`。手写日历换算，不引入日期库。
 fn utc_stamp(ms: u64) -> String {
     let (year, month, day, hour, minute, second) = civil(ms);
     format!("{year:04}-{month:02}-{day:02} {hour:02}:{minute:02}:{second:02} UTC")
@@ -1189,9 +1158,6 @@ mod tests {
     }
 
     /// 打包隔离：发布产物只允许带型号表，不得把测试/样例数据卷进去。
-    ///
-    /// 这是可执行的守卫而不是注释：`bundle.resources` 一旦写成目录通配（`data/**`）或
-    /// 加进 `tests/`，这条就会红。
     #[test]
     fn bundle_resources_exclude_test_assets() {
         let config_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tauri.conf.json");

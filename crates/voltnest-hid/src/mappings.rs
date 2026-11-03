@@ -1,25 +1,9 @@
-//! 型号表目录：**运行时**从文件系统定位并加载 `data/mappings/*.json`。
+//! 型号表目录：运行时从文件系统定位并加载 `data/mappings/*.json`。
 //!
-//! 型号表不再用 `include_str!` 编译进二进制：进程启动时遍历型号表目录，把每份 `*.json`
-//! 解析成 [`DeviceTable`]，再按 [`crate::spec::BrandSpec::device_table_file`] 交给对应品牌。
-//! 换一份型号表因此不必重编二进制，代价是安装包必须带上该目录 —— 目录定位是全 crate 唯一的
-//! 环境相关逻辑，集中在这里，按固定优先级尝试：
-//!
-//! 1. `VOLTNEST_HID_MAPPINGS_DIR`：显式指定，**一旦设置即为权威**（指错直接报错，不静默回落）。
-//! 2. 可执行文件同级（安装形态）：`<exe>/mappings`、`<exe>/data/mappings`、`<exe>/resources/mappings`
-//!    （Windows NSIS / 免安装版；Tauri 的 `bundle.resources` 落在 resource 目录，Windows 上就是 exe 所在目录）。
-//! 3. 可执行文件上一级（`bin/` 布局）：`<exe>/../Resources/mappings`（macOS `.app`）、`<exe>/../mappings`、
-//!    `<exe>/../data/mappings`、`<exe>/../share/voltnest/mappings`，以及 Linux 安装形态
-//!    `<exe>/../lib/<任意子目录>/mappings`（deb / AppImage 的 Tauri 资源目录是 `lib/<productName>`）。
-//! 4. 源码树（开发期 `cargo run` / `cargo test`）：`<CARGO_MANIFEST_DIR>/data/mappings`。
-//!
-//! 目录必须存在且至少含一份 `*.json`：候选目录「存在且有表」即采用；全部不成立时报
-//! [`MappingError::DirNotFound`]，并把**所有已尝试路径**写进错误信息 —— 装错包时这行日志就是全部线索。
-//!
-//! 目录内每份 `*.json` 都会被解析（隐藏文件与非 `.json` 后缀忽略）。**单份表读不出或解析失败
-//! 只跳过这一份并记入 [`MappingSet::skipped`]，不拖垮整次启动** —— 一份坏表不该让其它品牌的设备全部消失；
-//! 反过来也不能「静默」：跳过项随 [`crate::brands::Registry::skipped`] 一并暴露，由调用方展示。
-//! 「一份表都没加载到」仍由注册表判定为部署事故（`RegistryError::NoUsableBrand`），因为那不是局部损坏。
+//! 启动时遍历目录、把每份表解析成 [`DeviceTable`]，再按
+//! [`crate::spec::BrandSpec::device_table_file`] 交给对应品牌，换表无需重编二进制。
+//! 目录按固定优先级定位，`VOLTNEST_HID_MAPPINGS_DIR` 一旦设置即为权威；单份表读取或解析
+//! 失败只记入 [`MappingSet::skipped`]，不影响其它品牌。
 
 use crate::table::DeviceTable;
 use std::collections::HashMap;
@@ -124,8 +108,7 @@ impl std::error::Error for MappingError {}
 
 /// 按优先级列出型号表目录的候选路径（只列出，不校验是否存在）。
 ///
-/// 顺序即优先级；重复路径只保留首次出现。`<exe>/../lib/*` 一项需要读一层目录列举，
-/// 其余均为纯拼路径。
+/// 顺序即优先级，重复路径只保留首次出现。
 pub fn candidate_dirs() -> Vec<PathBuf> {
     candidate_dirs_for(current_exe_dir().as_deref(), env_dir().as_deref())
 }
@@ -184,13 +167,12 @@ fn lib_layout_dirs(exe_dir: &Path) -> Vec<PathBuf> {
 
 /// 定位型号表目录：第一个「存在且含至少一份型号表」的候选。
 ///
-/// `VOLTNEST_HID_MAPPINGS_DIR` 一旦设置就只认它（即使是空的或不存在），因为「指了却静默用了别的目录」
-/// 会让排查方向彻底跑偏。
+/// 显式环境变量一旦设置就只认它（即使为空或不存在）。
 pub fn resolve_dir() -> Result<PathBuf, MappingError> {
     resolve_in(current_exe_dir().as_deref(), env_dir().as_deref())
 }
 
-/// 定位的纯函数版本：显式目录优先且具有排他性，其余候选按 [`candidate_dirs_for`] 的顺序取第一个可用者。
+/// 定位的纯函数版本：显式目录优先且排他，其余候选按 [`candidate_dirs_for`] 的顺序取第一个可用者。
 fn resolve_in(exe_dir: Option<&Path>, explicit: Option<&Path>) -> Result<PathBuf, MappingError> {
     if let Some(explicit) = explicit {
         let explicit = normalize(explicit);
@@ -214,10 +196,7 @@ fn resolve_in(exe_dir: Option<&Path>, explicit: Option<&Path>) -> Result<PathBuf
     Err(MappingError::DirNotFound { candidates })
 }
 
-/// 词法规整路径：消掉 `.` 与 `..`（不访问文件系统）。
-///
-/// 候选路径全是「exe 目录 + 固定后缀」拼出来的，词法退一级即可得到真实位置；保留 `..` 会让
-/// 诊断日志里的路径无法直接复制核对。`canonicalize` 不用：Windows 上会加 `\\?\` 前缀。
+/// 词法规整路径：消掉 `.` 与 `..`（不访问文件系统，也不加 `\\?\` 前缀）。
 fn normalize(path: &Path) -> PathBuf {
     use std::path::Component;
     let mut out = PathBuf::new();
@@ -248,8 +227,6 @@ fn current_exe_dir() -> Option<PathBuf> {
 }
 
 /// 被跳过的一份型号表（读不出或解析失败），连同原因。
-///
-/// 存在的意义是「跳过但留证」：设备只会少一批，日志与诊断页必须能说清少的是哪份表、为什么。
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SkippedTable {
     /// 文件名（如 `ajazz.json`）。
@@ -264,9 +241,8 @@ impl fmt::Display for SkippedTable {
     }
 }
 
-/// 读入整份型号表目录。返回按文件名索引的集合，供注册表按品牌分派。
-///
-/// 坏表不阻断加载：解析失败的条目进 [`MappingSet::skipped`]，其余照常可用。
+/// 读入整份型号表目录。返回按文件名索引的集合，供注册表按品牌分派（坏表进
+/// [`MappingSet::skipped`]，不阻断加载）。
 #[derive(Debug)]
 pub struct MappingSet {
     dir: PathBuf,
@@ -330,10 +306,9 @@ impl MappingSet {
         &self.dir
     }
 
-    /// 取某个品牌声明的型号表（按文件名，大小写敏感）。每个品牌各自持有一份副本。
+    /// 取某个品牌声明的型号表（按文件名，大小写敏感）。
     ///
-    /// 文件存在但加载失败时返回**真实原因**（解析失败 / 读不出），而不是笼统的「缺少该文件」——
-    /// 否则日志会指向一个明明就在盘上的文件，排查方向直接跑偏。
+    /// 文件存在但加载失败时返回真实原因，而不是笼统的「缺少该文件」。
     pub fn table(&self, file: &str) -> Result<DeviceTable, MappingError> {
         if let Some(table) = self.tables.get(file) {
             return Ok(table.clone());
@@ -373,8 +348,7 @@ impl MappingSet {
 
 /// 只加载一份型号表（不扫描整个目录）：先定位目录，再按文件名读取。
 ///
-/// 供单元测试与「单独校验某个品牌型号表」的场景使用；注册表走 [`MappingSet`]，
-/// 一次扫描即可覆盖全部品牌。
+/// 供单元测试与单独校验某个品牌型号表使用；注册表走 [`MappingSet`]。
 pub fn load_table(file: &str) -> Result<DeviceTable, MappingError> {
     let dir = resolve_dir()?;
     read_table(&dir.join(file))
@@ -640,9 +614,7 @@ mod tests {
         std::fs::remove_dir_all(&empty).ok();
     }
 
-    /// exe 旁边没有表时降级到源码树：开发期 `cargo run` / `cargo test` 全靠这条。
-    ///
-    /// 同时验证候选列表「exe 同级 → 源码树」的完整顺序（装错包时错误信息就是照它列出来的）。
+    /// exe 旁边没有表时降级到源码树（开发期用）。
     #[test]
     fn falls_back_to_source_tree_in_dev() {
         let exe = temp_dir("fallback");
@@ -679,7 +651,7 @@ mod tests {
         dir
     }
 
-    /// 装错包时这行日志就是全部线索：每个变体都要能说清路径与原因。
+    /// 每个错误变体都要能说清路径与原因。
     #[test]
     fn mapping_error_display_covers_every_variant() {
         let dir = PathBuf::from("/opt/voltnest/mappings");

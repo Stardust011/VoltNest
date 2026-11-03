@@ -1,12 +1,11 @@
 //! `hid-vbas` 的通用协议描述（**品牌无关**）。
 //!
-//! 一个品牌接入 = 一份 [`BrandSpec`]：怎么匹配、帧长什么样、电量与充电标志落在第几个字节、是否要主动查询、应答怎么确认。解析器（[`crate::frame`]）与运行时（[`crate::runtime`]）只读这些字段，无 `match brand_id` 分支，新增品牌不改任何既有代码。
+//! 一个品牌接入 = 一份 [`BrandSpec`]：怎么匹配、帧长什么样、电量与充电标志在第几个字节、是否主动
+//! 查询、应答怎么确认。解析器与运行时只读这些字段，无 `match brand_id` 分支，新增品牌不改既有代码。
 //!
-//! 两层：**家族**（`hid-vbas`，协议形状：HID 私有通道+定长报告+命令字，能力在 [`voltnest_provider::HID_VBAS`]）与**品牌**（[`BrandSpec`]，填充 VID/PID 表、UsagePage、字段下标、充电取值、查询报文）。差异只在数据。
-//!
-//! 一个品牌要覆盖多套互不兼容的固件时，用 [`BrandSpec::route`] 把「按型号表字段选协议」的决定权交回品牌自己的模块（达尔优按 `fwType`、雷柏按 `driver`）。没有该字段的品牌保持 `route: None`，语义不变。
-//!
-//! [`BrandSpec::validate`] 在首次枚举前跑一次，把「字段下标越界」等手写错误挡在读线程外：写错即启动失败，不会带病解析出错误电量。
+//! 家族（`hid-vbas`）定协议形状（HID 私有通道 + 定长报告 + 命令字），品牌（[`BrandSpec`]）只填数据；
+//! 一个品牌覆盖多套不兼容固件时，用 [`BrandSpec::route`] 把「按型号表字段选协议」交回品牌模块。
+//! [`BrandSpec::validate`] 在首次枚举前校验字段越界等手写错误，写错即启动失败。
 
 use crate::table::Entry;
 use voltnest_provider::{Cadence, ChargingSupport, ProviderProfile};
@@ -23,11 +22,7 @@ pub enum ReplyTransport {
         /// 读取 feature report 时请求的总长度。
         reply_len: usize,
     },
-    /// 周期读取 feature report，不发送查询报文。
-    ///
-    /// **当前无品牌使用**（四个品牌都走 `Listen` / `InterruptQuery` / `FeatureQuery`）：
-    /// 保留是因为它是一种真实的协议形状（设备只在被读时才更新快照），删掉会让未来接入
-    /// 这类固件时被迫写成「发一条没人理的查询」。运行时与校验对它的处理已随全量测试覆盖。
+    /// 周期读取 feature report，不发送查询报文。当前无品牌使用。
     FeaturePoll {
         /// 读取 feature report 时请求的总长度。
         reply_len: usize,
@@ -51,7 +46,7 @@ impl ReplyTransport {
 
 /// 帧头布局：把一帧切成「头部 → payload」，其余字节是填充。
 ///
-/// 头部只描述**位置**，不描述语义；语义在 [`BatteryFields`]。
+/// 头部只描述**位置**，语义在 [`BatteryFields`]。
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct FrameLayout {
     /// 报告 ID（报告首字节）。`None` = 该协议不带报告 ID / 不校验。
@@ -69,8 +64,7 @@ pub struct FrameLayout {
 impl FrameLayout {
     /// 该帧声明的 payload 长度：有长度字段就读它，否则取固定长度。
     ///
-    /// 返回 `None` 只有一种情形 —— 声明了长度字段但该字节不在缓冲里（报告被读短）。
-    /// 调用方据此区分「长度字段缺失」与「payload 越界」，两者的诊断含义不同。
+    /// 返回 `None` 仅当声明了长度字段但该字节不在缓冲里（报告被读短）。
     pub fn payload_len(&self, report: &[u8]) -> Option<usize> {
         match self.len_index {
             Some(index) => report.get(index).map(|raw| *raw as usize),
@@ -85,23 +79,15 @@ pub struct ChargingField {
     /// 标志在 payload 内的下标。
     pub index: usize,
     /// 参与比较的位。`0xFF` = 整字节比较（既有品牌的行为）。
-    ///
-    /// 只有「状态字节一个字节装两个字段」的协议才需要它：迈从键盘的状态字节高半字节是
-    /// 满电标志、低半字节才是充电状态（官方 `bit4("fullStatus") · bit4("chargeStatus")`），
-    /// 整字节比较会在「满电且正在充电」（`0x11`）时漏判成未充电。
     pub mask: u8,
     /// 表示「充电中」的取值集合（已与 `mask` 对齐）。其余取值一律视为「未充电」，不猜测语义。
     pub true_values: &'static [u8],
-    /// 错误态起点：该字节 `>=` 此值表示设备自报异常（达尔优网页驱动的约定：
-    /// `0x00` 非充电 / `0x01` 普通充电 / `0x02` 快充 / `0x03` 及以上为错误态），
-    /// 此时整帧不得当作有效读数 —— 错误态下的电量字段是没有意义的。
+    /// 错误态起点：该字节 `>=` 此值表示设备自报异常，此时整帧不得当作有效读数。`None` = 不判错误态。
     pub error_from: Option<u8>,
 }
 
 impl ChargingField {
-    /// 该字节是否表示「充电中」：**先按 `mask` 取位，再比取值集合**。
-    ///
-    /// 取位不能省：一个字节装两个字段的协议（迈从键盘 `0x11` = 满电 + 充电）整字节比较会漏判。
+    /// 该字节是否表示「充电中」：先按 `mask` 取位，再比取值集合。
     pub fn is_charging(&self, byte: u8) -> bool {
         self.true_values.contains(&(byte & self.mask))
     }
@@ -113,10 +99,6 @@ impl ChargingField {
 }
 
 /// 应答确认位：`(byte & mask) == value` 才算设备已确认该命令。
-///
-/// 达尔优自研（Tg/海思）固件把应答首字节低半字节置为 `0x02` 表示命令处理完成，
-/// 网页驱动据此判定成败（`tgdevice.js:1836`）。缺这条校验时，一个「设备还没准备好」的
-/// 全零应答会被当成 0% 电量上报。
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct AckField {
     /// 确认位所在下标（绝对下标）。
@@ -132,24 +114,16 @@ pub struct AckField {
 pub struct BatteryFields {
     /// 命令字匹配值（`FrameLayout::cmd_index` 处的期望字节）。
     ///
-    /// `None` = 该协议**不在应答里回显命令字**，故不校验（官方驱动对这类固件只校验确认位）；
-    /// 此时 `cmd_index` 不参与匹配，但仍需落在 payload 之前。
+    /// `None` = 该协议不在应答里回显命令字，故不校验；此时 `cmd_index` 不参与匹配。
     pub cmd: Option<u8>,
     /// 命令字的高字节：`Some` = 该协议的命令字是**双字节小端**，低字节在 `cmd_index`、
     /// 高字节在 `cmd_index + 1`。
-    ///
-    /// 只有 CZ 的 `Ge` 帧这样定义命令（电量 = `0x0904`，线上写作 `04 09`）。必须连高字节一起比：
-    /// 只比低字节时，`0x0A04`、`0x1A04` 这些真·别的命令都会被当成电量应答解析。
     pub cmd_high: Option<u8>,
     /// payload 内的子标签：`(下标, 期望值)`。`None` = 该协议没有子标签。
     pub subtag: Option<(usize, u8)>,
     /// 电量百分比在 payload 内的下标（`0..=100`，越界即 `PercentOutOfRange`）。
     pub percent_index: usize,
     /// 电量字节里承载百分比的位。`0xFF` = 整字节（既有品牌的行为）。
-    ///
-    /// 只有「一个字节塞两个字段」的协议才需要它：迈从 GLW 键盘把电量（bit0..6）与充电标志
-    /// （bit7）压在同一个字节里（官方 `rf_battery:127&e[32], isCharging:e[32]>>7&1`）。
-    /// 不取位时 `0x80|pct` 会读成 128..228，在 `Percent::new` 处被判成越界 —— 充电时反而没读数。
     pub percent_mask: u8,
     /// 充电标志。`None` = 协议不提供充电状态 → 读数恒为 `None`。
     pub charging: Option<ChargingField>,
@@ -157,17 +131,13 @@ pub struct BatteryFields {
 
 impl BatteryFields {
     /// 从电量字节取百分比：先按 [`Self::percent_mask`] 取位，再交给 `Percent` 校验范围。
-    ///
-    /// 取位不能省：迈从 GLW 键盘的 `0x80|pct` 整字节读出来是 128..228，直接判越界 ——
-    /// 于是「正在充电」这个最该显示电量的场景反而没有读数。
     pub const fn percent_of(&self, byte: u8) -> u8 {
         byte & self.percent_mask
     }
 
     /// 这组字段至少要占多少字节：子标签与电量里下标更靠后的那个。
     ///
-    /// 推送帧与应答帧的字段是两份（[`NotifySpec`]），故必须按**当前正在解析的那一份**算，
-    /// 不能统一取 [`BrandSpec::battery`] —— 否则「应答帧装得下、推送帧装不下」的布局会漏过校验。
+    /// 推送帧与应答帧的字段是两份（[`NotifySpec`]），故按**当前正在解析的那一份**算。
     pub const fn min_payload_len(&self) -> usize {
         let percent = self.percent_index + 1;
         match self.subtag {
@@ -182,8 +152,7 @@ impl BatteryFields {
 
 /// 监听帧里状态字节的语义。
 ///
-/// 两种形状互不相同，不能共用一个「低半字节」字段：老族把一个字节拆成满电/充电两个半字节，
-/// GLW 族则把整字节当**门控** —— 它的取值既决定充电状态，又决定这一帧的电量是否可信。
+/// 两种形状互不相同，不能共用一个「低半字节」字段。
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum ListenStatus {
     /// 高半字节 = 满电标志（非零即按 100% 上报），低半字节 = 充电状态（等于该值即充电中）。
@@ -192,10 +161,6 @@ pub enum ListenStatus {
         charging_low_nibble: u8,
     },
     /// 整字节是充电标志，同时是电量可信度的门控。
-    ///
-    /// 迈从 GLW 的 `FA FB 07 <pct> <flag>` 就是这种：`flag == 0` 表示刚停充、电量可信；
-    /// `flag == 1` 表示正在充电，官方在这一帧上**直接 return**（充电中的读数不可信），
-    /// 既不更新电量也不更新状态。
     Gate {
         /// 该字节取这些值 → 充电中。
         charging: &'static [u8],
@@ -206,21 +171,7 @@ pub enum ListenStatus {
 
 /// 设备**自发上报**（宿主未提问）的电量帧布局（与应答帧布局无关，两条通道各有一套）。
 ///
-/// 只描述「怎么认出宿主监听通道上的一帧电量上报、字段在哪」；通道（输入报告）由运行时决定。
-/// 认不出来的一律静默丢弃 —— 输入报告里混着鼠标位移、媒体键等大量无关帧，把它们报成
-/// 「不可读」会让诊断页刷屏。
-///
-/// 迈从键鼠的实测布局（官方 `q3e()` 解析器 + 消费者 `command===10 && type===5`）：
-///
-/// | 连接方式 | `cmd` | 子标签下标 | 电量下标 | 状态下标 |
-/// |---|---|---|---|---|
-/// | 有线 | `0x0A` | 1 | 2 | 3 |
-/// | 2.4G | `0x0A` | 4 | 5 | 6 |
-///
-/// 2.4G 帧前面多 3 字节：官方解析器对无线帧先 `array("space0", length:3)` 再读 `type`。
-///
-/// 迈从 GLW 键盘是另一种形状（官方 `handleMessage` 的 `250/251` 分支）：双字节头 `FA FB`、
-/// 第三字节是子标签、第四字节电量、第五字节是充电门控；另有 `FA FB FF` 一帧只报充电状态。
+/// 只描述「怎么认出监听通道上的一帧电量上报、字段在哪」；认不出来的一律静默丢弃。
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct ListenSpec {
     /// 帧首字节（命令字）必须等于该值。
@@ -261,14 +212,9 @@ impl ListenSpec {
 
 /// 设备**主动推送**的电量帧：与应答共用同一套帧头（[`BrandSpec::frame`]），但命令字与字段下标另有一套。
 ///
-/// 与 [`ListenSpec`] 的区别在帧形状：`ListenSpec` 描述的是「无帧头、首字节即命令字 + 子标签」的
-/// 老族上报帧（迈从键鼠 `0A 05 <电量> <状态>`）；本结构描述的是「与应答共用头部、只是命令字不同」
-/// 的推送帧（CZ/QHW 的 `MANUAL_REPORT`：命令 `0x0700`、7 字节头、电量在 `data[3]`）。
-///
-/// # 为什么不复用 [`BatteryFields`]
-/// 同一台设备的推送帧与查询应答是**两套下标**：qhw 的 `getBattery`(0x0904) 读 `data[0]/data[1]`，
-/// 而 `MANUAL_REPORT`(0x0700) 读 `data[2]/data[3]`。塞进一份会让其中一条通道稳定读错字节，
-/// 且错得很像「电量跳变」而不是坏帧。
+/// 与 [`ListenSpec`] 的区别在帧形状：`ListenSpec` 认「无帧头、首字节即命令字 + 子标签」的上报帧，
+/// 本结构认「与应答共用头部、只是命令字不同」的推送帧。两者不复用 [`BatteryFields`]，因为同一台设备
+/// 的推送帧与查询应答是两套下标。
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct NotifySpec {
     /// 推送帧的命令字低字节（位于 [`BrandSpec::frame`] 的 `cmd_index`）。
@@ -286,7 +232,7 @@ pub struct NotifySpec {
 impl NotifySpec {
     /// 推送帧按 [`BatteryFields`] 的形状表达，供 [`crate::frame`] 复用同一套解析器。
     ///
-    /// 不含子标签与确认位：这两项是**应答**的语义（「这条应答属于哪一问」），推送帧没有提问。
+    /// 不含子标签与确认位：这两项是**应答**的语义（「这条应答属于哪一问」）。
     pub const fn fields(self) -> BatteryFields {
         BatteryFields {
             cmd: Some(self.cmd),
@@ -301,12 +247,7 @@ impl NotifySpec {
 
 /// 多包应答的重组约定：一条应答被设备拆成若干条输入报告发出。
 ///
-/// 迈从键盘（官方 `dJe` 家族）的 2.4G 通道就是这样：一次查询的应答是 N 条输入报告，
-/// 每包自带「总包数 / 序号」，载荷 16 字节，末字节是校验和。单帧解码器认不出这种应答，
-/// 必须先把包拼起来再解析 —— 这就是本结构存在的理由。
-///
-/// 只描述**包**；组装结果里电量与状态在哪，仍由 [`BrandSpec::battery`] 说（同一份字段定义，
-/// 避免两处下标各说一套）。
+/// 只描述**包**；组装结果里电量与状态在哪，仍由 [`BrandSpec::battery`] 说。
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Reassembly {
     /// 应答包的首字节命令字（与查询命令字不同，是设备回包的命令码）。
@@ -320,8 +261,6 @@ pub struct Reassembly {
     /// 每包载荷尾部要丢掉的字节数（校验和）。`0` = 无尾部字段。
     pub trailer_len: usize,
     /// 一次应答最多等多久（毫秒）；超过则丢弃半包，等下一轮查询。
-    ///
-    /// 官方 `waitForCompleteResponse` 是 `200 + retryTime*1000`（未声明 `retryTime` 时 10s）。
     pub timeout_ms: u64,
 }
 
@@ -339,8 +278,7 @@ impl Reassembly {
 
 /// 主动查询模板：向写通道发送一条固定报文，把电量「问」出来。
 ///
-/// 这是与「纯监听（`listen` 通道上的自发上报）」并列的另一条采集路径。是否启用由
-/// [`BrandSpec`] 决定；纯监听设备 `request: None`，不向设备发任何报文。
+/// 与「纯监听」并列的另一条采集路径；纯监听设备的 [`BrandSpec::request`] 为 `None`。
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct RequestTemplate {
     /// 写通道的 UsagePage。
@@ -348,10 +286,6 @@ pub struct RequestTemplate {
     /// 报文中携带的命令字（查询命令，可与上报帧的命令字不同）。
     pub cmd: u8,
     /// 命令字的高字节：`Some` = 双字节小端命令，写在 `cmd_index + 1`。
-    ///
-    /// CZ 的 `Ge` 帧用 `hJ(command)`（`[cmd & 0xFF, cmd >> 8]`）拼头，电量命令 `2308` 即
-    /// 线上 `04 09`。只写低字节会把命令变成 `0x0004`（读信息），设备照常应答别的数据 ——
-    /// 表现为「有帧、但电量永远是垃圾」。
     pub cmd_high: Option<u8>,
     /// 命令字之前的固定报文内容。
     pub prefix: &'static [u8],
@@ -369,18 +303,13 @@ pub struct RequestTemplate {
     pub inverted: bool,
     /// 单轮查询失败后的重试次数（官方驱动的 `retryTime`）。`0` = 一次即定。
     ///
-    /// 迈从网页驱动对 `getBattery` 传 `retryTime: 2`：一次读失败不等于设备不可读，
-    /// 官方会连问三次（首发 + 两次重试）才判定「读不到」。缺这个语义时，一次
-    /// 瞬时未应答就会把设备推到过期态（`stale_ms` 之内没有新读数）。
-    ///
     /// 只对 feature 查询生效：纯监听 / output 查询没有「重问」这回事，读线程忽略它。
     pub retry: u8,
 }
 
 /// 查询报文里「数据块偏移」字段的位置：偏移随板载档位变化时用来重算报文。
 ///
-/// 只有迈从 GLW 的 `0x05` 用到（官方按 `64 × profile` 定位功能配置块）。字段全在 payload 内，
-/// 下标相对 payload 起点。
+/// 字段全在 payload 内，下标相对 payload 起点。
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct BlockOffset {
     /// 偏移低字节的下标。
@@ -397,10 +326,8 @@ pub struct BlockOffset {
 
 /// 「先问一次设备当前板载档位」的探测描述。
 ///
-/// 官方 `getBase()` → `Ne()`：读 56 字节，`[0]` 是板载下标、`[1]` 是档位数、`[2..]` 是档位顺序表。
-/// 顺序表是 `0..N` 的一个排列时，真实档位是 `order[active]`（板载排序）；否则就是 `active` 本身。
-///
-/// 声明它之后，查询会先读一帧 base，再按解析出的档位构造后续查询（见 [`BlockOffset`]）。
+/// base 应答给出当前档位与档位顺序表：顺序表是 `0..N` 的一个排列时真实档位是 `order[active]`，
+/// 否则就是 `active` 本身。声明它之后，查询会先读一帧 base，再按解析出的档位构造后续查询。
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct ProfileProbe {
     /// 读 base 的查询模板。
@@ -416,7 +343,7 @@ pub struct ProfileProbe {
 }
 
 impl ProfileProbe {
-    /// 从 base 应答的 payload 解出当前档位；判定不成立时按 0 处理（官方 `Ne()` 的 `else 0`）。
+    /// 从 base 应答的 payload 解出当前档位；判定不成立时按 0 处理。
     pub fn resolve(&self, payload: &[u8]) -> u8 {
         let Some(active) = payload
             .get(self.active_index)
@@ -450,19 +377,14 @@ impl ProfileProbe {
 impl RequestTemplate {
     /// 按模板拼一帧可直接 `write` 的报文（数据块偏移取 0）。
     ///
-    /// 若协议带报告 ID，报告 ID 必须写在首字节 —— 这是 hidapi 的约定，
-    /// 写错会被设备当成普通数据丢掉，表现为「查询永远没响应」。
+    /// 协议带报告 ID 时写在首字节（hidapi 约定）。
     pub fn build(&self, report_id: Option<u8>) -> Vec<u8> {
         self.build_at(report_id, 0, None)
     }
 
     /// 按板载档位 `profile` 拼报文：偏移与折叠校验和随档位重算。
     ///
-    /// 迈从 GLW 的 `0x05` 查询按 `64 × profile` 定位功能配置块（官方
-    /// `getFuncConfig(t) → _simpleGetCommand(5, 64*t, 64)`）。偏移落在 payload 内，
-    /// 且官方头部的折叠校验和是 `size + lo + hi + 0` 的**求和**（不是异或 —— 只有
-    /// `lo = hi = 0` 时两者才同值，按 profile 偏移后就会算错）。
-    ///
+    /// 校验和是 `size + lo + hi + 0` 的**求和**（不是异或）。
     /// `block` 为 `None` 时 `profile` 不参与，与 [`Self::build`] 等价。
     pub fn build_at(
         &self,
@@ -550,12 +472,8 @@ impl RequestTemplate {
 
 /// 按型号表条目选协议的钩子。
 ///
-/// **只有需要「同品牌多套协议」的品牌才声明它**（达尔优按 `fwType`、雷柏按 `driver` ——
-/// 两者的字段都是各自厂商型号表里的原始字段，互不通用，故钩子只拿到 [`Entry`] 本身，
-/// 怎么解释这些字段由品牌模块自己决定）。其它品牌的型号表里没有这类字段，`route: None`
-/// 即表示「本协议适用于该品牌全部设备」，行为与引入钩子之前逐字节一致。
-///
-/// 钩子返回 `None` 表示「该设备没有已证实的协议」——此时不得退回默认协议去猜。
+/// 只有需要「同品牌多套协议」的品牌才声明它；返回 `None` 表示该设备没有已证实的协议，
+/// 此时不得退回默认协议去猜。
 pub type RouteFn = fn(&Entry) -> Option<&'static BrandSpec>;
 
 /// 一套协议（一个固件家族）的完整接入描述。
@@ -566,104 +484,68 @@ pub struct BrandSpec {
     /// 人类可读的品牌 / 代际名。例如 `AJAZZ（W1 / 星闪代）`。
     pub label: &'static str,
     /// 展示名是否优先用设备自报的产品名（ProductString），而不是型号表型号。
-    ///
-    /// 型号表对共用 PID 的型号只能给出「候选之一」（迈从多款共用 `3837:xxxx`），此时设备自报的
-    /// 产品名才是这台设备自己的型号。型号与产品名都缺失时仍回落到 `VID:PID`。
+    /// 两者都缺失时仍回落到 `VID:PID`。
     pub name_from_product: bool,
     /// 读取通道的 UsagePage。`0` = **通配**：该 VID:PID 的任意集合都接受。
-    ///
-    /// 只有「官方按报告 ID 能力选集合、而 hidapi 拿不到报告描述符里的报告 ID 列表」时才用
-    /// （迈从音频设备：官方遍历 `collections[].inputReports/outputReports` 找实现了报告
-    /// `0x55` 的集合，枚举结果里没有这项信息）。
     pub usage_page: u16,
     /// 备用读取 UsagePage：只有当该 VID:PID **没有任何集合**落在 `usage_page` 上时才启用。
     ///
-    /// 迈从键鼠的官方 WebHID 过滤器对同一型号同时声明 `0xFF01` 与 `0xFF0B`（`Z1e` / `R1e`），
-    /// 说明这批固件里两个页面都有人用。只声明 `usage_page` 时，页面不符的设备会表现为
-    /// 「枚举到了但一个候选集合都没有」—— 静默消失，比读不到更难查。
-    ///
-    /// 主页面优先：只有主页面零命中才降级，因此「两页都在」的设备不会变成两只设备，
-    /// 也不会触发同 VID:PID 冲突告警。
+    /// 主页面优先：主页面零命中才降级，因此「两页都在」的设备不会变成两只设备。
     pub usage_page_alt: Option<u16>,
     /// 读取通道的 Usage。`None` = 该 UsagePage 下任意集合都接受（既有品牌的历史行为）。
-    ///
-    /// 同一 UsagePage 下可能并存多个集合：雷柏 `0xFF00` 上同时有「配置页」（usage `0x02`）、
-    /// 「固件升级页」（usage `0x01` / `0x0E`），只管 UsagePage 会按枚举顺序随机打开其中一个，
-    /// 拿到「打开成功但读不到电量」的句柄。声明 Usage 后只在它上面打开。
     pub usage: Option<u16>,
     /// 只写命令通道的 UsagePage。`None` = 该品牌不主动发报文。
     ///
-    /// **仅参与构造期校验**：运行时只用**读句柄**收发（[`crate::runtime`] 不读本字段）。
-    /// 「读 `0xFF02`、写 `0xFFB1`」这种双集合形态目前**未实现**，故 [`BrandSpec::validate`]
-    /// 要求「声明了查询模板时写页必须等于读页」（读页为 `0` 通配时除外）—— 把「查询发到
-    /// 错误集合、表现为永远没应答」这种最难查的故障挡在启动前，而不是让它带病运行。
+    /// **仅参与构造期校验**：运行时只用读句柄收发。声明了查询模板时写页必须等于读页
+    /// （读页为 `0` 通配时除外，见 [`BrandSpec::validate`]）。
     pub usage_page_write: Option<u16>,
     /// 读取电量帧所使用的 HID 传输方式。
     pub transport: ReplyTransport,
     /// 是否对报告 ID 之后的应答内容逐字节取反。
     pub reply_inverted: bool,
-    /// 电量超过 100 时是否按厂商实现截断到 100。
-    ///
-    /// **当前无品牌置 `true`**：四个品牌的电量字节越界都按 `percent_out_of_range` 处理
-    /// （官方驱动宁可报读失败，也不显示一个编出来的 100%）。保留它只为将来某家确实截断时
-    /// 不必改解析器。
+    /// 电量超过 100 时是否按厂商实现截断到 100。当前无品牌置 `true`（越界一律按读失败处理）。
     pub clamp_percent: bool,
     /// 帧头布局。
     pub frame: FrameLayout,
     /// 电量字段。
     pub battery: BatteryFields,
-    /// 监听通道上「设备自发上报的电量帧」的识别模板。可声明多条（同一设备用不同帧分别报
-    /// 电量与充电状态，如迈从 GLW 的 `FA FB 07` 与 `FA FB FF`）。
-    /// `None` = 该协议没有这条旁路（读数只从查询应答取）。
+    /// 监听通道上「设备自发上报的电量帧」的识别模板。可声明多条（同一设备用不同帧分别报电量与
+    /// 充电状态）。`None` = 该协议没有这条旁路（读数只从查询应答取）。
     pub listen: Option<&'static [ListenSpec]>,
-    /// 设备**主动推送**的电量帧（与应答共用帧头、命令字不同）。
-    ///
-    /// 与 `listen` 是两条互斥的旁路：`listen` 认「无头 + 首字节命令」，本字段认「有头 + 另一条命令」。
-    /// 声明后查询通道可以退化成「连接时问一次」，之后全靠推送 —— 这正是省电的关键：
-    /// 键盘的电量查询要唤醒固件处理一条命令，推送则由设备自己决定何时发。
+    /// 设备**主动推送**的电量帧（与应答共用帧头、命令字不同）。与 `listen` 是两条互斥的旁路。
     pub notify: Option<NotifySpec>,
     /// 主动查询模板。`None` = 纯监听（不向设备发任何报文）。
     pub request: Option<RequestTemplate>,
     /// 查询报文里的「数据块偏移」字段：声明后查询按当前板载档位构造（见 [`BlockOffset`]）。
-    ///
-    /// 迈从 GLW 的功能配置块按 `64 × profile` 分块，官方始终读**当前档位**那一块。
     pub block_offset: Option<BlockOffset>,
     /// 连接后先读一次「当前板载档位」的探测描述（见 [`ProfileProbe`]）。`None` = 不需要探测。
     pub profile_probe: Option<ProfileProbe>,
     /// 多包应答的重组约定。`None` = 一次查询由单条报告应答（绝大多数品牌）。
     ///
-    /// 声明后，这条通道的输入报告改为「先拼包再解析」：`frame` / `battery` 描述的是
-    /// **组装结果**的布局，不是单包布局。
+    /// 声明后 `frame` / `battery` 描述的是**组装结果**的布局，不是单包布局。
     pub reassembly: Option<Reassembly>,
     /// 应答确认位。`None` = 该协议无确认约定，不做该校验。
     pub ack: Option<AckField>,
-    /// 备用报告 ID。
-    ///
-    /// 同一固件家族在不同连接方式下报告 ID 不同（达尔优自研固件：有线 `0x00`、
-    /// 2.4G 接收器 `0x07`，由网页驱动按 `WirelessFlag` 选择），而 HID 枚举结果里
-    /// 拿不到该标志。声明后运行时按「主 → 备」尝试，主 ID 成功即锁定，不来回抖动。
+    /// 备用报告 ID。运行时按「主 → 备」顺序尝试，主 ID 成功即锁定。
     pub fallback_report_id: Option<u8>,
     /// 实测的读数期望间隔（毫秒）：纯监听品牌是设备自发上报的周期，查询品牌是宿主的查询周期。
     pub expected_interval_ms: u64,
-    /// 型号表文件名（相对型号表目录，如 `ajazz.json`），**运行时**由 [`crate::mappings`] 从文件系统加载。
+    /// 型号表文件名（相对型号表目录，如 `ajazz.json`），运行时由 [`crate::mappings`] 加载。
     ///
-    /// 不再编译期嵌入：目录定位规则见 [`crate::mappings`]（安装包须随二进制分发该目录）。
-    /// 多个协议共用一份表时（达尔优 3 套 / 迈从 5 套 / 雷柏 4 套）各写同一个文件名。
+    /// 多个协议共用一份表时各写同一个文件名。
     pub device_table_file: &'static str,
     /// 本品牌下**其它**已接入的协议描述（不含自身）。`&[]` = 单协议品牌。
     ///
-    /// 只给注册表用：启动时逐份 [`BrandSpec::validate`]，把「新增一台变体却忘了写测试」
-    /// 的越界下标挡在第一次枚举之前。匹配路径不读它 —— 设备用哪套协议仍由 [`BrandSpec::route`] 决定。
+    /// 只给注册表用：启动时逐份 [`BrandSpec::validate`]，匹配路径不读它。
     pub variants: &'static [&'static BrandSpec],
-    /// 按型号表条目选协议的钩子。`None` = 本协议适用于该品牌全部设备（默认，除达尔优 / 雷柏外的取值）。
+    /// 按型号表条目选协议的钩子。`None` = 本协议适用于该品牌全部设备。
     pub route: Option<RouteFn>,
 }
 
 impl BrandSpec {
     /// 该设备实际生效的协议描述。
     ///
-    /// `route: None` 的品牌直接返回自己；声明了钩子的品牌把决定权交回**品牌自己的模块**，
-    /// 通用层不做任何厂商字段的判断。
+    /// `route: None` 的品牌直接返回自己；声明了钩子的品牌交给品牌自己的模块决定。
     pub fn for_device(&'static self, entry: &Entry) -> Option<&'static BrandSpec> {
         match self.route {
             Some(route) => route(entry),
@@ -673,8 +555,7 @@ impl BrandSpec {
 
     /// 解析一帧所必需的最短 payload：必选字段（子标签、电量）都要落在里面。
     ///
-    /// 充电标志**不计入**：它是可选字段，缺失表示「未知」，不得把缺一个字节
-    /// 的旧固件判成坏帧（会直接把可用读数变成 `Unavailable`）。
+    /// 充电标志**不计入**：它是可选字段，缺失表示「未知」。
     pub const fn min_payload_len(&self) -> usize {
         self.battery.min_payload_len()
     }
@@ -687,7 +568,7 @@ impl BrandSpec {
     /// 该品牌期望的采集节奏（家族级 `ProviderProfile` 必须覆盖它）。
     ///
     /// 有查询模板 = 节奏由宿主决定（[`Cadence::Polled`]）；否则 = 纯监听，节奏由设备决定
-    /// （[`Cadence::ListenOnly`]）。两者共用同一个 `expected_interval_ms` 预算。
+    /// （[`Cadence::ListenOnly`]）。
     pub const fn cadence(&self) -> Cadence {
         match self.request {
             Some(_) => Cadence::Polled {
@@ -920,11 +801,9 @@ impl BrandSpec {
         Ok(())
     }
 
-    /// 品牌节奏是否落在家族能力声明的预算内。
+    /// 品牌节奏是否落在家族能力声明的预算内（内部先跑 [`Self::validate`]）。
     ///
-    /// 家族只有一组三档阈值链；若某品牌的上报间隔慢到
-    /// `1.5 × 间隔 > 标准档 stale_ms`，它的正常上报会被判过期 —— 这类品牌必须先
-    /// 改家族声明的阈值链，不能靠加载顺序或特例绕开。
+    /// 家族只有一组三档阈值链；间隔慢到正常上报会被判过期的品牌，必须先改家族的阈值声明。
     pub fn validate_against(&self, profile: &ProviderProfile) -> Result<(), SpecError> {
         self.validate()?;
         if profile.transport != voltnest_provider::Transport::Hid {
@@ -1023,10 +902,7 @@ pub enum SpecError {
         /// 品牌标识。
         brand: &'static str,
     },
-    /// 推送帧的命令字与应答帧的命令字相同。
-    ///
-    /// 两条通道共用同一个 `FrameLayout`，命令字是唯一的区分依据：相同意味着同一帧会被
-    /// 按两套下标各解析一次，其中一套必然读错字节。
+    /// 推送帧的命令字与应答帧的命令字相同（两条通道无法区分）。
     NotifyCollidesWithReply {
         /// 品牌标识。
         brand: &'static str,
@@ -1042,8 +918,6 @@ pub enum SpecError {
         brand: &'static str,
     },
     /// 查询模板不周期发送，但该协议没有任何推送源（`listen` / `notify` 全空）。
-    ///
-    /// 此时唯一的读数来源是探活查询本身，等于把轮询藏进了「推送为主」的写法里。
     PassiveWithoutPushSource {
         /// 品牌标识。
         brand: &'static str,
@@ -1137,10 +1011,7 @@ pub enum SpecError {
         /// 后登记的品牌。
         second: &'static str,
     },
-    /// 型号表无法解析。
-    ///
-    /// 注意：内置注册表现按**品牌粒度跳过**坏表（见 [`crate::brands::Registry::skipped`]），
-    /// 不再用它表达「某份表坏了」；保留此变体供自定义装配方与诊断信息使用。
+    /// 型号表无法解析（内置注册表现按品牌粒度跳过坏表，此变体保留供自定义装配方使用）。
     DeviceTable {
         /// 品牌标识。
         brand: &'static str,

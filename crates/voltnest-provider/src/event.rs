@@ -1,9 +1,5 @@
 //! Provider → 宿主的事件分类：Provider 对事件做分类，宿主不做数据校验。
-//!
-//! 三点关键设计：① [`ValidReading::battery`] 是 `Percent`，越界值在类型上不可能出现。
-//! ② [`ProviderEvent::Unreadable`] 与 [`ProviderEvent::LinkLost`] 必须分开：前者「设备还在、数据不可信」→
-//! `Unavailable`，后者「链路没了」→ `Offline`；合并会让「链路消失立即 Offline」与「解析失败判 Unavailable」互相打架。
-//! ③ 事件不带时间戳；宿主收到时每批取一次 `now_utc_ms()` 向下透传，Provider 完全不参与状态判定的时间基准。
+//! 事件不带时间戳，由宿主收到时每批取一次 `now_utc_ms()` 向下透传。
 
 use crate::classify::DeviceClassification;
 use crate::error::ErrorCode;
@@ -18,18 +14,16 @@ pub struct DeviceFact {
     /// 传输层。
     pub transport: Transport,
     /// 协议家族 ID（`ProviderProfile::family_id`）。
-    ///
-    /// 曾名 `provider`，会与「采集线程 trait `Provider`」混淆，故改名为 `family_id`。
     pub family_id: &'static str,
-    /// 展示名（HID 为「品牌名 + 型号」，迈从改用设备自报产品名；BLE 为 GAP `0x2A00` 原文）。
-    /// 必须是可读名称；两者都拿不到时回落 `VVVV:PPPP`。
+    /// 展示名（HID 为「品牌名 + 型号」或设备自报产品名；BLE 为 GAP `0x2A00` 原文）。
+    /// 必须是可读名称；都拿不到时回落 `VVVV:PPPP`。
     pub display_name: String,
     /// 未经归一化的型号原文。宿主用 `normalize()` 算 `modelKey`（D4）。
     pub model_name_raw: String,
     /// 诊断用的设备路径（HID `open_path` 目标 / BLE 地址），不参与身份判定。
     pub path: Option<String>,
-    /// 设备类型识别结果（含证据）。默认 [`DeviceClassification::unknown`]：证据不足即 Unknown，
-    /// 不得为好看填类型。与电量采集完全解耦：本字段只影响展示与诊断，不参与状态判定。
+    /// 设备类型识别结果（含证据）。默认 [`DeviceClassification::unknown`]：证据不足即 Unknown。
+    /// 与电量采集解耦，只影响展示与诊断。
     pub classification: DeviceClassification,
 }
 
@@ -73,8 +67,7 @@ pub struct ValidReading {
     pub stable_id: StableId,
     /// 电量。
     pub battery: Percent,
-    /// 充电状态。Profile 声明 [`ChargingSupport::Unavailable`](crate::ChargingSupport)
-    /// 时必须为 `None`。
+    /// 充电状态。Profile 声明 [`ChargingSupport::Unavailable`](crate::ChargingSupport) 时必须为 `None`。
     pub charging: Option<bool>,
 }
 
@@ -118,7 +111,7 @@ impl RemovalReason {
 
 /// Provider 上报的事件集合。
 ///
-/// `voltnest-core` 必须**穷尽匹配**（不得用 `_ =>` 兜底），新增变体必然编译失败。
+/// `voltnest-core` 必须穷尽匹配（不得用 `_ =>` 兜底）。
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum ProviderEvent {
     /// 设备出现 → 建立设备记录，状态 `Unknown`。
@@ -131,10 +124,8 @@ pub enum ProviderEvent {
         stable_id: StableId,
         /// 错误码。
         code: ErrorCode,
-        /// **诊断细节**：哪条校验失败 + 被拒的原始字节（HID 坏帧）或失败上下文。
-        ///
-        /// 只写诊断页与日志，不参与任何状态判定——状态机看到的仍只有 `code`。
-        /// `None` = 该情形无可用报文（例如打开句柄失败）。
+        /// **诊断细节**：哪条校验失败 + 被拒的原始字节或失败上下文。
+        /// 只进诊断页与日志，不参与状态判定；`None` = 无可用报文。
         detail: Option<String>,
     },
     /// 链路没了 → 立即 `Offline`。

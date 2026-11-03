@@ -1,16 +1,7 @@
-//! 诊断探针：确认本机 BLE 后端的两条枚举路径，并做一次真实读取。
+//! 诊断探针：打印本机 BLE 后端的枚举结果，并对检索到的设备做一次真实读取。
 //!
-//! 运行：`cargo run -p voltnest-ble --example probe`
-//!
-//! Windows（WinRT）：`peripherals()` 只返回本次会话扫描到的广播设备；
-//! 已连接设备要靠 `retrieve_peripherals()` 的「已连接 + 含 0x180F」选择器。
-//!
-//! Linux（bluez）：`peripherals()` 直接查 bluetoothd 的 ObjectManager，返回全部已知设备（含未连接）；
-//! `retrieve_peripherals(services=[0x180F])` 只返回「已连接且 Device1.UUIDs 已解析出 0x180F」的设备，
-//! 而 UUIDs 在服务解析前是空的 —— 这正是 provider 侧不把服务 UUID 当选择器的原因。
-//!
-//! 探针**永不 panic**：没有适配器 / bluetoothd 未运行 / 权限不足时打印诊断结论并正常退出，
-//! 因此它既能当真机探针，也能在 CI 上验证「无硬件时优雅降级」。
+//! 运行：`cargo run -p voltnest-ble --example probe`。探针**永不 panic**：
+//! 无适配器 / bluetoothd 未运行 / 权限不足时打印诊断结论并正常退出。
 
 use btleplug::api::{Central, Manager as _, Peripheral as _, RetrievePeripheralsOptions};
 use btleplug::platform::{Manager, Peripheral};
@@ -22,15 +13,15 @@ fn uuid16(short: u16) -> Uuid {
     Uuid::from_u128(u128::from(short) << 96 | 0x0000_1000_8000_0080_5f9b_34fb)
 }
 
-/// 平台前提：探针结论只有在知道「枚举从哪来」时才可读。
+/// 平台前提与枚举来源说明。
 #[cfg(target_os = "linux")]
 const PLATFORM_NOTE: &str = "平台：Linux/bluez —— 需 bluetoothd 运行且系统 dbus 可用；当前用户需在 bluetooth 组或有 polkit 授权";
 
-/// 平台前提：探针结论只有在知道「枚举从哪来」时才可读。
+/// 平台前提与枚举来源说明。
 #[cfg(target_os = "windows")]
 const PLATFORM_NOTE: &str = "平台：Windows/WinRT —— peripherals() 只回放本次扫描的广播；已连接设备走 retrieve_peripherals 选择器";
 
-/// 平台前提：探针结论只有在知道「枚举从哪来」时才可读。
+/// 平台前提与枚举来源说明。
 #[cfg(not(any(target_os = "windows", target_os = "linux")))]
 const PLATFORM_NOTE: &str = "平台：非 Windows/Linux —— 枚举能力取决于 btleplug 后端实现";
 

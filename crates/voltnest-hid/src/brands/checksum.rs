@@ -1,19 +1,16 @@
-//! 厂商报文校验和：**品牌私有算法，只供品牌模块使用**。
+//! 厂商报文校验和：品牌私有算法，只供品牌模块使用。
 //!
-//! 通用层（[`crate::spec`] / [`crate::frame`] / [`crate::runtime`]）不认识这些算法 —— 校验和在
-//! `const` 上下文里算进 [`crate::spec::RequestTemplate::payload`]，运行时只当作普通字节发出去。
-//! 这样既把「手算十六进制」从协议描述里清掉（载荷一改，校验和自动跟随），又不让通用层长出厂商形状。
+//! 校验和都在 `const` 上下文里算进 [`crate::spec::RequestTemplate::payload`]，运行时按普通字节发出，
+//! 通用层不认识这些算法。各家算法互不通用，故按品牌各给一个具名函数：
 //!
-//! 三家的算法确实互不通用，故这里是三个具名函数而不是一个带参数的「通用校验和」：
-//!
-//! | 品牌 | 官方实现 | 覆盖范围 | 落点 |
+//! | 品牌 | 算法 | 覆盖范围 | 落点 |
 //! |---|---|---|---|
 //! | 匠盟（达尔优） | `0x55 - Σ` | 含报告 ID 与命令字 | 报文末字节 |
 //! | 迈从（键盘 2.4G） | `Σ & 0xFF` | 含报告 ID 与命令字 | 报文末字节 |
 //! | 维盛 AP（雷柏） | `Σ`（u16 回卷） | 命令字与 LEN，不含报告 ID | 报告 ID 之后两字节（小端） |
 //! | 迈从（键盘 CZ/QHW） | `⊕` | 从 `flags` 起（不含报告 ID 与 `version`） | 报文末字节 |
 
-/// 逐字节求和取低 8 位（迈从键盘 2.4G 的 `tJe`；**入参必须含报告 ID**，官方就是这么算的）。
+/// 逐字节求和取低 8 位（迈从键盘 2.4G；入参须含报告 ID）。
 pub(crate) const fn sum8(bytes: &[u8]) -> u8 {
     let mut sum = 0u8;
     let mut i = 0;
@@ -24,16 +21,12 @@ pub(crate) const fn sum8(bytes: &[u8]) -> u8 {
     sum
 }
 
-/// `0x55 - Σ(bytes)` 的低 8 位（匠盟 `CheckSum`；入参含报告 ID + 命令字）。
+/// `0x55 - Σ(bytes)` 的低 8 位（匠盟；入参含报告 ID 与命令字）。
 pub(crate) const fn neg_sum8(bytes: &[u8]) -> u8 {
     0x55u8.wrapping_sub(sum8(bytes))
 }
 
-/// 逐字节异或（迈从 CZ/QHW 族 `Ge` 帧的尾校验）。
-///
-/// 官方是 `d.slice(1).reduce(xor)`，`d` 为**不含报告 ID**的帧，故入参从 `flags` 起算 ——
-/// 既不含报告 ID，也不含 `version` 字节。这个「少算首字节」很容易看漏：整帧异或同样能
-/// 算出 0x0E 之外的值，发出去设备回不回、回什么就全看运气。
+/// 逐字节异或（迈从 CZ/QHW 族帧尾校验；入参从 `flags` 起，不含报告 ID 与 `version`）。
 pub(crate) const fn xor8(bytes: &[u8]) -> u8 {
     let mut acc = 0u8;
     let mut i = 0;
@@ -44,7 +37,7 @@ pub(crate) const fn xor8(bytes: &[u8]) -> u8 {
     acc
 }
 
-/// 逐字节 u16 累加（回卷），返回小端两字节（维盛 AP `WL`；入参**不含**报告 ID 与校验和本身）。
+/// 逐字节 u16 累加（回卷），返回小端两字节（维盛 AP；入参不含报告 ID 与校验和本身）。
 pub(crate) const fn sum16_le(bytes: &[u8]) -> [u8; 2] {
     let mut sum = 0u16;
     let mut i = 0;

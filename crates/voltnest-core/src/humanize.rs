@@ -6,7 +6,7 @@ const DAY_MS: u64 = 24 * HOUR_MS;
 
 /// 把「距今多久」渲染成用户文案：`12_000` → "刚刚"，`12` 分钟 → "12 分钟前"，`3` 小时 → "3 小时前"，`2` 天 → "2 天前"。
 ///
-/// 入参须为宿主同一时钟算出的 UTC 差值，前端不得用 `Date.now()` 自行相减。
+/// 入参须为宿主同一时钟算出的 UTC 差值。
 pub fn humanize_ago(elapsed_ms: u64) -> String {
     if elapsed_ms < MINUTE_MS {
         return "刚刚".to_string();

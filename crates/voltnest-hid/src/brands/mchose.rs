@@ -1,53 +1,17 @@
 //! 品牌：迈从 MCHOSE。
 //!
-//! 依据：官方 M HUB 网页驱动（`mchose.com.cn`，`assets/purify.es-*.js` + `assets/index-*.js`，
-//! 2026-10 线上版本）的反混淆阅读。**官方按设备类别走四条互不相同的通道**，本模块据此拆 spec：
+//! 官方按设备类别走四条互不相同的通道，本模块据此拆 spec，由 `route` 按型号表的
+//! `device_type` / `driver` / `mode` 分派：
 //!
-//! | 类别 | 官方通道 | 本模块 |
-//! |---|---|---|
-//! | 鼠标 | 连接时一次 feature 查询 `11 06`（应答逐字节取反）+ 之后只靠实时帧刷新 | [`MOUSE_WIRED`] / [`MOUSE_WIRELESS`]（仅监听帧布局不同） |
-//! | 键盘 · CZ/GLW 族 | 标准页 `0x0001`：`55 05 …` 按当前板载档位读 64 字节功能配置块（电量在 `payload[32]`）；推送 `FA FB 07` / `FA FB FF` | [`KEYBOARD_GLW`] |
-//! | 键盘 · `dJe` 老族 | 有线 feature `06 87`（520B）、2.4G output `13 4A` + 校验和 + 多包重组 | [`KEYBOARD_DJE_WIRED`] / [`KEYBOARD_DJE_WIRELESS`] |
-//! | 键盘 · CZ/QHW 族 | `0xFF80`：报告 `0x4D` + 7 字节头 + 2 字节命令（查询 `0x0904` / 推送 `0x0700`）+ 尾校验 | [`KEYBOARD_QHW`] |
-//! | 耳机 / 音箱 | 输出报告 `0x55` + 命令 `0x65`，应答是输入报告 | [`AUDIO`] |
-//! | G 系列鼠标 | 客户端注入 iframe `#gSeries`，官方在 `LG()` / `isG3Mouse()` 里直接跳过 WebHID | 仍按键鼠通道读（官方不走这条，是否应答 `0x06` 待实测；不按名称猜排除） |
-//! | 扩展坞 / 未知 | 无电量上报 | 不采集 |
+//! | 类别 | 本模块 |
+//! |---|---|
+//! | 鼠标 | [`MOUSE_WIRED`] / [`MOUSE_WIRELESS`]（连接时一次 feature 查询 + 实时帧） |
+//! | 键盘 · CZ/GLW 族 | [`KEYBOARD_GLW`]（标准页 `0x0001` 读 64 字节功能配置块） |
+//! | 键盘 · `dJe` 老族 | [`KEYBOARD_DJE_WIRED`] / [`KEYBOARD_DJE_WIRELESS`] |
+//! | 键盘 · CZ/QHW 族 | [`KEYBOARD_QHW`]（`0xFF80`，查询 + 主动上报） |
+//! | 耳机 / 音箱 | [`AUDIO`]（输出报告 `0x55` + 命令 `0x65`） |
 //!
-//! # 证据（字节级）
-//! 1. 查询报文 `jat = "11 06 " + 19×"00"`，发送前报告 ID 之后逐字节取反 — `LG()`：
-//!    `order.slice(3).split(" ").map(x => "0x"+x ^ 255)`。
-//! 2. 应答解析器 `Pat`（binary-parser，输入是应答去掉前 2 字节并逐字节取反）：
-//!    `uint16 vid · uint16 pid · uint32 fwVersion · bit3 connectMode · bit1 connectStatus ·
-//!    bit4 inReserved · uint8 batteryLevel · uint8 chargeStatus`。
-//!    → payload 偏移：`[0..2)` vid、`[2..4)` pid、`[4..8)` fwVersion、`[8]` 连接态位域、
-//!    `[9]` 电量、`[10]` 充电状态。官方只在 `chargeStatus === 1` 时显示「充电中」。
-//! 3. 实时上报解析器 `q3e(isWireless)`：`uint8 command` →（无线再 3 字节 space）→
-//!    `uint8 type · uint8 batteryLevel · bit4 fullStatus · bit4 chargeStatus`；
-//!    消费者只在 `command === 10 && type === 5` 时采用，`fullStatus` 非零则电量按 100 显示。
-//!    → 有线 `[0]=0x0A [1]=type [2]=电量 [3]=状态`；无线 `[0]=0x0A [1..4)=空 [4]=type [5]=电量 [6]=状态`。
-//! 4. 音频：`D8t()` 发 `sendReport(0x55, [0x65, 0x01, 61×0x00])`，输入报告 `0x55` 以 `0x65` 开头，
-//!    `data[1]=电量`、`data[2]=状态`（`2=放电 3=充电 4=满电 26=休眠`）。
-//! 5. 键盘命令表 `Rpe`（`new Zpe(Rpe)` → `my`）：
-//!    `getBattery.wiredCommand = "06 87 00 00 01 00 02 00" + 512×00`（报告 ID `0x06`、命令 `0x87`）、
-//!    `wirelessCommand = "13 4a 01" + 16×00`（报告 ID `0x13`、命令 `0x4A`）。
-//!    `dJe.readCommand` 有线走 `sendFeatureReport(0x06, cmd.slice(3))` + `receiveFeatureReport(0x06)`，
-//!    应答 `slice(2)` 后按 `bae(true)` = 跳 6 字节 → 电量 → `bit4 fullStatus · bit4 chargeStatus`；
-//!    无线走 `sendReport(0x13, 命令+校验和)`，应答由 `handleCommandResponse` 按
-//!    `commonParser{commandParams,total,current}` 逐包拼接，`t.slice(4,-1)` 才是载荷，
-//!    拼完按 `bae(false)` = 电量 → 状态。
-//! 6. 集合：官方 WebHID 过滤器（`Z1e` / `R1e`）对同一型号同时声明 `usagePage 0xFF01` 与 `0xFF0B`。
-//!
-//! # 未接入（有据可查但需另做）
-//! - **键盘的 520 字节特征报告未经实机验证**：官方模板是「报告 ID + 519 字节」，超过了
-//!   常见的 64 字节特征报告上限，能否 `send_feature_report` 取决于该集合在报告描述符里
-//!   声明的长度；`hidapi` 若拒绝，会表现为发送失败 → 整轮不可读（不会读出错值）。
-//! - **音频例外型号 `V9 PRO 2` / `R9`**：官方 `v6(productName)` 命中后走 `HJe()` 的另一种帧
-//!   （`Gd/Mpe`：`FJe=0xAA` 起始、`Zc=4` 命令位、XOR 校验和），电量在
-//!   `[sleepState, (charging<<7)|percent]`（`Epe/Gpe`）。需要另做一套带校验和的帧，
-//!   [`route`] 对这两个型号返回 `None`：不拿 0x65 帧去猜。
-//! - **`canGetBattery` 门控**：官方按产品目录的 `showBattery` / `enableBatteryVersion`
-//!   （对比接收器固件版本 `0xAA` 特征报告）决定是否查电量。目录字段来自后端 `fetchData`，
-//!   型号表里没有，故本项目对音频设备一律尝试查询：不应答即上报不可读，不假装有数据。
+//! G 系列鼠标按键鼠通道读；扩展坞 / 未知设备无电量上报，不采集。
 
 use crate::brands::checksum;
 use crate::spec::{
@@ -60,17 +24,13 @@ const MCHOSE_REQUEST_PAYLOAD: [u8; 19] = [0; 19];
 
 /// 键盘（有线）查询载荷：官方 `wiredCommand` 去掉报告 ID `0x06` 与命令字 `0x87` 之后的部分。
 ///
-/// 官方模板是 `` `06 87 00 00 01 00 02 00 ${"00 ".repeat(512).trim()}` ``：`0x06` 是报告 ID
-/// （`readCommand` 里用 `wiredCommand.slice(3)` 砍掉它，因为 WebHID 的 `sendFeatureReport`
-/// 把报告 ID 作为独立入参），`0x87` 是命令，后面 6 字节是命令参数，再补 512 个 0。
+/// 后 512 个补零由 `report_len` 补齐。
 const KEYBOARD_DJE_WIRED_PAYLOAD: [u8; 6] = [0x00, 0x00, 0x01, 0x00, 0x02, 0x00];
 
 /// 键盘（2.4G）查询载荷：官方 `wirelessCommand` 去掉报告 ID `0x13` 与命令字 `0x4A` 之后的部分，
-/// 末尾追加官方 XOR 校验和。
+/// 末尾是 XOR 校验和。
 ///
-/// 官方 `tJe` = 「各字节十六进制求和」⇒ `(0x13 + 0x4A + 0x01) & 0xFF = 0x5E`。求和**包含报告 ID**，
-/// 这一点容易看漏（`tJe(o)` 的入参是带 `13` 的完整命令串）。载荷共 18 字节：
-/// `01 00×16 5E`，加上报告 ID 与命令字正好 20 字节一条 output report。
+/// 校验和含报告 ID（`0x13 + 0x4A + 0x01`），故载荷为 `01 00×16 5E`。
 const KEYBOARD_DJE_WIRELESS_PAYLOAD: [u8; 18] = {
     let mut payload = [0u8; 18];
     payload[0] = 0x01;
@@ -85,17 +45,10 @@ const AUDIO_REQUEST_PAYLOAD: [u8; 62] = {
     payload
 };
 
-/// 鼠标（有线）：`0xFF01` feature 查询，应答取反，输入报告实时刷新。
+/// 鼠标（有线）：`0xFF01` feature 查询（`0x11 0x06`，应答逐字节取反），页面 `0xFF01` / `0xFF0B`。
 ///
-/// # 节奏：连接时问一次，之后只订阅
-/// 官方鼠标页的初始化是「发一条 `0x11 0x06` 拿 `getBatteryMode deviceInfo`」，
-/// 随后 `ck.getNotifier(id).subscribe(..)` 订阅实时帧，只在 `command===10 && type===5`
-/// 时采用电量（`q3e` 解析，有线 `[0]=0x0A [1]=type [2]=电量 [3]=bit4 满电 + bit4 充电`）。
-/// **没有周期查询** —— 因此本 spec 的 `interval_ms` 为 `None`，不按节奏唤醒设备。
-///
-/// 与键盘的差别值得记一笔：这一族的页面 `0xFF01` / `0xFF0B` 与官方过滤器
-/// （`[65281, 65291].includes(usagePage)`）**一致**，所以鼠标从来没有键盘那种
-/// 「枚举不到」的问题；问题只在采集节奏上。
+/// 节奏：连接时问一次，之后只订阅实时帧（`command == 0x0A`、`type == 5`），故
+/// `interval_ms` 为 `None`，不按节奏唤醒设备。
 pub const MOUSE_WIRED: BrandSpec = BrandSpec {
     id: "mchose-mouse-wired",
     label: "MCHOSE（鼠标 · 有线）",
@@ -184,8 +137,7 @@ pub const MOUSE_WIRELESS: BrandSpec = BrandSpec {
 
 /// 耳机 / 音箱：输出报告 `0x55` + 命令 `0x65`，应答走输入报告。
 ///
-/// `usage_page: 0` 是通配 —— 官方用 `collections[].outputReports[].reportId === 0x55`
-/// 选集合，hidapi 的枚举结果里没有报告 ID 清单。
+/// `usage_page: 0` 为通配（hidapi 枚举结果里没有报告 ID 清单）。
 pub const AUDIO: BrandSpec = BrandSpec {
     id: "mchose-audio",
     label: "MCHOSE（耳机 / 音箱）",
@@ -246,47 +198,23 @@ pub const AUDIO: BrandSpec = BrandSpec {
 /// 走另一种帧的音频型号（官方 `QKt` 表：`V9 PRO 2` / `R9`）。
 const ALT_AUDIO_MODELS: [&str; 2] = ["V9 PRO 2", "R9"];
 
-/// 键盘（GLW 族）：CZ 驱动（`cz_main.js`）里没声明 `manufacturer` 的全部键盘，缺省即这一族。
-///
-/// G75 V2 就在这一族里（其配置对象没有 `manufacturer` 字段 → 官方 `It()` 返回 `"glw"`）。
+/// 键盘（GLW 族）：CZ 驱动里未声明 `manufacturer` 的全部键盘（含 G75 V2）。
 ///
 /// # 通道
-/// 官方 `hidFilters:[{usagePage:1,usage:0},{usagePage:65280,usage:1,boot:!0}]` ——
-/// **正常模式挂在标准 Generic Desktop 页（`0x0001`）上**，`0xFF00` 那条带 `boot:!0`，
-/// 只在设备切成升级 PID（G75 V2：`0x2022`）时生效。此前的 `0xFF01` 是鼠标 `LG()` 通道的页面，
-/// 键鼠两族用错页的后果一样：`select_targets` 零命中，设备连 `Arrived` 都不发。
+/// 正常模式挂在标准 Generic Desktop 页 `0x0001`（`usage = 0`）；`0xFF00` 只在设备切成升级 PID 时生效。
 ///
-/// # 集合
-/// 标准页 `0x0001` 上并列多个集合（键盘 `1/6`、消费类 `1/12`、鼠标 `1/2`），GLW 私有协议在 `1/0`；
-/// 故 `usage` 钉死为 `0`，只作用于主页面。
+/// # 电量
+/// 没有独立电量命令：用命令 `0x05` 读一整块 64 字节功能配置（`getFuncConfig(profile)`），电量与
+/// 充电标志同在第 `[32]` 字节（低 7 位电量、最高位充电）。读哪一块由设备当前板载档位决定
+/// （[`ProfileProbe`] 读 base 得到）。
 ///
-/// # 电量（没有 `getBattery` 这种一问一答）
-/// 官方在 GLW 族里**没有独立的电量命令**：`getPerformanceInfo(profile)` → `getFuncConfig(profile)`，
-/// 读一整块 64 字节的功能配置，电量与充电标志压在同一个字节里
-/// （`xe()`：`rf_battery:127&e[32]`, `isCharging:e[32]>>7&1`）。
+/// 查询帧头为 `55 <cmd> 00 <sum> <size> <lo> <hi> 00`，`<sum>` 是 `sum([size, lo, hi, 0]) & 0xFF`。
 ///
-/// 查询帧由 `CmdQueueItem` 拼：`55 <cmd> 00 <sum> <size> <lo> <hi> 00 <data…>`，
-/// 头部校验字节是 `sum([size, lo, hi, 0]) & 0xFF`（**求和**，只有 `lo = hi = 0` 时才与异或同值）。
-/// `getFuncConfig` = `_simpleGetCommand(5, 64*profile, 64)`，按 56 字节一段发多包 ——
-/// 首包即「偏移 `64*profile`、长度 56」，而电量在第 33 字节，单包就够，故这里只发首包。
-/// 读哪一块由设备当前板载档位决定（官方 `getBase()` → `0x04`，见 [`ProfileProbe`]）。
-///
-/// # 推送（官方真正在用的那条）
-/// `handleMessage` 的两个 `250/251` 分支：
-/// - `FA FB 07 <电量> <flag>`：`flag == 0` → 停充 + 采用电量；`flag == 1` → **直接 return**。
-/// - `FA FB FF 00`：只表示「正在充电」。
-///
-/// `_proxyEvent` 里 `AllowUpdateBattery` 缺省为 `"qhw" === family`，GLW 得 `false`，所以官方
-/// **不把推送的电量写进界面**（只走 `chargeStatus`），界面上的电量为「进页面读一次」的快照。
-/// 本模块仍订阅这两帧：电量帧只在 `flag == 0` 时采纳（与官方同判据），充电帧只更新充电状态。
+/// # 推送
+/// 订阅两条帧：`FA FB 07 <电量> <flag>` 仅在 `flag == 0`（停充）时采纳电量；`FA FB FF 00` 只表示充电中。
 ///
 /// # 节奏
-/// 官方没有周期查询（`glw_sdk` 里没有 `setInterval`），只在进入页面 / 切换档位 / 通信中断
-/// 恢复时读一次。故 `interval_ms: None` —— 常态零查询，只在读数快过期时探活一次。
-///
-/// # 静态分析到此为止的一处（需实机确认）
-/// **应答是否带报告 ID 槽**：本模块用 `decode_battery`/`matches_cmd` 的位移容错覆盖两种形态，
-/// 无需再改布局；如果两种都不中，诊断会给出 `cmd_mismatch(want=0x05 got=…)`，按实际字节补一眼即可。
+/// 官方不周期查询，故 `interval_ms: None`，只在读数快过期时探活一次。
 pub const KEYBOARD_GLW: BrandSpec = BrandSpec {
     id: "mchose-keyboard-glw",
     label: "MCHOSE（键盘 · CZ/GLW 族）",
@@ -395,9 +323,7 @@ pub const KEYBOARD_GLW: BrandSpec = BrandSpec {
 
 /// GLW 族查询载荷（命令字之后的部分）：`<reserved> <checksum> <size> <lo> <hi> <reserved>`。
 ///
-/// `size = 56` 是官方把 64 字节块按 56 字节切包后的首包长度。头部校验和是
-/// `sum([size, lo, hi, 0]) & 0xFF` 的**求和**（官方 `Z` 构造器里 `255 & sum(h)`），不是异或 ——
-/// 只有 `lo = hi = 0` 时两者同值，按板载档位偏移后必须按求和重算（见 [`BlockOffset`]）。
+/// `size = 56` 是首包长度；头部校验和是求和，按板载档位偏移后需由 [`BlockOffset`] 重算。
 const KEYBOARD_GLW_PAYLOAD: [u8; 6] = {
     let size = 56u8;
     [0x00, size, size, 0x00, 0x00, 0x00]
@@ -409,15 +335,10 @@ const KEYBOARD_PROFILE_SLOTS: usize = 4;
 /// 功能配置块的单档跨度：官方 `getFuncConfig(t) → _simpleGetCommand(5, 64*t, 64)`。
 const KEYBOARD_FUNC_BLOCK_STRIDE: u16 = 64;
 
-/// 键盘（CZ/QHW 族）：CZ 配置里显式声明 `manufacturer:"qhw"` 的两台 —— G98 V3（`0x2025`）与
-/// K87 V3（`0x2023`），以及它们共用的 2.4G 接收器 PID（`0x1015` / `0x1017`）。
+/// 键盘（CZ/QHW 族）：CZ 配置里显式声明 `manufacturer:"qhw"` 的 G98 V3 / K87 V3 及其 2.4G 接收器。
 ///
-/// # 通道
-/// 官方给这两台的 `hidFilters` 是 `[{usagePage:65408,usage:1},{usagePage:65408,usage:1,boot:!0}]`
-/// —— **`0xFF80/0x01`**，与 GLW 族的 `0x0001`、`dJe` 族的 `0xFF01` 都不同。通道类是
-/// `Channel:QhwKeyboard:Loop`，`reportId` 缺省取 `Ge.REPORT_ID = 77 = 0x4D`。
+/// 通道 `0xFF80/0x01`，报告 ID `0x4D`，帧为 7 字节头 + data + 尾校验：
 ///
-/// # 帧（`Ge` 队列项，7 字节头 + 尾校验）
 /// ```text
 /// [0] 0x4D          报告 ID（hidapi 要求写在首字节）
 /// [1] version = 1   `Ge` 构造期写死
@@ -430,43 +351,19 @@ const KEYBOARD_FUNC_BLOCK_STRIDE: u16 = 64;
 /// [8..8+length]     data
 /// [8+length]        校验和 = 从 `[2]`（flags）起逐字节异或到 data 末尾
 /// ```
-/// 官方 `toHeaderBytes()` 拼 `[version, flags, length, ...hJ(command), bizCode, sequence]`，
-/// 校验和是 `d.slice(1).reduce(xor)` —— 入参 `d` 是**不含报告 ID**的帧，`slice(1)` 跳过
-/// `version`，故校验从 flags 起算。`length` 为 0 时这条电量查询的校验和恒为 `0x0E`。
+///
+/// `length` 为 0 时这条电量查询的校验和恒为 `0x0E`。
 ///
 /// # 电量
-/// `getBattery()` = `_simpleGet(2308, [])` → `{chargeStatus: toChargingStatus(data[0]),
-/// batteryLevel: data[1]}`；`toChargingStatus`：`0` 未充电 / `1` 充电中 / `2` 已充满 / 其它 `unknown`。
-/// 与 GLW 族「读 64 字节功能块」完全不同 —— 这一族是真正的一问一答。
+/// 查询用 `getBattery()`（命令 `0x0904`），应答 `data[0]` 为三态充电状态（0 未充电 / 1 充电中 /
+/// 2 已充满）、`data[1]` 为电量。主动上报用命令 `0x0700`，取 `data[2]` / `data[3]` —— 与查询应答
+/// 不是同一套下标。
 ///
-/// # 序号固定为 0
-/// 官方 `obtainSequenceId()` 每发一条命令自增，用来对齐回包；但它的匹配逻辑
-/// （`Ge._isMatch`）只比 `length`、`_parseData` 也不校验序号，设备侧无从证明会拒绝序号 0。
-/// 本项目一次会话只发同一条查询，固定 0 即可；要接多命令时再引入计数。
+/// # 节奏
+/// 有推送，故 `interval_ms: None`：会话建立时问一次，之后由推送刷新，读数静默超时再探活。
 ///
-/// # 主动上报（本族的常态读数来源）
-/// `featSupport.AllowUpdateBattery` / `Has1PercentPrecisionBattery` 对 qhw 族**缺省为 `true`**
-/// （GLW 族缺省 `false`），所以官方在 qhw 上确实消费 "`updateBattery`" 事件。
-///
-/// 但这一族**没有** GLW 那种 `FA FB 07 <电量> <充电>` 的纯电量通知帧：电量随配置块一起推，
-/// 命令 `0x0700`（`MANUAL_REPORT`），官方 `parseManualReportBytes` 拆 23 字节后取
-/// `n[2]`（走 `toChargingStatus`）与 `n[3]`（`batteryLevel`），再与缓存 diff 才发事件。
-/// 所以本 spec 的 `notify` 是 `0x0700` + `data[2]/data[3]`，与 `getBattery`(0x0904) 的
-/// `data[0]/data[1]` **不是同一套下标** —— 混用会读出一个稳定但无关的数字。
-///
-/// 有了推送就不必按节奏轮询：`RequestTemplate::interval_ms` 置 `None`，只在会话建立时问一次；
-/// 之后由运行时在「读数静默超过 `expected_interval_ms`」时探活（`runtime::lazy_probe_due`），
-/// 探活也没回应就让读数自然老化，由引擎按阈值链判 `stale` / `unavailable`。
-///
-/// # 设备完全不推送时会怎样（静态分析无法排除）
-/// 那时探活成为唯一的读数来源，表现为「每 `expected_interval_ms` 问一次」，即退化成轮询 ——
-/// 功能仍正确，只是省电收益没有兑现。有实机后应先确认：静置不动时是否收到 `0x0700` 帧。
-///
-/// # 静态分析到此为止（需实机确认）
-/// 报文按 `Ge.NORMAL_MAX_PACKET_LENGTH = 31` 补满 32 字节发出，而官方 WebHID 只发实际长度
-/// （本条 9 字节，剩下的由浏览器按报告描述符补）。若该集合的输出报告描述符短于 32 字节，
-/// hidapi 会拒绝写入，表现为「查询永远没应答、也没有错误」—— 运行时的 output 写失败是
-/// **静默忽略**的（`let _ = dev.write(..)`）。遇到这种情况把 `report_len` 改成 9 即可。
+/// # 序号
+/// `sequence` 固定 0：一次会话只发同一条查询。
 pub const KEYBOARD_QHW: BrandSpec = BrandSpec {
     id: "mchose-keyboard-qhw",
     label: "MCHOSE（键盘 · CZ/QHW 族）",
@@ -535,9 +432,7 @@ pub const KEYBOARD_QHW: BrandSpec = BrandSpec {
     route: None,
 };
 
-/// QHW 族查询载荷（命令字之后的部分）：`<bizCode> <sequence> <xor>`。
-///
-/// 校验和按官方算法实算而不是抄一个常数，将来改 `prefix` 时不会悄悄发出一帧校验错的报文。
+/// QHW 族查询载荷（命令字之后的部分）：`<bizCode> <sequence> <xor>`，校验和按官方算法实算。
 const KEYBOARD_QHW_PAYLOAD: [u8; 3] = {
     let biz = 0u8;
     let seq = 0u8;
@@ -545,15 +440,11 @@ const KEYBOARD_QHW_PAYLOAD: [u8; 3] = {
     [biz, seq, checksum]
 };
 
-/// 键盘（`dJe` 老族，有线）：官方 `dJe.isWired` 分支 —— 520 字节 feature 报告，报告 ID `0x06`，命令 `0x87`。
+/// 键盘（`dJe` 老族，有线）：520 字节 feature 报告，报告 ID `0x06`，命令 `0x87`，页面 `0xFF01`。
 ///
-/// 这一族是网页驱动里 **purify 那一套**（`getBattery.wiredCommand = "06 87 …"`），覆盖
-/// G87 / K99 / G98 / UT98 / Z75 / X75 / GX87 / K87 等上一代型号，页面挂在 `0xFF01`。
-/// 新一代键盘（含 G75 V2）走 [`KEYBOARD_GLW`]，两族的帧与页面都不同。
-///
-/// 应答 `slice(2)` 后按 `bae(true)` 解析：跳 6 字节 → 电量 → 状态（高半字节满电、低半字节充电）。
-/// 官方 `readCommand` **不校验命令字回显**（与鼠标 `LG()` 不同），故 `battery.cmd: None`：
-/// 多校验一条没有证据的字节，只会在别的固件版本上把可用读数判成坏帧。
+/// 覆盖 G87 / K99 / G98 / UT98 / Z75 / X75 / GX87 / K87 等上一代型号（新一代走 [`KEYBOARD_GLW`]）。
+/// 应答 `slice(2)` 后跳 6 字节 → 电量 → 状态（高半字节满电、低半字节充电）。官方不校验命令字
+/// 回显，故 `battery.cmd: None`。
 pub const KEYBOARD_DJE_WIRED: BrandSpec = BrandSpec {
     id: "mchose-keyboard-dje-wired",
     label: "MCHOSE（键盘 · 有线）",
@@ -621,10 +512,10 @@ pub const KEYBOARD_DJE_WIRED: BrandSpec = BrandSpec {
     route: None,
 };
 
-/// 键盘（`dJe` 老族，2.4G）：官方 `dJe` 无线分支 —— 输出报告 `0x13` + 命令 `0x4A`，应答是多条输入报告。
+/// 键盘（`dJe` 老族，2.4G）：输出报告 `0x13` + 命令 `0x4A`，应答是多条输入报告。
 ///
 /// 应答包布局（数据窗口，`[0]` 是命令字）：`[0]=0x4A [1]=总包数 [2]=序号 [3]=保留 [4..-1)=载荷
-/// [-1]=校验和`。凑齐全部序号后把载荷按序拼起来，`[0]=电量`、`[1]=状态`。
+/// [-1]=校验和`。凑齐所有序号后按序拼接载荷，`[0]=电量`、`[1]=状态`。
 pub const KEYBOARD_DJE_WIRELESS: BrandSpec = BrandSpec {
     id: "mchose-keyboard-dje-wireless",
     label: "MCHOSE（键盘 · 2.4G）",
@@ -699,19 +590,11 @@ pub const KEYBOARD_DJE_WIRELESS: BrandSpec = BrandSpec {
     route: None,
 };
 
-/// 迈从自己的 `driver + deviceType + mode` 分派。
+/// 迈从自己的 `device_type` / `driver` / `mode` 分派。
 ///
-/// 官方把键盘分成**三套互不兼容的协议**，判据不在 VID:PID 上：
-///
-/// | 族 | 官方判据 | 通道 |
-/// |---|---|---|
-/// | `glw` | CZ 设备配置里 `manufacturer` 缺省 | 标准页 `0x0001`，命令 `0x05` 读 64 字节块 |
-/// | `dje` | 不在 CZ 配置表里（purify 老驱动） | `0xFF01`，有线 feature `06 87` / 2.4G `13 4A` |
-/// | `qhw` | CZ 配置里显式 `manufacturer:"qhw"`（G98 V3 `0x2025`、K87 V3 `0x2023`） | `0xFF80`，报告 `0x4D` + 7 字节头 + 变长序号 |
-///
-/// 分派依据是型号表里的 `driver` 字段 —— 由官方 bundle 抓取时写入，与雷柏用 `driver` 分派同一套做法。
-/// 缺字段一律 `None`（不采集），不退回任一默认族：猜错族的表现是「设备在列表里但永远读不出」，
-/// 比不显示更难查。
+/// 键盘按 `driver` 分三族：`glw`（缺省）/ `dje`（老驱动）/ `qhw`（显式声明）；鼠标按 `mode`
+/// 分有线与 2.4G；耳机 / 音箱走 [`AUDIO`]，但 [`ALT_AUDIO_MODELS`] 需另一种帧，返回 `None`。
+/// 缺字段或升级模式一律 `None`（不采集）。
 fn route(entry: &Entry) -> Option<&'static BrandSpec> {
     if entry.mode.eq_ignore_ascii_case("upgrade") {
         return None;
@@ -746,7 +629,7 @@ fn route(entry: &Entry) -> Option<&'static BrandSpec> {
     }
 }
 
-/// 注册表登记的迈从协议描述（实际设备由 [`route`] 分派）。
+/// 注册表登记的迈从协议描述（实际设备由 `route` 分派）。
 pub const SPEC: BrandSpec = BrandSpec {
     id: "mchose",
     label: "MCHOSE（按设备类型分派）",
@@ -1041,9 +924,7 @@ mod tests {
 
     // ---- 键盘（CZ/GLW 族，含 G75 V2）----
 
-    /// GLW 应答：64 字节整包，`AA 05 … size=56 lo=0 hi=0`，载荷从 `[8]` 起、电量在载荷 `[32]`。
-    ///
-    /// 电量与充电共用一个字节（官方 `rf_battery:127&e[32]`、`isCharging:e[32]>>7&1`）。
+    /// GLW 应答：64 字节整包，载荷从 `[8]` 起、电量在载荷 `[32]`（低 7 位电量、最高位充电）。
     fn glw_reply(percent: u8, charging: bool) -> Vec<u8> {
         let mut report = vec![0u8; 64];
         report[0] = 0xAA;
@@ -1064,7 +945,7 @@ mod tests {
         assert_eq!(charging.charging, Some(true));
     }
 
-    /// 电量掩码是这条通道的命门：同一字节低 7 位电量、最高位充电。
+    /// 电量掩码 `0x7F`：同一字节低 7 位电量、最高位充电。
     #[test]
     fn glw_percent_ignores_charging_bit() {
         assert_eq!(KEYBOARD_GLW.battery.percent_mask, 0x7F);
@@ -1089,11 +970,9 @@ mod tests {
         );
     }
 
-    /// 查询报文与官方 `CmdQueueItem` 拼出的首包逐字节一致：
-    /// `00 55 05 00 38 38 00 00 00` + 补 0 到 64。
+    /// 查询报文与官方首包逐字节一致：`00 55 05 00 38 38 00 00 00` + 补 0 到 64。
     ///
-    /// `[0]=0x00` 是 hidapi 对无编号报告要求的报告 ID 槽，`[1]=0x55` 才是官方 flag；
-    /// 官方下发的是 `55 05 00 38 38 00 00 00`（WebHID 的 `sendReport(0, data)` 自己补槽）。
+    /// `[0]=0x00` 是 hidapi 对无编号报告要求的报告 ID 槽。
     #[test]
     fn glw_request_matches_official_template() {
         let req = KEYBOARD_GLW.request.expect("GLW 族必须声明查询模板");
@@ -1108,10 +987,7 @@ mod tests {
         assert_eq!(req.retry, 0);
     }
 
-    /// 应答首字节可能是平台补的报告 ID 槽：两种形态都要能解出来。
-    ///
-    /// hidapi 在带编号的集合上会把 ID 放在 `[0]`；官方解析器的输入则不含 ID。
-    /// 这条容错是**唯一**能覆盖两种拓扑的地方，缺了它，位移一字节的应答会被静默丢掉。
+    /// 应答首字节可能带平台补的报告 ID 槽：带与不带都要能解出来。
     #[test]
     fn glw_reply_tolerates_leading_report_id() {
         let plain = glw_reply(64, false);
@@ -1189,10 +1065,7 @@ mod tests {
         assert_eq!(KEYBOARD_QHW_PAYLOAD[2], 0x0E, "校验和按官方算法实算");
     }
 
-    /// qhw 的电量推送：`MANUAL_REPORT`（命令 `0x0700`）整块配置里 `data[2]` 充电、`data[3]` 电量。
-    ///
-    /// 官方 `parseManualReportBytes` 把 23 字节拆成配置字段：`n[2]` 走 `toChargingStatus`、
-    /// `n[3]` 就是 `batteryLevel`。这与 `getBattery`(0x0904) 的 `data[0]/data[1]` 是**两套下标**。
+    /// qhw 的电量推送：`MANUAL_REPORT`（命令 `0x0700`）里 `data[2]` 充电、`data[3]` 电量。
     fn qhw_notify(charge: u8, percent: u8) -> Vec<u8> {
         let mut report = vec![0x4D, 0x01, 0x03, 23, 0x00, 0x07, 0x00, 0x00];
         let mut data = [0u8; 23];
@@ -1217,9 +1090,6 @@ mod tests {
     }
 
     /// 推送帧与应答帧的命令字不同，两条通道不得互相串味。
-    ///
-    /// 串味的后果不是坏帧而是**看起来正常的错值**：`0x0700` 的 `data[0]` 是配置块首字节，
-    /// 当成电量会读出一个稳定但无关的数字。
     #[test]
     fn qhw_notify_and_reply_do_not_cross_decode() {
         let pushed = qhw_notify(1, 47);
@@ -1243,10 +1113,9 @@ mod tests {
         );
     }
 
-    /// 鼠标同样不周期查询：官方只在连接时发一次 `0x11 0x06`，之后订阅实时帧。
+    /// 鼠标同样不周期查询：只在连接时发一次 `0x11 0x06`，之后订阅实时帧。
     ///
-    /// 有线和 2.4G 共用同一份 `request`（`MOUSE_WIRELESS` 用 `..MOUSE_WIRED` 展开），
-    /// 但两边的监听帧布局不同，两个都要检查。
+    /// 有线与 2.4G 共用同一份 `request`，但监听帧布局不同，两个都要检查。
     #[test]
     fn mouse_does_not_poll_periodically() {
         for spec in [&MOUSE_WIRED, &MOUSE_WIRELESS] {

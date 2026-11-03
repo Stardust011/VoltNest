@@ -1,11 +1,7 @@
 //! `manual_devices.json`：用户手动添加的设备（自动识别失败时的兜底）。
 //!
-//! 与 `state.json` 分开的理由：`state.json` 是可丢弃的运行时缓存（随时可删），而手动添加
-//! 的设备是**用户资产** —— 用户为此花了几十秒抓数据、写步骤，删了不会自己长回来。
-//! 因此本文件独立存放，损坏时先存档再用空表启动，绝不静默清空。
-//!
-//! 记录的是「用户声称这台设备存在」，不是「这台设备在采集」：设备页不参与状态机，
-//! 也不产生电量读数。它的价值在于绑住那份抓包报告（[`ManualDevice::report_path`]）。
+//! 与 `state.json` 分开：前者是用户资产，后者是可随时删除的运行时缓存；本文件损坏时先存档再用空表启动。
+//! 记录的是「用户声称这台设备存在」，不参与状态机，也不产生电量读数（[`ManualDevice::report_path`]）。
 
 use crate::atomic::{archive_corrupt, read_optional, write_json_atomic};
 use crate::paths::DataPaths;
@@ -15,13 +11,12 @@ use serde_json::{Map, Value};
 /// 本文件的 schema 版本（与 `settings.json` 的版本号各管各的）。
 pub const MANUAL_SCHEMA_VERSION: u32 = 1;
 
-/// 记录条数上限：手动添加是逐台手工操作，超过这个数说明有人在刷。
+/// 记录条数上限；超出时淘汰最早添加的记录。
 pub const MAX_MANUAL_DEVICES: usize = 64;
 
 /// 一次采样：同一集合、某一时刻录到的一段数据，以及当时驱动 / 系统显示的电量。
 ///
-/// 「电量变化后再采一次」是本功能的核心引导：两次采样里取值不同的字节，往往就是电量字段。
-/// 因此电量是采样的一部分（每次采样各记各的），不是设备级属性。
+/// 电量是采样的一部分（每次采样各记各的），不是设备级属性。
 #[derive(Clone, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct ManualSample {
@@ -52,7 +47,7 @@ pub struct ManualDevice {
     pub usage_page: u16,
     /// 抓包时选中的集合的 Usage。
     pub usage: u16,
-    /// 抓包时选中的集合路径。设备换个口插就会变，故只用来说明「当时抓的是哪个集合」。
+    /// 抓包时选中的集合路径（设备换口就会变，只说明当时抓的是哪个集合）。
     pub path: String,
     /// HID 产品名（用户改名后仍能追溯原始值）。
     pub product: Option<String>,
@@ -99,9 +94,7 @@ impl Default for ManualDeviceFile {
 }
 
 impl ManualDeviceFile {
-    /// 按 `id` 新增或覆盖（同 VID:PID 重复添加视为「更新这条记录」）。
-    ///
-    /// 覆盖时保留原有的 `added_at_ms`：它是「用户第一次添加的时间」，不该被重新抓包改掉。
+    /// 按 `id` 新增或覆盖；覆盖时保留原有的 `added_at_ms`。
     pub fn upsert(&mut self, mut device: ManualDevice) {
         match self.devices.iter_mut().find(|known| known.id == device.id) {
             Some(slot) => {
@@ -159,8 +152,8 @@ impl ManualDeviceStore {
         Self { paths }
     }
 
-    /// 读取文件。文件不存在 / 损坏 / 版本过高都不算致命：
-    /// 前两者返回空表，损坏与版本过高额外返回存档路径，由调用方提示。
+    /// 读取文件。文件不存在 / 损坏 / 版本过高都不算致命：前两者返回空表，
+    /// 损坏与版本过高额外返回存档路径，由调用方提示。
     pub fn load(&self, now_ms: u64) -> LoadedManualDevices {
         let path = self.paths.manual_devices_file();
         let Some(bytes) = read_optional(&path).ok().flatten() else {

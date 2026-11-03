@@ -1,6 +1,6 @@
 name: Security
 
-# 每周扫一次依赖与工具链漂移；rust-toolchain.toml 跟 stable 通道，stable 前进只能靠定时发现。
+# 每周扫一次依赖与工具链漂移。
 on:
   schedule:
     - cron: "0 3 * * 1"
@@ -28,7 +28,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
-      # 与 CI 共用同一条缓存，只读不写：每周跑一次，自建缓存必然活不过 7 天淘汰线。
+      # 复用 CI 缓存，只读。
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: linux-test
@@ -41,10 +41,9 @@ jobs:
             libayatana-appindicator3-dev
       - name: Report toolchain
         run: rustc -vV && cargo -V
-      # 新 stable 可能改变 lint 或依赖解析结果，这两步是真正的回归信号。
       - run: cargo test --workspace
       - run: cargo clippy --workspace --all-targets -- -D warnings
-      # 只报告可升级项，不因有新版本而变红。
+      # 仅报告可升级项，不因有新版本而失败。
       - name: Report outdated dependencies
         continue-on-error: true
         run: cargo update --dry-run

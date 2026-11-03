@@ -1,10 +1,8 @@
 //! 状态机与设备注册表。
 //!
-//! 三条不可协商的约束：
-//!
 //! 1. 显式时间：所有接口接收 `now_ms`，本模块不读时钟。
 //! 2. 退化只由 `lastValidAt` 与阈值链驱动，且只在状态真变化时对外可见。
-//! 3. 坏帧不改变状态：`Unreadable` 只写诊断与 `lastError`，`Online/Stale/Unavailable` 之间的转移只依据时间。
+//! 3. 坏帧不改变状态：`Unreadable` 只写诊断与 `lastError`。
 
 use crate::diagnostics::{DiagLevel, Diagnostics};
 use crate::humanize::humanize_ago;
@@ -70,8 +68,6 @@ pub enum Transition {
 
 impl Transition {
     /// 该变化是否值得发布一次快照（与 UI 可见性无关：`Created`/`Refreshed` 也要发）。
-    ///
-    /// 曾名 `is_visible`，读起来像「界面上是否可见」。
     pub fn should_publish(self) -> bool {
         !matches!(self, Self::None | Self::Backfilled)
     }
@@ -102,9 +98,7 @@ pub struct SeedEntry {
     pub notifications: Vec<NotificationEntry>,
 }
 
-/// 设备状态机 + 注册表 + 快照生成器。
-///
-/// 宿主只持有一个实例，在 Provider 事件、每秒 tick、设置变更时调用。
+/// 设备状态机 + 注册表 + 快照生成器。宿主只持有一个实例。
 #[derive(Debug)]
 pub struct Engine {
     profiles: Vec<&'static ProviderProfile>,
@@ -238,10 +232,7 @@ impl Engine {
         self.notifications.entries()
     }
 
-    /// 回填一次通知的真实投递结果。
-    ///
-    /// `take_notifications()` 给出「应当发送」，宿主真正投递（或被模式关闭、被系统拒绝）后
-    /// 用本方法覆盖 `last_result`，诊断页才不会把「打算发」显示成「已发送」。
+    /// 回填一次通知的真实投递结果，覆盖 `last_result`。
     pub fn mark_notification_result(&mut self, stable_id: &str, threshold: u8, result: &str) {
         self.notifications.mark_result(stable_id, threshold, result);
     }
@@ -250,8 +241,7 @@ impl Engine {
 
     /// 应用一个 Provider 事件。
     ///
-    /// `transport` 只在 [`ProviderEvent::TransportDown`] 生效：该变体不带 transport，而「只影响当前 transport」
-    /// 是故障隔离的硬要求；其它变体忽略此参数。
+    /// `transport` 只在 [`ProviderEvent::TransportDown`] 生效（该变体不带 transport），其它变体忽略。
     pub fn apply_event(
         &mut self,
         event: &ProviderEvent,
@@ -351,11 +341,7 @@ impl Engine {
         }
     }
 
-    /// 把一次设备类型识别写进诊断，成功与失败都记。
-    ///
-    /// 两级分界是「结论需不需要它」：`info`（`device_classified`）只写结论，如 `mouse via verified_device_mapping`，
-    /// 设备是谁由诊断行 `deviceId` 给出不在正文重复；`debug`（`device_classification_evidence`）写逐条证据、
-    /// 冲突说明与未支持组合清单——一台复合 HID 能报 7 个集合，这些只该在排查时看。
+    /// 把一次设备类型识别写进诊断：`info` 写结论，`debug` 写逐条证据。
     fn push_classification(&mut self, now_ms: u64, fact: &DeviceFact, from: Option<DeviceType>) {
         let c = &fact.classification;
         let mut detail = match from {
@@ -607,9 +593,7 @@ impl Engine {
 
     // ---------- 退化 ----------
 
-    /// 1s tick：只比对时间戳，仅在状态真变化时返回 `true`。
-    ///
-    /// 系统时间后跳（`now < last_now`）记录诊断、清除通知冷却并丢弃回填值；前跳则允许设备批量退化。
+    /// 1s tick：比对时间戳，仅在状态真变化时返回 `true`。时钟后跳会记诊断并清除通知冷却。
     pub fn tick(&mut self, now_ms: u64) -> bool {
         if let Some(last) = self.last_now_ms {
             if now_ms < last {
@@ -747,9 +731,7 @@ impl Engine {
         }
     }
 
-    /// 呈现分组：三个条件必须同时满足：① 两条 `modelKey` 非空且严格相等；
-    /// ② 该 `modelKey` 下两条不同 transport 的记录不都活跃（都活跃时并列，其余情况合并）；
-    /// ③ 只涉及 HID 与 BLE 两个 transport。
+    /// 呈现分组，三个条件同时满足：① 两条 `modelKey` 非空且严格相等；② 不都活跃；③ 只涉及 HID 与 BLE。
     fn build_cards(&self, order: &[usize], now_ms: u64) -> Vec<CardDto> {
         let mut groups: BTreeMap<String, Vec<usize>> = BTreeMap::new();
         for &idx in order {
@@ -872,8 +854,7 @@ impl Engine {
             .unwrap_or("unknown")
     }
 
-    /// 读数可能早于 `Arrived` 到达（枚举与读取在不同线程）。按 transport 反推家族建记录，
-    /// 避免丢弃第一条读数，随后 `Arrived` 补齐名称。
+    /// 读数可能早于 `Arrived` 到达，按 transport 反推家族建记录，随后 `Arrived` 补齐名称。
     fn ensure_record(&mut self, stable_id: &StableId, now_ms: u64) -> usize {
         if let Some(idx) = self.index_of(stable_id) {
             return idx;
@@ -928,8 +909,7 @@ impl Engine {
         idx
     }
 
-    /// `tray.order` 超上限时淘汰「最久未出现」的条目，只在保存设置时收敛，
-    /// 不因临时拔掉接收器而丢失用户设置。
+    /// `tray.order` 超上限时淘汰「最久未出现」的条目。
     fn prune_tray_order(&mut self) {
         if self.tray_order.len() <= self.tray_order_limit {
             return;
@@ -993,7 +973,7 @@ fn merge_node(node: &mut NotificationNode, entry: &NotificationEntry) {
 
 /// 诊断行文本：`malformed_frame · cmd_mismatch(want=0x03 got=0x23) · 6B: 06 FA …`。
 ///
-/// 错误码放最前，按关键词筛选仍可命中；细节缺省时退化为只有错误码，与加字段前行为一致。
+/// 错误码放最前，细节缺省时退化为只有错误码。
 fn unreadable_detail(code: ErrorCode, detail: Option<&str>) -> String {
     match detail.map(str::trim).filter(|d| !d.is_empty()) {
         Some(d) => format!("{code} · {d}"),

@@ -1,13 +1,13 @@
 //! 「VID:PID → 型号」快照表（品牌无关的加载器）。
 //!
-//! 每品牌一份 JSON 型号表，由 [`crate::spec::BrandSpec::device_table_file`] 声明文件名，进程启动时
-//! 由 [`crate::mappings`] 从 `data/mappings/` **运行时读取**（不再 `include_str!` 编译期嵌入）：
-//! 换表只换文件、不必重编二进制，代价是安装包必须随二进制带上该目录，目录定位见 [`crate::mappings`]。
-//! 新增品牌只加数据文件 + 注册项，本文件不变。
+//! 每品牌一份 JSON 型号表，文件名由 [`crate::spec::BrandSpec::device_table_file`] 声明，进程启动时
+//! 由 [`crate::mappings`] 从 `data/mappings/` 运行时读取；新增品牌只加数据文件 + 注册项。
 //!
-//! # 统一数据规范
+//! 全部品牌共用同一结构：`name` / `vendorDeviceId` 可缺省，其余字段（`internalModel`、`channels`、
+//! `ambiguous`、`driver` 等）原样保留在 [`Entry::extra`]；`devices` 的键是 `VID:PID`（大端十六进制、
+//! 无 `0x` 前缀、冒号分隔），`source` 只供展示、结构不校验。
 //!
-//! 全部品牌共用同一结构；`name` / `vendorDeviceId` 可缺省，其余字段（如 `internalModel`、`channels`、`ambiguous`、`driver`）按原样保留在 [`Entry::extra`]：
+//! 匹配必须**精确**：`0x6425` 与 `0x6426` 只差一位却是不同型号，前缀／区间匹配会选错型号。
 //!
 //! ```json
 //! {
@@ -18,13 +18,6 @@
 //!   }
 //! }
 //! ```
-//!
-//! - `config_version` 是型号表的抓取时刻（UTC、精确到小时，形如 `2026-10-27T08`），只做非空校验，格式不限定。
-//! - `devices` 的键是 `VID:PID`（大端十六进制、无 `0x` 前缀、冒号分隔），值是唯一的型号条目来源；不再有并行的 `by_vid_pid` 副本。
-//! - `source` 只供展示，结构不校验：桌面驱动的 `{file, software, software_version}`、网页版驱动的 `{url, web_version}` 乃至任意形状都会被压成一行来源摘要。
-//! - `deviceType` 是厂商声明的类型词（`mouse` / `keyboard` …），只有恰好等于规范类型词时才被采纳，见 [`Entry::declared_device_type`]。
-//!
-//! 匹配必须**精确**：`0x6425 = AJ159 NL P`、`0x6426 = AJ159 NL`，只差一位，任何前缀/区间匹配都会搞错型号。
 
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -37,10 +30,10 @@ pub const CONFIG_VERSION: &str = "1.0.0";
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Entry {
-    /// 型号名，例如 `AJ159 NL`。作为 `display_name` 与 `model_name_raw` 的来源。缺失表示需靠 ProductString 消歧的共用 PID。
+    /// 型号名，例如 `AJ159 NL`。作为 `display_name` 与 `model_name_raw` 的来源；缺失表示共用 PID、需靠 ProductString 消歧。
     #[serde(default)]
     pub name: Option<String>,
-    /// 厂商驱动内部的设备编号（AJAZZ 为 101..108）。**不是**设备类型。网页版驱动无此字段。
+    /// 厂商驱动内部的设备编号（AJAZZ 为 101..108），**不是**设备类型。
     #[serde(default)]
     pub vendor_device_id: Option<u16>,
     /// 厂商声明的设备类型词，例如 `mouse`。是否为规范类型词由 [`Entry::declared_device_type`] 判定。
@@ -55,10 +48,7 @@ pub struct Entry {
 }
 
 impl Entry {
-    /// 厂商声明的固件家族码（网页驱动的 `fwType`）。用来在同一品牌的型号表里分派协议实现
-    /// （达尔优：`0x00` 自研 / `0x01` 海思 / `0x02` 匠盟 / `0x04` 合盈 / `0x06` 自研磁轴）。
-    ///
-    /// 缺失或超出 `u8` 一律 `None` —— 拿不到家族码时宁可「没有协议」，也不假设某一套。
+    /// 厂商声明的固件家族码（网页驱动的 `fwType`），用于同品牌内分派协议实现。缺失或超出 `u8` 一律 `None`。
     pub fn declared_fw_type(&self) -> Option<u8> {
         self.extra
             .get("fwType")
@@ -66,11 +56,8 @@ impl Entry {
             .and_then(|raw| u8::try_from(raw).ok())
     }
 
-    /// 厂商声明的协议家族名（网页驱动 manifest 的 `driver`）。用来在同一品牌的型号表里
-    /// 分派协议实现（雷柏：`VT_nrf54L` / `VT_CH584` / `LM20RT` / `Telink3228C_Mouse` …，
-    /// 各家族的报告 ID、字段下标与取电方式都不同）。
-    ///
-    /// 缺失或非字符串一律 `None` —— 拿不到家族名时宁可「没有协议」，也不假设某一套。
+    /// 厂商声明的协议家族名（网页驱动 manifest 的 `driver`），用于同品牌内分派协议实现。
+    /// 缺失或非字符串一律 `None`。
     pub fn declared_driver(&self) -> Option<&str> {
         self.extra
             .get("driver")
@@ -79,7 +66,7 @@ impl Entry {
             .filter(|s| !s.is_empty())
     }
 
-    /// 厂商声明的设备类型词 → [`DeviceType`]。`deviceType` 是厂商自定义字段而非标准：只有恰好等于规范类型词才映射，其余一律 `None`——把型号族名当类型猜正是规范禁止的「厂商自定义数据当标准」。另 `vendorDeviceId`（101..108）是驱动内部型号编号，非类型，禁止映射。
+    /// 厂商声明的设备类型词 → [`DeviceType`]：只有恰好等于规范类型词才映射，其余一律 `None`（不猜测）。
     pub fn declared_device_type(&self) -> Option<DeviceType> {
         match self.device_type.trim().to_ascii_lowercase().as_str() {
             "mouse" => Some(DeviceType::Mouse),
@@ -103,7 +90,7 @@ struct RawMap {
     devices: HashMap<String, Entry>,
 }
 
-/// 把任意形状的 `source` 压成一行展示文本（桌面驱动 `{file,software,software_version}` 与网页驱动 `{url,web_version}` 都走这里）。
+/// 把任意形状的 `source` 压成一行展示文本（桌面驱动与网页驱动的字段形状都走这里）。
 fn source_label(source: &serde_json::Value) -> String {
     if source.is_null() {
         return String::new();
@@ -133,8 +120,7 @@ fn source_label(source: &serde_json::Value) -> String {
 
 /// 一个品牌从型号表目录里加载到的型号表。
 ///
-/// `Clone` 仅供注册表使用：多个协议共用同一份表文件时（达尔优 3 套、迈从 5 套、雷柏 4 套）
-/// 各自持有一份副本，避免为「读同一份数据」引入共享所有权。
+/// `Clone` 供注册表使用：多个协议共用同一份表文件时各自持有一份副本。
 #[derive(Clone, Debug)]
 pub struct DeviceTable {
     map: HashMap<(u16, u16), Entry>,
@@ -185,7 +171,7 @@ impl DeviceTable {
         self.map.get(&(vid, pid))
     }
 
-    /// 型号名；查不到或该条目无名称时返回 `None`（宿主会回落到 ProductString 并让 `model_key = None`）。
+    /// 型号名；查不到或该条目无名称时返回 `None`。
     pub fn name(&self, vid: u16, pid: u16) -> Option<&str> {
         self.lookup(vid, pid)
             .and_then(|e| e.name.as_deref())

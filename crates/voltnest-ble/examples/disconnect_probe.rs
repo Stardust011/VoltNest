@@ -1,10 +1,7 @@
-//! 断连事件探针：验证 `Adapter::events()` 的 `DeviceDisconnected` 是否在链路断开的当帧到达。
+//! 断连事件探针：验证 `Adapter::events()` 的 `DeviceDisconnected` 何时到达。
 //!
-//! 用法：
-//! - `cargo run -p voltnest-ble --example disconnect_probe -- self` 建链后 3s 主动 `disconnect()`，
-//!   验证事件通路与时延（不需要人动手）。
-//! - `cargo run -p voltnest-ble --example disconnect_probe -- wait` 建链后只等，直到把外设电源关掉，
-//!   用于验证真实的物理断开（Windows 的 ConnectionStatusChanged 回调）。
+//! `cargo run -p voltnest-ble --example disconnect_probe -- self`：建链后 3s 主动 `disconnect()`；
+//! `-- wait`：建链后只等，直到把外设电源关掉，验证真实的物理断开。
 
 use btleplug::api::{Central, Manager as _, Peripheral as _, RetrievePeripheralsOptions};
 use btleplug::platform::Manager;

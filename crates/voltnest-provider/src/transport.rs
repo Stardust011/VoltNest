@@ -18,7 +18,7 @@ impl Transport {
         }
     }
 
-    /// 用户可见的链路名称。展示措辞归宿主，但链路词汇是协议事实，由本类型统一提供以避免两处漂移。
+    /// 用户可见的链路名称，由本类型统一提供以免两处漂移。
     pub const fn display_label(self) -> &'static str {
         match self {
             Self::Hid => "2.4G",

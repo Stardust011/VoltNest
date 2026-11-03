@@ -1,7 +1,6 @@
 //! 低电量通知策略：跌破触发 + 迟滞 + 冷却。
 //!
-//! 通知由事件触发而非周期提醒：8 小时不充电只产生 2 次通知（20% 与 10% 各一次）；
-//! 持续可见性由托盘环颜色承担。
+//! 通知由事件触发而非周期提醒；持续可见性由托盘环颜色承担。
 
 use std::collections::{BTreeMap, HashMap};
 
@@ -13,8 +12,7 @@ pub const DEFAULT_REARM_MARGIN: u8 = 5;
 /// 通知配置。
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct NotificationConfig {
-    /// 阈值列表（百分比），内部按降序处理，保证同一帧只报最高的那一档。
-    /// 低电量百分比档位（降序）。曾名 `thresholds`，与退化阈值链 `DegradationThresholds` 撞词。
+    /// 低电量百分比档位（降序），同一帧只报最高的那一档。
     pub low_battery_levels: Vec<u8>,
     /// 同一 `(deviceId, threshold)` 的冷却。
     pub cooldown_ms: u64,
@@ -60,7 +58,7 @@ pub struct LowBatteryNotification {
     pub at_ms: u64,
 }
 
-/// 单个 `(device, threshold)` 的持久化状态（诊断页要展示这三项）。
+/// 单个 `(device, threshold)` 的持久化状态。
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct NotificationEntry {
     /// 设备标识。
@@ -97,14 +95,10 @@ struct ThresholdState {
     last_result: Option<String>,
 }
 
-/// 单台设备的通知状态。
-///
-/// 与 [`crate::state::DeviceState`]（设备五态）无关，故名字里带 `Notification`。
+/// 单台设备的通知状态（与 [`crate::state::DeviceState`] 无关）。
 #[derive(Clone, Debug, Default)]
 struct DeviceNotificationState {
-    /// 上一次**参与跌破判定**的电量。
-    ///
-    /// 充电期间不更新：否则「插着电充到 5% 才拔线」会因为没有「跌破」过程而永远不提醒。
+    /// 上一次参与跌破判定的电量。充电期间不更新，否则「插着电充到 5% 才拔线」永不提醒。
     last_battery: Option<u8>,
     entries: BTreeMap<u8, ThresholdState>,
 }
@@ -132,11 +126,8 @@ impl NotificationBook {
 
     /// 更新配置（设置页改动）。
     ///
-    /// 仅当阈值列表变化时重建每设备条目：不在新配置里的档位直接丢弃——`entries()` 既供诊断页展示
-    /// 也持久化到 `state.json`，留着旧档位会让用户改完阈值还看到已不存在的节点，重启后还会被
-    /// [`Self::seed`] 读回；新档位立刻建出（armed、无历史），诊断页当场可见两档；跌破基线清空，
-    /// 否则电量本就低于新阈值时「上次电量 >= 新阈值」永远不成立，新档位一次也不触发。
-    /// 阈值列表未变（只改通知方式）则不动条目与基线，避免把已通知的档位重新武装而重复提醒。
+    /// 阈值列表变化时重建每设备条目（丢弃旧档位、立刻建出新档位、清空跌破基线）；
+    /// 列表未变则不动条目与基线，避免重复提醒。
     pub fn set_config(&mut self, config: NotificationConfig) {
         let next = config.normalized();
         let thresholds_changed = next.low_battery_levels != self.config.low_battery_levels;
@@ -163,7 +154,7 @@ impl NotificationBook {
         }
     }
 
-    /// 用 `state.json` 回填：重启后不得重复通知。
+    /// 用 `state.json` 回填，重启后不得重复通知。
     pub fn seed(
         &mut self,
         stable_id: &str,
@@ -188,7 +179,7 @@ impl NotificationBook {
 
     /// 观察一次有效读数，返回需发送的通知（最多一条）。
     ///
-    /// `charging == Some(true)` 时不发送（AB 抑制条件）；BLE 的 `charging` 恒为 `None`，不会误判为未充电。
+    /// `charging == Some(true)` 时不发送；BLE 的 `charging` 恒为 `None`，不会误判为未充电。
     pub fn observe(
         &mut self,
         stable_id: &str,
@@ -255,10 +246,7 @@ impl NotificationBook {
         notification
     }
 
-    /// 覆盖某 `(device, threshold)` 的最后结果。
-    ///
-    /// `observe()` 只记录策略判定为应当发送，不知宿主是否真送出去：Toast 可能被系统通知关掉、
-    /// 模式可能是关闭。宿主投递完回填真实结果，诊断页才能显示事实而非意图。
+    /// 覆盖某 `(device, threshold)` 的最后结果，供宿主回填真实投递结果。
     pub fn mark_result(&mut self, stable_id: &str, threshold: u8, result: &str) {
         if let Some(device) = self.devices.get_mut(stable_id)
             && let Some(entry) = device.entries.get_mut(&threshold)
@@ -279,8 +267,7 @@ impl NotificationBook {
 
     /// 导出全部 `(device, threshold)` 状态用于持久化与诊断页。
     ///
-    /// 排序：设备按 `stable_id` 升序，同设备内阈值从高到低。档位有先后语义（第一档先提醒），
-    /// 若按 `BTreeMap` 自然升序展示，第二档会排在第一条，与设置页顺序相反。
+    /// 排序：设备按 `stable_id` 升序，同设备内阈值从高到低。
     pub fn entries(&self) -> Vec<NotificationEntry> {
         let mut out = Vec::new();
         let mut ids: Vec<&String> = self.devices.keys().collect();
