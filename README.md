@@ -120,7 +120,9 @@ CI 本身不做 release 构建：格式 / clippy / 测试之外不编译 release
 `--release` 下构建的地方。
 发布说明用中文小标题（新功能 / 修复 / …）由 `release-please-config.json` 的 `changelog-sections` 定义；
 `.release-please-manifest.json` 与各版本文件同为 `0.2.4`，下一个 release PR 出 `v0.2.5` 起。
-`Cargo.lock` 里 workspace 成员的版本不在 release PR 内，下一次 cargo 构建会自动跟上。
+`Cargo.lock` 里 workspace 成员的版本不在 release-please 的改动范围内：release PR 存在时，同一个 run 会用
+`scripts/sync-cargo-lock-version.py` 对齐版本，再由 `scripts/amend-release-commit.py` 走 Git Data API
+amend 进那条 release 提交（GitHub 侧签名），对齐后无差异则整步跳过。
 `cargo-deny` 与工具链漂移扫描每周一跑（`.github/workflows/security.yml`）；
 型号表每月 1 日抓取厂商网页驱动并开 PR
 （`.github/workflows/mappings.yml`，脚本在 `mappings/scripts/`，只在 `devices` 内容有差异时才开 PR；
