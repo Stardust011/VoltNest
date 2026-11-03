@@ -1,6 +1,5 @@
 name: Mappings
 
-# 每月抓取厂商型号表，有变化则开 PR。
 on:
   schedule:
     # 每月 1 日 03:00 UTC（北京时间 11:00）
@@ -34,17 +33,14 @@ jobs:
           python-version: "3.12"
 
       - uses: dtolnay/rust-toolchain@stable
-      # 复用 CI 缓存，只读。
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: linux-test
           save-if: "false"
 
-      # libudev 开发文件（hidraw 后端构建用）。
       - name: Install libudev
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libudev-dev
 
-      # 预建空报告文件，供 PR 正文引用。
       - name: Prepare report file
         run: truncate -s 0 "$RUNNER_TEMP/report.md"
 
@@ -84,19 +80,16 @@ jobs:
           echo "changed=$changed" >> "$GITHUB_OUTPUT"
           cat "$report" >> "$GITHUB_STEP_SUMMARY"
 
-      # 落盘前统一成 prettier 格式。
       - uses: pnpm/setup@v3
         if: steps.fetch.outputs.changed == '1'
         with:
           runtime: node@24
-          # 不装工作区依赖。
           install: false
 
       - name: Format tables
         if: steps.fetch.outputs.changed == '1'
         run: pnpm dlx prettier@3.9.10 --write crates/voltnest-hid/data/mappings
 
-      # 校验型号表可解析。
       - name: Verify tables parse
         id: verify
         if: steps.fetch.outputs.changed == '1'

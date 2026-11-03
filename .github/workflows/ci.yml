@@ -21,12 +21,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # --------------------------------------------------
-  # Change detection
-  # --------------------------------------------------
   changes:
     name: detect changes
-    # 需读 PR 改动文件列表。
     permissions:
       contents: read
       pull-requests: read
@@ -80,9 +76,6 @@ jobs:
               - ".ruff.toml"
               - ".github/workflows/ci.yml"
 
-  # --------------------------------------------------
-  # Windows Clippy
-  # --------------------------------------------------
   clippy-windows:
     name: clippy (windows)
     needs: changes
@@ -106,9 +99,6 @@ jobs:
       - name: Run Clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
 
-  # --------------------------------------------------
-  # Windows package tests
-  # --------------------------------------------------
   test-windows:
     name: cargo test (windows)
     needs: changes
@@ -136,9 +126,6 @@ jobs:
           -p voltnest-platform
           -p voltnest-desktop
 
-  # --------------------------------------------------
-  # Linux 格式 + Clippy + 测试
-  # --------------------------------------------------
   clippy-test-linux:
     name: lint + test (linux)
     needs: changes
@@ -183,7 +170,6 @@ jobs:
 
       - name: Check Python formatting
         if: needs.changes.outputs.python == 'true'
-        # 全仓 Python。
         run: ruff format --check .
 
       - uses: Swatinem/rust-cache@v2
@@ -193,7 +179,6 @@ jobs:
           cache-on-failure: true
           save-if: ${{ github.ref == 'refs/heads/master' }}
 
-      # Tauri / hidapi / 托盘 / 蓝牙的本地依赖。
       - name: Install Linux build dependencies
         if: needs.changes.outputs.rust == 'true'
         run: |
@@ -214,9 +199,6 @@ jobs:
         if: needs.changes.outputs.rust == 'true'
         run: cargo test --workspace
 
-  # --------------------------------------------------
-  # Frontend
-  # --------------------------------------------------
   frontend:
     name: frontend
     needs: changes
@@ -227,7 +209,6 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # pnpm 版本取自 package.json 的 packageManager 字段。
       - uses: pnpm/setup@v3
         with:
           runtime: node@24
@@ -252,9 +233,6 @@ jobs:
       - name: Build frontend
         run: pnpm run build
 
-  # --------------------------------------------------
-  # 单一必过检查
-  # --------------------------------------------------
   ci-status:
     name: ci
     if: always() && needs.changes.outputs.changelog != 'true'
