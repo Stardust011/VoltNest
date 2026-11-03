@@ -80,7 +80,7 @@ pub struct CardDto {
 #[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TraySnapshotDto {
-    /// 应存在的托盘图标（按 `settings.tray.order`，上限 4）。
+    /// 应存在的托盘图标：物理存在、未隐藏、非 `Offline`，按 `settings.tray.order` 排序，上限 4。
     pub visible_device_ids: Vec<String>,
 }
 

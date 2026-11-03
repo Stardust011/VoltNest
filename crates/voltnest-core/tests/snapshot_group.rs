@@ -114,6 +114,34 @@ fn tray_respects_capacity_presence_and_hidden() {
 }
 
 #[test]
+fn tray_drops_offline_devices_and_takes_them_back_when_they_return() {
+    let mut e = engine();
+    common::feed(&mut e, &hid_arrived(), Transport::Hid, T0);
+    common::feed(&mut e, &hid_reading(90), Transport::Hid, T0);
+    common::feed(&mut e, &ble_arrived(), Transport::Ble, T0);
+    common::feed(&mut e, &ble_reading(70), Transport::Ble, T0);
+    assert_eq!(
+        e.snapshot(T0 + 1).tray.visible_device_ids.len(),
+        2,
+        "两台都在线就有两个图标"
+    );
+
+    e.tick(T0 + 400_000);
+    let snap = e.snapshot(T0 + 400_000);
+    assert!(snap.devices.iter().all(|d| d.state == DeviceState::Offline));
+    assert_eq!(snap.devices.len(), 2, "离线只收图标，不删记录");
+    assert!(
+        snap.tray.visible_device_ids.is_empty(),
+        "离线设备不留托盘图标：{:?}",
+        snap.tray.visible_device_ids
+    );
+
+    common::feed(&mut e, &ble_reading(70), Transport::Ble, T0 + 400_001);
+    let back = e.snapshot(T0 + 400_001).tray.visible_device_ids;
+    assert_eq!(back, vec![ble_id().as_str().to_string()], "回读数就回托盘");
+}
+
+#[test]
 fn groups_hid_active_with_ble_inactive() {
     let mut e = engine();
     common::feed(&mut e, &ble_arrived(), Transport::Ble, T0);
