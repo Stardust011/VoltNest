@@ -1,0 +1,37 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "release-type": "simple",
+  "include-v-in-tag": true,
+  "include-component-in-tag": false,
+  "initial-version": "0.1.0",
+  "bump-minor-pre-major": true,
+  "bump-patch-for-minor-pre-major": false,
+  "draft": true,
+  "force-tag-creation": true,
+  "changelog-sections": [
+    { "type": "feat", "section": "新功能" },
+    { "type": "fix", "section": "修复" },
+    { "type": "perf", "section": "性能" },
+    { "type": "refactor", "section": "重构" },
+    { "type": "docs", "section": "文档" },
+    { "type": "test", "section": "测试" },
+    { "type": "build", "section": "构建" },
+    { "type": "ci", "section": "持续集成" },
+    { "type": "chore", "section": "维护" },
+    { "type": "style", "section": "样式" },
+    { "type": "revert", "section": "回滚" }
+  ],
+  "packages": {
+    ".": {
+      "extra-files": [
+        { "type": "json", "path": "apps/desktop/package.json", "jsonpath": "$.version" },
+        {
+          "type": "json",
+          "path": "apps/desktop/src-tauri/tauri.conf.json",
+          "jsonpath": "$.version"
+        },
+        { "type": "toml", "path": "Cargo.toml", "jsonpath": "$.workspace.package.version" }
+      ]
+    }
+  }
+}
