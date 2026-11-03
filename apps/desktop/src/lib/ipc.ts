@@ -1,5 +1,3 @@
-// Tauri 命令封装：前端只经此与宿主通信，不直接调 HID/BLE 或读写配置文件。
-
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type {
@@ -71,7 +69,6 @@ export function subscribeSnapshot(handler: (snap: Snapshot) => void) {
   return listen<Snapshot>(SNAPSHOT_EVENT, (event) => handler(event.payload));
 }
 
-// 订阅「诊断已变」信号。事件无载荷——数据仍以 `get_diagnostics` 为准，宿主只通知「该重拉」，避免把 transports/环形缓冲塞进事件通道。
 export function subscribeDiagnostics(handler: () => void) {
   return listen(DIAGNOSTICS_EVENT, () => handler());
 }

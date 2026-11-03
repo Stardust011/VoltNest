@@ -22,7 +22,6 @@ import re
 import sys
 from pathlib import Path
 
-# 型号表键：四位十六进制 VID:PID
 KEY_RE = re.compile(r"^[0-9A-Fa-f]{4}:[0-9A-Fa-f]{4}$")
 
 
@@ -77,7 +76,6 @@ def main() -> int:
         old_keys = set(old_devices)
         added = len(keys - old_keys)
         removed = len(old_keys - keys)
-        # 顺序无关：只比内容。config_version / source 不参与比较。
         same = old_devices == devices
         if added or removed:
             delta = f"，+{added} / −{removed}"

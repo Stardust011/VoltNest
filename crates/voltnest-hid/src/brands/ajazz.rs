@@ -1,7 +1,5 @@
-//! 品牌：AJAZZ（W1 / 星闪代，VID `0x7768`）。协议事实来自本机实测：
-//! - 读通道 `UsagePage = 0xFFB2`（MI_01 / Col02），报告 ≥64 字节；
-//! - `0xFFB1` 是只写通道，读句柄持续报错 → v1 不打开；
-//! - 电量来自 `cmd = 0xFA` 监听帧，约 30s 一次，通常两帧一组：
+//! 品牌：AJAZZ（W1 / 星闪代，VID `0x7768`）。读通道 `0xFFB2`（报告 ≥64 字节）；`0xFFB1`
+//! 只写、`0xFFB3` 无数据；电量取自 `cmd = 0xFA` 监听帧，约 30s 一次：
 //!
 //! ```text
 //! [0]        报告 ID = 0x06
@@ -12,9 +10,7 @@
 //! [5+len:]   填充 0x00
 //! ```
 //!
-//! - `0xFFB3` 在验证设备上无数据 → v1 不实现。
-//!
-//! `request: None` 是**实测结论**而非缺省：该设备纯监听，不发任何报文也能拿到电量。若某固件只在被查询时才回帧，把 `request` 换成 [`crate::spec::RequestTemplate`] 即可，运行时无需改动。
+//! `request: None`：设备纯监听，不发报文即可拿到电量。
 
 use crate::spec::{BatteryFields, BrandSpec, ChargingField, FrameLayout, ReplyTransport};
 
@@ -22,6 +18,7 @@ use crate::spec::{BatteryFields, BrandSpec, ChargingField, FrameLayout, ReplyTra
 pub const SPEC: BrandSpec = BrandSpec {
     id: "ajazz",
     label: "AJAZZ（W1 / 星闪代）",
+    name_from_product: false,
     usage_page: 0xFFB2,
     usage_page_alt: None,
     usage: None,
@@ -54,16 +51,12 @@ pub const SPEC: BrandSpec = BrandSpec {
     listen: None,
     notify: None,
     request: None,
-    // 该固件无应答确认位约定。
     ack: None,
-    // 报告 ID 不随连接方式变化。
     fallback_report_id: None,
     expected_interval_ms: 30_000,
-    // 型号表由运行时从映射目录读取（`crate::mappings`），此处只声明文件名。
     block_offset: None,
     profile_probe: None,
     device_table_file: "ajazz.json",
-    // 单协议品牌：没有变体，也不按型号表字段分派。
     variants: &[],
     route: None,
 };
@@ -105,7 +98,6 @@ mod tests {
 
     #[test]
     fn real_charging_and_unplugged_frames() {
-        // 2026-10-22 实测：插线 90→100 且标志 0x01；拔线 100 且标志 0x00。
         let charging = [0x06, 0xFA, 0x03, 0x00, 0x00, 0x03, 0x64, 0x01];
         assert_eq!(
             decode_battery(&super::SPEC, &charging).unwrap().charging,
@@ -228,7 +220,6 @@ mod tests {
 
     #[test]
     fn unknown_charging_flag_values_are_not_charging() {
-        // 只有 0x01 表示充电；其它值一律按「未充电」处理，不猜测语义。
         let frame = buf_with(&[0x03, 0x5A, 0x02]);
         assert_eq!(
             decode_battery(&super::SPEC, &frame).unwrap().charging,
@@ -242,7 +233,6 @@ mod tests {
         noisy[..REAL_FRAME.len()].copy_from_slice(&REAL_FRAME);
         noisy[63] = 0xAA;
         assert!(!padding_all_zero(&super::SPEC, &noisy));
-        // 填充脏了，但电量仍然可用。
         assert_eq!(
             decode_battery(&super::SPEC, &noisy).unwrap().percent.get(),
             90
@@ -253,7 +243,6 @@ mod tests {
     fn device_table_covers_verified_generation() {
         let table = crate::mappings::load_table(super::SPEC.device_table_file).unwrap();
         assert_eq!(table.len(), 16, "8 型号 × 2 模式");
-        // 抓取时刻逐月变化，只校验形状 YYYY-MM-DDTHH
         let version = &table.config_version;
         assert!(
             version.len() == 13

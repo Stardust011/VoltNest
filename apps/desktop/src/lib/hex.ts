@@ -1,8 +1,3 @@
-// 生成上报数据时的报文文本处理：把用户手填的十六进制变成「宿主能直接解析的规范文本」。
-//
-// 校验规则与 Rust 侧 `voltnest_hid::hex::parse` 逐条对齐（分隔符、0x 前缀、奇偶性、长度上限），
-// 但这里只负责「即时反馈」——最终仍由宿主解析一次，界面永远不是可信边界。
-
 /** 单条报文的字节上限（与 `voltnest_hid::hex::MAX_FRAME_BYTES` 一致）。 */
 export const MAX_FRAME_BYTES = 1024;
 
@@ -43,7 +38,6 @@ export function parseLine(line: string): number[] | string {
   const digits: number[] = [];
   for (let index = 0; index < chars.length; index += 1) {
     const char = chars[index]!;
-    // `0x` / `0X` 前缀：跳过这两个字符，字节值本身照常收集。
     if (char === "0" && (chars[index + 1] === "x" || chars[index + 1] === "X")) {
       index += 1;
       continue;

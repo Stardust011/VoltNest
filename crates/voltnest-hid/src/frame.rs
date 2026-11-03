@@ -1,22 +1,8 @@
-//! 通用帧解析：**完全由 [`BrandSpec`] 驱动**的电量解码（新增品牌不改这里）。
+//! 通用帧解析：完全由 [`BrandSpec`] 驱动，不含品牌分支。
 //!
-//! 所有失败必须映射为**结构化错误码**，不得静默丢帧、不得回落到 0%。错误码与情形的对应关系：
-//!
-//! | 情形 | 错误码 |
-//! |---|---|
-//! | 报告短于 `min_report_len`、报告 ID 不符、确认位不符、命令字不符、长度字段越界、payload 过短、子标签不符、状态错误态 | `malformed_frame` |
-//! | payload 全零 | `empty_payload` |
-//! | 电量字节 > 100 | `percent_out_of_range` |
-//!
-//! # 诊断：错误码只是一个词
-//! `malformed_frame` 有六种成因，仅看错误码分不清「报告 ID 不符」与「payload 装不下」。故解析器同时给 [`FrameReject`]：哪一校验失败、期望与实际各是多少、原始字节是什么。它只进诊断页与日志（[`FrameReject::detail`]），不参与状态判定——状态机仍只看 [`ErrorCode`]。
-//!
-//! # 三条解析入口，互不替代
-//! | 入口 | 用于 | 认不出的帧 |
-//! |---|---|---|
-//! | [`decode_battery`] | 单帧应答（feature 查询 / output 查询） | 报错并进 `lastError` |
-//! | [`decode_listen`] | 监听通道上的自发上报帧（混着位移、媒体键等大量无关帧） | 静默丢弃 |
-//! | [`decode_assembled`] | 多包应答经 [`Reassembler`] 拼合之后 | 返回 `None` |
+//! 所有失败映射为结构化错误码：payload 全零 → `empty_payload`，电量字节 > 100 →
+//! `percent_out_of_range`，其余校验失败 → `malformed_frame`。具体成因由 [`FrameReject`]
+//! 给出，只进诊断，不参与状态判定。
 
 use crate::spec::{BatteryFields, BrandSpec, ListenSpec, ListenStatus};
 use std::time::{Duration, Instant};
@@ -25,16 +11,15 @@ use voltnest_provider::{DIAG_BYTES, ErrorCode, Percent, hex_bytes};
 /// 一次电量读数。
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct BatteryReading {
-    /// 电量（已在构造期拒绝 > 100）。
+    /// 电量（构造期已保证 ≤ 100）。
     pub percent: Percent,
-    /// 充电状态。协议不提供、或缺附加字节时为 `None`，**不得猜测**。
+    /// 充电状态；协议不提供时为 `None`。
     pub charging: Option<bool>,
 }
 
-/// 帧被拒的**具体环节**（诊断用）。
+/// 帧被拒的具体环节（诊断用）。
 ///
-/// 与 [`ErrorCode`] 是两层：错误码是给状态机与 `lastError` 的稳定标识，
-/// 本枚举是给人看的排查线索。一个 `MalformedFrame` 对应其中一种成因。
+/// [`ErrorCode`] 是给状态机的稳定标识，本枚举是给人看的排查线索。
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum RejectReason {
     /// 报告长度不足 `min_report_len`。
@@ -139,7 +124,7 @@ impl RejectReason {
 }
 
 impl std::fmt::Display for RejectReason {
-    /// `cmd_mismatch(want=0x03 got=0x23)`：参数写在同一行，诊断页可直接读。
+    /// 稳定词 + 参数，如 `cmd_mismatch(want=0x03 got=0x23)`。
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(self.as_str())?;
         match self {
@@ -172,8 +157,7 @@ fn hex_opt(value: Option<u8>) -> String {
 
 /// 取 `index` 处的字节并按 [`BrandSpec::reply_inverted`] 归一化。
 ///
-/// 报告 ID 不参与取反（官方只反转 ID 之后的内容）—— 这条规则在这里写一次，
-/// 全帧归一化与单字节比对共用，避免两处各写一份条件。
+/// 报告 ID 不参与取反。
 fn normalized_byte(spec: &BrandSpec, index: usize, byte: u8) -> u8 {
     let keep = spec.frame.report_id.is_some() && index == 0;
     if spec.reply_inverted && !keep {
@@ -196,9 +180,6 @@ pub struct FrameReject {
 
 impl FrameReject {
     /// 诊断 detail：`cmd_mismatch(want=0x03 got=0x23) · 8B: 06 FA 03 …`。
-    ///
-    /// 长度写在字节前面：`3B: 06 FA 03` 能立刻看出「报告被读短了」，
-    /// 而只有 hex 时还得自己数。
     pub fn detail(&self) -> String {
         format!(
             "{} · {}B: {}",
@@ -211,20 +192,15 @@ impl FrameReject {
 
 /// 按品牌描述解析一帧，返回电量与充电标志。
 ///
-/// 只回错误码：状态机与 `lastError` 只需要它，新增成因不得新增错误码。
+/// 失败只返回错误码；需要成因与原始字节时用 [`decode_battery_detailed`]。
 pub fn decode_battery(spec: &BrandSpec, report: &[u8]) -> Result<BatteryReading, ErrorCode> {
     decode_battery_detailed(spec, report).map_err(|reject| reject.code)
 }
 
-/// 同 [`decode_battery`]，但失败时给出**可复核的成因与原始字节**（诊断页用）。
+/// 同 [`decode_battery`]，但失败时给出成因与原始字节（诊断用）。
 ///
-/// # 无编号报告：两种首字节都要试
-/// 协议没声明报告 ID 时（迈从 CZ/GLW 族），hidapi 是否在首字节补一个报告 ID 槽，取决于该集合的
-/// 报告描述符与平台 —— 静态无法判定。官方解析器的输入是 WebHID 的 `report.data`（**不含** ID），
-/// 而 hidapi 在带编号的集合上会把 ID 放在 `[0]`。两种形态都试一次，命中哪个用哪个；
-/// 判据与 [`decode_listen`] 相同，误判只可能来自「ID 恰好等于命令字且长度字段也自洽」。
-///
-/// 声明了报告 ID 的协议不走这条容错：那时 ID 是**已知**的硬约束，放宽只会让坏帧蒙混过关。
+/// 协议未声明报告 ID 时，首字节可能含 hidapi 补的报告 ID 槽，故两个偏移各试一次；
+/// 声明了报告 ID 的协议不走这条容错。
 pub fn decode_battery_detailed(
     spec: &BrandSpec,
     report: &[u8],
@@ -258,8 +234,7 @@ pub fn decode_battery_detailed(
 /// 在给定窗口上解析一帧；`original` 仅用于诊断（保留未位移的原始报告）。
 ///
 /// `fields` 由调用方选定：应答帧传 [`BrandSpec::battery`]，推送帧传
-/// [`crate::spec::NotifySpec::fields`]。两条通道共用同一个 `FrameLayout`（头部形状一样），
-/// 只是命令字与字段下标不同 —— 于是解析器只写一份。
+/// [`crate::spec::NotifySpec::fields`]；两条通道共用同一套 [`crate::spec::FrameLayout`]。
 fn decode_battery_at(
     spec: &BrandSpec,
     fields: &BatteryFields,
@@ -268,14 +243,12 @@ fn decode_battery_at(
     original: &[u8],
 ) -> Result<BatteryReading, FrameReject> {
     let layout = &spec.frame;
-    // 每次拒绝都带上原始报告：诊断页要的是「被拒的那一帧长什么样」。
     let reject = |reason: RejectReason| FrameReject {
         code: reason_code(reason),
         reason,
         report: original.to_vec(),
     };
 
-    // 1) 头部完整 + 报告 ID。
     let min_report_len = layout.payload_offset + fields.min_payload_len();
     if report.len() < min_report_len {
         return Err(reject(RejectReason::ReportTooShort {
@@ -291,7 +264,6 @@ fn decode_battery_at(
         }));
     }
 
-    // MCHOSE 等协议只反转报告 ID 之后的内容；诊断报告仍保留原始字节。
     let normalized_report;
     let report = if spec.reply_inverted {
         normalized_report = report
@@ -304,8 +276,6 @@ fn decode_battery_at(
         report
     };
 
-    // 2) 应答确认位：官方驱动靠它判定「设备已处理该命令」（`tgdevice.js:1836`）。
-    //    缺这条校验时，一个「设备还没准备好」的应答会被当成 0% 电量上报。
     if let Some(ack) = ack {
         let raw = report.get(ack.index).copied();
         if raw.map(|b| b & ack.mask) != Some(ack.value) {
@@ -316,14 +286,11 @@ fn decode_battery_at(
         }
     }
 
-    // 3) 命令字（协议回显时才有）。
     if let Some(cmd) = fields.cmd {
         let got = report.get(layout.cmd_index).copied();
         if got != Some(cmd) {
             return Err(reject(RejectReason::CmdMismatch { want: cmd, got }));
         }
-        // 双字节命令还要比高字节：CZ 的 `0x0904` 与 `0x0A04` 低字节相同，
-        // 只比低字节会把「读信息」的应答当成电量解析。
         if let Some(high) = fields.cmd_high {
             let got = report.get(layout.cmd_index + 1).copied();
             if got != Some(high) {
@@ -332,7 +299,6 @@ fn decode_battery_at(
         }
     }
 
-    // 4) payload 长度：字段声明 / 固定长度两种模式。
     let payload_len = match layout.len_index {
         Some(index) => {
             let Some(&raw) = report.get(index) else {
@@ -343,8 +309,6 @@ fn decode_battery_at(
         None => layout.fixed_payload_len,
     };
     let end = layout.payload_offset.saturating_add(payload_len);
-    // 长度字段越界（声明比缓冲长）与 payload 过短（装不下必选字段）都算坏帧，
-    // 但成因不同：前者是「长度字段写坏」，后者是「布局不符」，诊断必须分开。
     if payload_len < fields.min_payload_len() {
         return Err(reject(RejectReason::DeclaredPayloadTooShort {
             declared: payload_len,
@@ -369,12 +333,10 @@ fn decode_battery_at(
         }
     };
 
-    // 5) 全零 payload 是「设备在场但没数据」，与坏帧分开上报。
     if payload.iter().all(|b| *b == 0) {
         return Err(reject(RejectReason::EmptyPayload));
     }
 
-    // 6) 子标签（若协议有）。
     if let Some((index, want)) = fields.subtag
         && payload.get(index) != Some(&want)
     {
@@ -384,8 +346,6 @@ fn decode_battery_at(
         }));
     }
 
-    // 7) 错误态：设备自报异常时电量字段没有意义，整帧不可用 ——
-    //    不得降级成「未充电 + 某个电量值」（官方语义：状态 ≥0x03 为错误态）。
     if let Some(field) = fields.charging
         && let Some(&raw) = payload.get(field.index)
         && field.is_error(raw)
@@ -393,13 +353,11 @@ fn decode_battery_at(
         return Err(reject(RejectReason::StatusError { raw }));
     }
 
-    // 8) 电量。Percent::new 的 None 必须在这里映射成错误码，不得 `?` 后 continue。
     let raw = payload.get(fields.percent_index).copied().ok_or_else(|| {
         reject(RejectReason::PercentMissing {
             index: fields.percent_index,
         })
     })?;
-    // 一个字节塞两个字段的协议先取位：迈从 GLW 键盘 `0x80|pct`，整字节读会判成越界。
     let raw = fields.percent_of(raw);
     let percent = if spec.clamp_percent {
         Percent::new(raw.min(100)).expect("截断后的电量必定在 0..=100")
@@ -407,9 +365,6 @@ fn decode_battery_at(
         Percent::new(raw).ok_or_else(|| reject(RejectReason::PercentOutOfRange { raw }))?
     };
 
-    // 9) 充电标志：协议不提供 → None；字节缺失 → None（不猜测）。
-    //    一位一义的状态字节要先按 `mask` 取位再比较：迈从键盘把「满电」放在高半字节、
-    //    把「充电中」放在低半字节，整字节比较会在 `0x11`（满电且充电）时漏判。
     let charging = fields
         .charging
         .and_then(|field| payload.get(field.index).map(|b| field.is_charging(*b)));
@@ -417,7 +372,7 @@ fn decode_battery_at(
     Ok(BatteryReading { percent, charging })
 }
 
-/// 成因 → 错误码。**一个 `MalformedFrame` 对应多种成因**，映射只在这里写一次。
+/// 成因 → 错误码。一个 `MalformedFrame` 对应多种成因，映射只在这里写一次。
 const fn reason_code(reason: RejectReason) -> ErrorCode {
     match reason {
         RejectReason::EmptyPayload => ErrorCode::EmptyPayload,
@@ -426,24 +381,15 @@ const fn reason_code(reason: RejectReason) -> ErrorCode {
     }
 }
 
-/// 解析一帧**设备主动推送**的电量（宿主未提问，但帧头与应答同构）。
+/// 解析一帧设备主动推送的电量（帧头与应答同构，但不校验确认位）。
 ///
-/// 与 [`decode_listen`] 的分工：那个认「无头 + 首字节命令 + 子标签」的老族上报帧，
-/// 本函数认「有头 + 另一条命令」的推送帧（CZ/QHW 的 `MANUAL_REPORT`，命令 `0x0700`）。
-///
-/// 返回 `None` 表示「这一帧不是推送的电量帧」，调用方静默丢弃 —— 输入通道上还混着键盘敲击、
-/// 灯效回包等大量无关帧，报成 `Unreadable` 会把 `lastError` 写脏。
-///
-/// **不校验确认位**：确认位是「这条应答属于哪一问」的语义，推送帧没有提问。
+/// 返回 `None` 表示这一帧不是电量推送帧，调用方应静默丢弃。
 pub fn decode_notify(spec: &BrandSpec, report: &[u8]) -> Option<BatteryReading> {
     let notify = spec.notify?;
     decode_battery_at(spec, &notify.fields(), None, report, report).ok()
 }
 
 /// 监听通道上一帧的解析结果。
-///
-/// 只通报充电状态的上报帧（迈从 GLW `FA FB FF 00`）没有电量，不能硬凑一个 `BatteryReading`
-/// —— 那会把「电量未知」写成某个具体百分比。
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum ListenEvent {
     /// 电量 + 可选充电状态。
@@ -452,14 +398,10 @@ pub enum ListenEvent {
     Charging(bool),
 }
 
-/// 解析一帧**设备自发上报**（宿主未提问）的电量。
+/// 解析一帧设备自发上报的电量。
 ///
-/// 返回 `None` 表示「这一帧不是电量上报」（鼠标位移、媒体键、或别的命令），调用方应静默丢弃 ——
-/// 输入通道上无关帧占绝大多数，把它们报成 `Unreadable` 只会把诊断页刷满、把 `lastError` 写脏。
-///
-/// 偏移容错：官方解析器的输入是 WebHID 的 `report.data`（**不含**报告 ID），而 hidapi 的
-/// `read_timeout` 在报告带编号时把报告 ID 放在首字节。两种都试，命中哪个用哪个 ——
-/// 首字节必须等于 `cmd`，误判成电量的概率只来自「报告 ID 恰好等于 cmd 且子标签也对上」。
+/// 返回 `None` 表示这一帧不是电量上报，调用方应静默丢弃。首字节可能含报告 ID 槽，
+/// 故偏移 0 与 1 各试一次。
 pub fn decode_listen(spec: &BrandSpec, report: &[u8]) -> Option<ListenEvent> {
     let frames = spec.listen?;
     for offset in [0usize, 1] {
@@ -495,7 +437,6 @@ fn decode_listen_frame(frame: &ListenSpec, window: &[u8]) -> Option<ListenEvent>
         } => {
             let (index, mask) = frame.percent?;
             let raw = window[index] & mask;
-            // 官方：高半字节 `fullStatus` 非零即满电，直接把电量按 100 上报。
             let percent = if status >> 4 != 0 { 100u8 } else { raw };
             Some(ListenEvent::Reading(BatteryReading {
                 percent: Percent::new(percent)?,
@@ -507,7 +448,6 @@ fn decode_listen_frame(frame: &ListenSpec, window: &[u8]) -> Option<ListenEvent>
             let Some((index, mask)) = frame.percent else {
                 return Some(ListenEvent::Charging(charging));
             };
-            // 官方对充电中的那一帧直接丢弃：充电时电压法读出的百分比不可信。
             if !usable.contains(&status) {
                 return None;
             }
@@ -519,23 +459,18 @@ fn decode_listen_frame(frame: &ListenSpec, window: &[u8]) -> Option<ListenEvent>
     }
 }
 
-/// 该帧是不是本协议的电量帧（按命令字判定，不解析字段）。
+/// 该帧是不是本协议的电量帧（只按命令字判定，不解析字段）。
 ///
-/// 监听通道 / output 查询通道用它做前置过滤：只有命令字对上的帧才进解析器，
-/// 其它帧直接丢，不进 `lastError`。
-///
-/// 无编号报告的协议同样允许首字节是平台补的报告 ID 槽（与 [`decode_battery_detailed`] 一致）：
-/// 否则「位移一字节」的应答会在前置过滤就被静默丢掉 —— 设备在列表里却永远没有读数、也没有错误。
+/// 用于监听 / output 通道的前置过滤，其它帧直接丢，不进 `lastError`。未声明报告 ID
+/// 的协议同样允许首字节是平台补的报告 ID 槽。
 pub fn matches_cmd(spec: &BrandSpec, report: &[u8]) -> bool {
     let Some(cmd) = spec.battery.cmd else {
         return true;
     };
     let index = spec.frame.cmd_index;
-    // 窗口 `base` 下的整条命令（低字节 + 可选高字节）是否对得上。
     let hit = |base: usize| {
         let at = base + index;
         let low = report.get(at).copied().map(|byte| {
-            // 位移后的窗口里 `normalized_byte` 的取反规则不再适用（它按绝对下标写）。
             if base == 0 {
                 normalized_byte(spec, at, byte)
             } else {
@@ -556,10 +491,7 @@ pub fn matches_cmd(spec: &BrandSpec, report: &[u8]) -> bool {
     hit(0)
 }
 
-/// 诊断用：报告尾部填充是否全零。
-///
-/// 实测帧的填充恒为 0x00，但**不**作为拒绝条件 —— 把填充当校验会让一个
-/// 无害的固件小改动直接变成「设备不可读」。
+/// 诊断用：报告尾部填充是否全零。不作为拒绝条件。
 pub fn padding_all_zero(spec: &BrandSpec, report: &[u8]) -> bool {
     let layout = &spec.frame;
     let Some(payload_len) = layout.payload_len(report) else {
@@ -572,11 +504,10 @@ pub fn padding_all_zero(spec: &BrandSpec, report: &[u8]) -> bool {
         .unwrap_or(false)
 }
 
-/// 多包应答的拼接器：把设备拆成 N 条输入报告的一条应答拼回一条。
+/// 多包应答的拼接器：把拆成 N 条输入报告的一条应答拼回一条。
 ///
-/// 只有 [`BrandSpec::reassembly`] 非空的协议会用到它（迈从键盘的 2.4G 通道）。
-/// 生命周期按「一次查询」算：查询发出后喂包，凑齐 `total` 个序号即产出组装结果；
-/// 超过 `timeout_ms` 没凑齐就丢弃半包 —— 半包拼出来的电量比没有电量更糟。
+/// 仅 [`BrandSpec::reassembly`] 非空的协议会用到。生命周期按「一次查询」算：凑齐 `total`
+/// 个序号即产出结果；超过 `timeout_ms` 未凑齐则丢弃半包。
 #[derive(Debug, Default)]
 pub struct Reassembler {
     parts: Vec<u8>,
@@ -604,19 +535,16 @@ impl Reassembler {
         self.total > 0 && self.next_seq == self.total
     }
 
-    /// 喂一条输入报告。返回 `Some(组装结果)` 表示这次应答已凑齐。
+    /// 喂一条输入报告。返回 `Some` 表示这次应答已凑齐。
     ///
-    /// 只认命令字对上的包；序号不符的包直接丢（官方同样只接受 `current === expected`，
-    /// 迟到/重发的包会造成重复字节，比丢一包更难查）。
+    /// 只认命令字对上的包；序号不符的包直接丢弃。
     pub fn feed(&mut self, spec: &BrandSpec, report: &[u8], now: Instant) -> Option<Vec<u8>> {
         let reasm = spec.reassembly?;
-        // 半包超时：先丢，再按「这条包属于新一次应答」继续。
         if let Some(deadline) = self.deadline
             && now > deadline
         {
             self.reset();
         }
-        // 与监听帧同一套容错：数据窗口可能带报告 ID（hidapi）也可能不带（官方解析器）。
         let window = (0..=1usize).find_map(|base| {
             let w = report.get(base..)?;
             (w.len() > reasm.min_packet_len() && w.first() == Some(&reasm.cmd)).then_some(w)
@@ -626,7 +554,6 @@ impl Reassembler {
         if total == 0 || seq >= total {
             return None;
         }
-        // seq 回到 0 = 设备重新开始一轮应答，丢弃旧半包。
         if seq == 0 {
             self.parts.clear();
             self.total = total;
@@ -651,9 +578,7 @@ impl Reassembler {
 
 /// 解析组装完成的应答（[`BrandSpec::reassembly`] 声明的通道）。
 ///
-/// **与监听帧不同，这里不做「满电按 100」的改写**：官方键盘页拿到查询结果后把 `fullStatus`
-/// 显式置 0、直接显示 `batteryLevel`（`s.value=0, s.value&&(e.value=100)` 永远不成立），
-/// 满电标志只在实时上报那条路径生效。字段位置取自 [`BrandSpec::battery`]，没有第二套下标。
+/// 不做「满电按 100」的改写；字段位置取自 [`BrandSpec::battery`]。
 pub fn decode_assembled(spec: &BrandSpec, assembled: &[u8]) -> Option<BatteryReading> {
     spec.reassembly?;
     if assembled.len() < spec.min_payload_len() {
@@ -661,7 +586,6 @@ pub fn decode_assembled(spec: &BrandSpec, assembled: &[u8]) -> Option<BatteryRea
     }
     let raw = *assembled.get(spec.battery.percent_index)?;
     let percent = Percent::new(spec.battery.percent_of(raw))?;
-    // 状态字节只有协议声明了充电标志时才读：没声明就当作「未知」而不是「未充电」。
     let charging = spec
         .battery
         .charging
@@ -674,13 +598,11 @@ mod tests {
     use super::*;
     use crate::spec::{BatteryFields, BrandSpec, ChargingField, FrameLayout, ReplyTransport};
 
-    /// 与任何真实品牌都不同的合成描述：验证解析器只吃字段、不含品牌分支。
-    ///
-    /// 布局：`[0] = 0x11`（无长度字段）→ `[1]=cmd 0x22` → `[2..4]` 填充
-    /// → `[4..]` payload：`[0]=电量`、`[1]=充电标志(0x02=充电中)`。
+    /// 合成描述：`[0]=0x11` → `[1]=cmd 0x22` → `[2..4]` 填充 → `[4..]` payload（电量、充电标志）。
     const SYNTHETIC: BrandSpec = BrandSpec {
         id: "synthetic",
         label: "合成品牌",
+        name_from_product: false,
         usage_page: 0xFFC0,
         usage_page_alt: None,
         usage: None,
@@ -731,11 +653,11 @@ mod tests {
 
     // ---- 多包重组（对应迈从键盘 2.4G 通道）----
 
-    /// 合成多包描述：窗口 `[0]=0x4A(命令) [1]=总包数 [2]=序号 [3]=保留 [4..]=载荷 [-1]=校验和`，
-    /// 组装结果 `[0]=电量 [1]=状态`（高半字节满电、低半字节充电）。
+    /// 合成多包描述：`[0]=0x4A` `[1]=总包数` `[2]=序号` `[3]=保留` `[4..]=载荷` `[-1]=校验和`。
     const REASSEMBLED: BrandSpec = BrandSpec {
         id: "synthetic-reasm",
         label: "合成多包品牌",
+        name_from_product: false,
         transport: ReplyTransport::InterruptQuery,
         reassembly: Some(crate::spec::Reassembly {
             cmd: 0x4A,
@@ -782,7 +704,7 @@ mod tests {
         ..SYNTHETIC
     };
 
-    /// 造一条应答包；`with_id` 控制是否带报告 ID（hidapi 与官方解析器两种形态）。
+    /// 造一条应答包；`with_id` 控制是否带报告 ID。
     fn packet(total: u8, seq: u8, payload: &[u8], with_id: bool) -> Vec<u8> {
         let mut p = Vec::new();
         if with_id {
@@ -794,7 +716,7 @@ mod tests {
         p
     }
 
-    /// 组装进度必须可查、可清：诊断页看 is_complete，新一轮查询前 reset。
+    /// 组装进度可查可清。
     #[test]
     fn reassembler_reports_and_clears_progress() {
         let t0 = Instant::now();
@@ -807,7 +729,6 @@ mod tests {
         );
         assert!(!r.is_complete(), "只收到一半不得算完成");
 
-        // 主动丢弃半包后，紧接着的后续包不得接着拼。
         r.reset();
         assert!(!r.is_complete());
         assert!(
@@ -816,7 +737,6 @@ mod tests {
             "半包已丢弃，孤立的尾包拼不出结果"
         );
 
-        // 设备从 seq 0 重新开始才恢复。
         assert!(
             r.feed(&REASSEMBLED, &packet(2, 0, &[0x3C, 0x01], true), t0)
                 .is_none()
@@ -825,7 +745,6 @@ mod tests {
             r.feed(&REASSEMBLED, &packet(2, 1, &[0x00, 0x00], true), t0)
                 .is_some()
         );
-        // 完成后自动复位，下一轮从头开始。
         assert!(!r.is_complete());
     }
 
@@ -879,7 +798,6 @@ mod tests {
             r.feed(&REASSEMBLED, &packet(2, 0, &[0x3C, 0x00], true), t0)
                 .is_none()
         );
-        // 序号 2 越界（total=2 合法序号只有 0/1）：丢弃，不破坏已收到的第一包。
         assert!(
             r.feed(&REASSEMBLED, &packet(2, 2, &[0x00, 0x00], true), t0)
                 .is_none()
@@ -893,7 +811,6 @@ mod tests {
         let mut r = Reassembler::new();
         let t0 = Instant::now();
         r.feed(&REASSEMBLED, &packet(2, 0, &[0xFF, 0x00], true), t0);
-        // 设备重新开始一轮：旧的半包必须丢，否则会拼出 [0xFF, 0x00, ...]。
         let done = r
             .feed(&REASSEMBLED, &packet(2, 0, &[0x3C, 0x00], true), t0)
             .is_none();
@@ -909,7 +826,6 @@ mod tests {
         let mut r = Reassembler::new();
         let t0 = Instant::now();
         r.feed(&REASSEMBLED, &packet(2, 0, &[0xFF, 0x00], true), t0);
-        // 超过 timeout_ms（5s）后到达的第二包：半包已过期，必须丢弃而不是拼上去。
         let late = t0 + Duration::from_secs(6);
         assert!(
             r.feed(&REASSEMBLED, &packet(2, 1, &[0x00, 0x00], true), late)
@@ -967,7 +883,7 @@ mod tests {
         );
     }
 
-    /// 应答确认位不足时整帧不可用：设备「还没准备好」的应答不是 0% 电量。
+    /// 确认位不符时整帧不可用，不得当成 0% 电量。
     #[test]
     fn missing_ack_marks_frame_malformed() {
         let mut spec = SYNTHETIC;
@@ -992,7 +908,7 @@ mod tests {
         assert!(decode_battery_detailed(&spec, &ok).is_ok());
     }
 
-    /// 状态字节达到错误态起点时整帧作废，不得降级成「未充电 + 某个电量」。
+    /// 状态字节达到错误态起点时整帧作废。
     #[test]
     fn status_error_discards_whole_frame() {
         let mut spec = SYNTHETIC;
@@ -1037,7 +953,6 @@ mod tests {
 
     #[test]
     fn each_rejection_names_its_own_reason() {
-        // 成因必须逐条可辨：六种 `malformed_frame` 在诊断页上不能再长得一样。
         let too_short = decode_battery_detailed(&SYNTHETIC, &[0x11, 0x22]).unwrap_err();
         assert_eq!(too_short.reason, RejectReason::ReportTooShort { min: 5 });
 
@@ -1061,7 +976,6 @@ mod tests {
             }
         );
 
-        // 固定长度布局 + 短报告：长度不是「声明得小」，而是「声明越过末尾」。
         let past_end =
             decode_battery_detailed(&SYNTHETIC, &[0x11, 0x22, 0x00, 0x00, 0x37]).unwrap_err();
         assert_eq!(
@@ -1073,7 +987,6 @@ mod tests {
             }
         );
 
-        // 长度字段被写坏成 0：payload 装不下必选字段。
         let zero_len =
             decode_battery_detailed(&SYNTHETIC_LEN, &[0x11, 0x22, 0x00, 0x00, 0x37, 0x02])
                 .unwrap_err();
@@ -1150,7 +1063,7 @@ mod tests {
         );
     }
 
-    /// 成因文本是对外契约（日志按它 grep）：稳定词 + 同一行的参数。
+    /// 成因文本是对外契约（日志按它 grep）。
     #[test]
     fn rejection_text_is_stable_for_logs() {
         let cases = [

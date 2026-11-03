@@ -15,8 +15,7 @@
 //!
 //! Linux 侧 `$XDG_DATA_HOME` 缺失时用 `$HOME/.local/share/VoltNest`。
 //!
-//! 除「HOME 与平台变量都缺失」这一最后兜底外，根目录恒为绝对路径，与进程工作目录无关——
-//! 从桌面启动器启动时工作目录可能是 `/`，此处不能依赖它。
+//! 除最后兜底外，根目录恒为绝对路径，与进程工作目录无关。
 
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
@@ -45,10 +44,8 @@ impl DataPaths {
     /// 由环境查询函数推导数据根目录（纯函数，便于测试）。
     ///
     /// - Windows：`%APPDATA%\VoltNest`；`%APPDATA%` 缺失或为空时走最后兜底。
-    /// - Linux：`$XDG_DATA_HOME/VoltNest`，但仅当该变量非空且是**绝对路径**（XDG 规范：
-    ///   相对路径视为未设置）；否则 `$HOME/.local/share/VoltNest`。
-    /// - 最后兜底：上面都拿不到（HOME 缺失等环境不完整的情形）时用当前目录下的 `.voltnest`。
-    ///   **这只是兜底，不是产品行为**，正常桌面会话不会走到这里。
+    /// - Linux：`$XDG_DATA_HOME/VoltNest`（须为绝对路径），否则 `$HOME/.local/share/VoltNest`。
+    /// - 最后兜底：环境不完整时用当前目录下的 `.voltnest`。
     pub fn root_from(lookup: impl Fn(&str) -> Option<OsString>) -> Self {
         let root = platform_root(&lookup).unwrap_or_else(|| PathBuf::from(".voltnest"));
         Self { root }
@@ -111,18 +108,15 @@ impl DataPaths {
     }
 }
 
-/// Windows 数据根：`%APPDATA%\VoltNest`。
-///
-/// 不变式：拼接形状恒为 `<APPDATA>\VoltNest`；`%APPDATA%` 缺失或为空才返回 `None`。
+/// Windows 数据根：`%APPDATA%\VoltNest`；`%APPDATA%` 缺失或为空才返回 `None`。
 #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
 fn windows_root(lookup: &impl Fn(&str) -> Option<OsString>) -> Option<PathBuf> {
     let base = lookup("APPDATA").filter(|value| !value.is_empty())?;
     Some(PathBuf::from(base).join(APP_DIR))
 }
 
-/// Linux 数据根：`$XDG_DATA_HOME/VoltNest`，缺省 `$HOME/.local/share/VoltNest`。
-///
-/// XDG Base Directory 规范要求 `$XDG_DATA_HOME` 是绝对路径，相对路径按未设置处理；空值同理。
+/// Linux 数据根：`$XDG_DATA_HOME/VoltNest`（XDG 规范要求绝对路径，相对路径与空值按未设置处理），
+/// 缺省 `$HOME/.local/share/VoltNest`。
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 fn linux_root(lookup: &impl Fn(&str) -> Option<OsString>) -> Option<PathBuf> {
     if let Some(base) = lookup("XDG_DATA_HOME").filter(|value| !value.is_empty()) {
@@ -212,8 +206,7 @@ mod tests {
         assert!(paths.root().ends_with("VoltNest") || paths.root().ends_with(".voltnest"));
     }
 
-    /// Linux 路径语义依赖宿主平台的 `Path::is_absolute`：Windows 上 `/data` 不算绝对路径，
-    /// 这组断言只在 Linux 有意义。
+    /// Linux 路径语义依赖宿主平台的 `Path::is_absolute`，这组断言只在 Linux 有意义。
     #[cfg(target_os = "linux")]
     #[test]
     fn linux_root_prefers_absolute_xdg_data_home() {

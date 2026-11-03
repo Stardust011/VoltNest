@@ -1,5 +1,5 @@
-//! BLE 调度策略：负缓存、退避、跟踪上限、并发上限。纯逻辑：时间由调用方以单调毫秒传入
-//! （Provider 内部巡检用 `Instant`，不参与对外语义，D10），故全部边界都能用假时钟手动推进测出，无需注入时钟抽象。
+//! BLE 调度策略：负缓存、退避、跟踪上限、并发上限。纯逻辑，时间由调用方以单调毫秒传入，
+//! 不注入时钟抽象，全部边界都可用假时钟推进测出。
 
 use crate::{
     BACKOFF_CAP_MS, CONNECT_TIMEOUT_MS, DISCOVER_TIMEOUT_MS, FAILURES_BEFORE_BACKOFF,
@@ -8,7 +8,7 @@ use crate::{
 use std::collections::BTreeMap;
 use voltnest_provider::ErrorCode;
 
-/// BLE 调度参数。默认值来自实测。
+/// BLE 调度参数。默认值见 `crate` 顶层常量。
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct BlePolicy {
     /// 建链超时。
@@ -115,7 +115,6 @@ impl PolicyBook {
     /// 判定本轮是否建链。
     pub fn admission(&self, addr: [u8; 6], now_ms: u64) -> Admission {
         let Some(state) = self.devices.get(&addr) else {
-            // 未登记的新地址：只有还有槽位时才允许。
             return if self.devices.len() < self.policy.max_tracked {
                 Admission::Admit
             } else {
@@ -167,9 +166,7 @@ impl PolicyBook {
         state.last_error = Some(ErrorCode::ServiceMissing);
     }
 
-    /// 链路丢失（对端断电/超距/系统主动断开）：不算我方失败，只清失败计数与退避。
-    ///
-    /// 若按普通失败计，一台频繁休眠的鼠标几次之后就会被退避 2–10 分钟，再插回来看不到电量。
+    /// 链路丢失（对端断电/超距/系统主动断开）：不计我方失败，只清失败计数与退避。
     pub fn on_link_lost(&mut self, addr: [u8; 6]) {
         let state = self.devices.entry(addr).or_default();
         state.failures = 0;
@@ -203,7 +200,6 @@ pub fn backoff_step(failures: u32, threshold: u32, cap_ms: u64) -> u64 {
         return 0;
     }
     let exp = failures - threshold;
-    // 2 分钟起步，指数增长，避免 2u64.pow 溢出（最多只用到 3~4 档）。
     let factor = 1u64.checked_shl(exp.min(20)).unwrap_or(u64::MAX);
     (2 * 60_000u64).saturating_mul(factor).min(cap_ms)
 }
@@ -237,7 +233,6 @@ mod tests {
 
     #[test]
     fn negative_cache_blocks_for_thirty_minutes() {
-        // 否则用户每台非电量 BLE 外设会每 60s 被建链一次，永不停止。
         let mut b = book();
         b.track(A);
         b.on_service_missing(A, T);
@@ -263,7 +258,6 @@ mod tests {
 
     #[test]
     fn backoff_is_two_four_eight_then_cap() {
-        // 连续失败 3 次 → 2 / 4 / 8 分钟，上限 10 分钟。
         let mut b = book();
         b.track(A);
         b.on_failure(A, T, ErrorCode::IoTimeout);
@@ -352,7 +346,6 @@ mod tests {
 
     #[test]
     fn tracking_limit_is_eight() {
-        // 第 9 台只进诊断页，不建链。
         let mut b = book();
         for i in 0..8u8 {
             b.track([i, 0, 0, 0, 0, 1]);
@@ -371,7 +364,6 @@ mod tests {
 
     #[test]
     fn link_lost_does_not_accumulate_backoff() {
-        // 反复休眠/唤醒的鼠标不能被退避：断链是链路事实，不是读取失败。
         let mut b = book();
         b.track(A);
         for _ in 0..6 {
