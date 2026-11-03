@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.1](https://github.com/Stardust011/VoltNest/compare/v0.3.0...v0.3.1) (2026-11-03)
+
+
+### 修复
+
+* **release:** 修正打包产物路径并清理工作流冗余注释 ([9ca081d](https://github.com/Stardust011/VoltNest/commit/9ca081dd4f44696e01657e039dc28120c22328ab))
+
 ## [0.3.0](https://github.com/Stardust011/VoltNest/compare/v0.2.4...v0.3.0) (2026-11-03)
 
 
@@ -189,5 +196,3 @@
 * **provider:** 统一 rustfmt 格式并整理多行构造 ([ecd26aa](https://github.com/Stardust011/VoltNest/commit/ecd26aae2ade031fd15ae669dd202c6d92375393))
 * 格式化 Markdown 表格、JSON 与 Python 抓取脚本 ([310c84e](https://github.com/Stardust011/VoltNest/commit/310c84e9fd64cf8309d83311ed85cd52ea86383b))
 * 统一 rustfmt 与 prettier 格式 ([3983ec3](https://github.com/Stardust011/VoltNest/commit/3983ec359b4b20c7eb22fca47fad3943de67ea6a))
-
-
