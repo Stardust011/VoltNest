@@ -25,6 +25,24 @@ pub struct SettingsDto {
     pub tray: TraySettingsDto,
 }
 
+/// 「添加设备」候选。
+#[derive(Clone, PartialEq, Eq, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeviceCandidateDto {
+    /// 稳定标识。
+    pub stable_id: String,
+    /// 展示名（品牌 + 型号）。
+    pub display_name: String,
+    /// `hid` / `ble`。
+    pub transport: String,
+    /// `0xVVVV:0xPPPP`；蓝牙恒为 `null`。
+    pub vid_pid: Option<String>,
+    /// 已经在设备列表里。
+    pub in_list: bool,
+    /// 被用户删除过（可从删除列表恢复）。
+    pub removed: bool,
+}
+
 /// 通知设置。
 #[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

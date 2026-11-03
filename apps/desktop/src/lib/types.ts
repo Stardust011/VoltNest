@@ -19,6 +19,10 @@ export interface DeviceDto {
 
 export interface CardDto {
   cardId: string;
+  /** 卡片标题：用户合并取合并名，自动合并取主成员名称。 */
+  displayName: string;
+  /** 由用户手动合并（决定是否提供「分离合并」）。 */
+  userMerged: boolean;
   primaryDeviceId: string;
   memberDeviceIds: string[];
   battery: number | null;
@@ -91,6 +95,19 @@ export interface DiagnosticsDto {
 export interface OnboardingChoice {
   autostart: boolean;
   startMinimized: boolean;
+}
+
+/** 「添加设备」候选：与自动识别共用同一套筛选。 */
+export interface DeviceCandidateDto {
+  stableId: string;
+  displayName: string;
+  transport: "hid" | "ble";
+  /** `0xVVVV:0xPPPP`；蓝牙为 null。 */
+  vidPid: string | null;
+  /** 已在设备列表里。 */
+  inList: boolean;
+  /** 曾被删除，可恢复。 */
+  removed: boolean;
 }
 
 // ---- 生成上报数据（HID 抓包）----

@@ -210,6 +210,10 @@ struct SessionHandle {
 
 struct HidTarget {
     stable_id: StableId,
+    /// 厂商 ID。
+    vid: u16,
+    /// 产品 ID。
+    pid: u16,
     path: CString,
     display_name: String,
     /// 未经品牌前缀修饰的型号原文（`modelKey` 来源）。
@@ -300,6 +304,41 @@ fn collect_targets(
     select_targets(&enum_entries(api), usages)
 }
 
+/// 「添加设备」用的候选：与自动识别共用同一套筛选。
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct CandidateDevice {
+    /// 稳定标识。
+    pub stable_id: String,
+    /// 展示名（品牌 + 型号）。
+    pub display_name: String,
+    /// `0xVVVV:0xPPPP`。
+    pub vid_pid: String,
+}
+
+/// 枚举当前接入、且能通过自动识别筛选的设备。
+///
+/// 筛选逻辑与 [`select_targets`] 完全一致（型号表命中 → 品牌协议 → UsagePage），
+/// 保证「手动添加」列出来的正是自动识别会认的那批设备。
+pub fn list_candidates() -> Result<Vec<CandidateDevice>, String> {
+    let api = HidApi::new().map_err(|e| format!("初始化 HID 枚举失败：{e}"))?;
+    let usages = usage_index(&api);
+    let (found, _conflicts) = collect_targets(&api, &usages);
+    let mut out: Vec<CandidateDevice> = found
+        .into_values()
+        .map(|target| CandidateDevice {
+            stable_id: target.stable_id.as_str().to_string(),
+            display_name: target.display_name,
+            vid_pid: format!("0x{:04X}:0x{:04X}", target.vid, target.pid),
+        })
+        .collect();
+    out.sort_by(|a, b| {
+        a.display_name
+            .cmp(&b.display_name)
+            .then_with(|| a.stable_id.cmp(&b.stable_id))
+    });
+    Ok(out)
+}
+
 /// 按「VID/PID 精确 → 品牌声明的 UsagePage（+ 可选 Usage）」筛选候选集合。
 ///
 /// 返回 `(本轮候选, 冲突告警)`：同一轮出现两个相同 `stableId` 但 `path` 不同时只保留先发现的
@@ -385,6 +424,8 @@ fn consider_target(
         key,
         HidTarget {
             stable_id,
+            vid,
+            pid,
             path: info.path.clone(),
             display_name: compose_display_name(
                 clean(info.manufacturer.as_deref()),

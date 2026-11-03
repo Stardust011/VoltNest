@@ -4,6 +4,7 @@ import type {
   CaptureEventDto,
   CaptureStartRequest,
   CaptureStartResult,
+  DeviceCandidateDto,
   DiagnosticsDto,
   HidTargetDto,
   ManualDeviceDto,
@@ -71,6 +72,38 @@ export function subscribeSnapshot(handler: (snap: Snapshot) => void) {
 
 export function subscribeDiagnostics(handler: () => void) {
   return listen(DIAGNOSTICS_EVENT, () => handler());
+}
+
+// ---- 设备管理 ----
+
+/** 候选设备：枚举当前接入且能通过自动识别筛选的设备。 */
+export function listDeviceCandidates(): Promise<DeviceCandidateDto[]> {
+  return invoke<DeviceCandidateDto[]>("list_device_candidates");
+}
+
+/** 添加（或恢复）一台设备。 */
+export function addDevice(stableId: string): Promise<void> {
+  return invoke<void>("add_device", { stableId });
+}
+
+/** 删除设备；合并卡传它的全部成员。 */
+export function removeDevices(ids: string[]): Promise<void> {
+  return invoke<void>("remove_devices", { ids });
+}
+
+/** 合并：`primary` 是卡片锚点，`members` 是其余设备。 */
+export function mergeDevices(primary: string, members: string[], name: string): Promise<void> {
+  return invoke<void>("merge_devices", { primary, members, name });
+}
+
+/** 分离合并；`cardId` 是卡片 ID（`user:<主设备>`）。 */
+export function separateMerge(cardId: string): Promise<void> {
+  return invoke<void>("separate_merge", { cardId });
+}
+
+/** 改名：`user:` 卡片改合并名，其余改设备别名。 */
+export function renameDevice(target: string, name: string): Promise<void> {
+  return invoke<void>("rename_device", { target, name });
 }
 
 // ---- 生成上报数据 ----
