@@ -1,6 +1,6 @@
 //! 托盘图标：每个可见设备一个环形电量图（32×32 RGBA 手工光栅化，配色与前端 `batteryColor()` 一致）。
 //!
-//! 没有设备图标时露基础图标（应用图标），有设备图标就让位；设备全部离线时也回到应用图标。每张图标挂同一份菜单（打开面板 / 退出）。
+//! 没有设备图标时露基础图标（打包的应用图标），有设备图标就让位。设备离线即收起它的图标，全部离线时只剩应用图标。每张图标挂同一份菜单（打开面板 / 退出）。
 //!
 //! Linux（AppIndicator）限制：`set_tooltip` 为空实现，「气泡模式」返回 [`BubbleOutcome::UnsupportedPlatform`]；`TrayIconEvent` 不派发，左键开面板仅 Windows 生效。
 
@@ -8,16 +8,17 @@ use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
+use tauri::AppHandle;
 use tauri::image::Image;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{
     MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent, TrayIconId,
 };
-use tauri::{AppHandle, Manager};
 
 use voltnest_core::{DeviceDto, DeviceState, Snapshot};
 
 use crate::host::{HostState, lock};
+use crate::panel;
 
 /// 基础托盘图标的 id（没有设备图标时占位，点它打开面板）。
 pub const BASE_TRAY_ID: &str = "voltnest";
@@ -58,7 +59,7 @@ const BOLT: [(f32, f32); 12] = [
 /// 等待读数时整环的透明度：看得见，但明显不是一次真实读数。
 const PENDING_ALPHA: f32 = 0.7;
 
-/// 应用图标：`bundle.icon` 里 32×32 那张，无设备时占位。
+/// 应用图标：`bundle.icon` 里 32×32 那张，无设备图标时占位。
 const APP_ICON_PNG: &[u8] = include_bytes!("../icons/32x32.png");
 
 /// 每张图标应有的 tooltip（气泡提示 6 秒后据此还原）。
@@ -66,18 +67,15 @@ static BASELINE_TOOLTIPS: Mutex<BTreeMap<String, String>> = Mutex::new(BTreeMap:
 /// 基础图标当前是否可见（隐身的图标不能当气泡的落点）。
 static BASE_VISIBLE: AtomicBool = AtomicBool::new(true);
 
-/// 解出打包的应用图标；解码失败退回蓝色等待环。
+/// 解出打包的应用图标（PNG 随二进制编译进来，格式在构建期就已确定）。
 fn app_icon() -> Image<'static> {
-    Image::from_bytes(APP_ICON_PNG).unwrap_or_else(|err| {
-        log::warn!("解码应用图标失败，退回等待环: {err}");
-        ring_image(None, false, DeviceState::Unknown)
-    })
+    Image::from_bytes(APP_ICON_PNG).expect("bundle 里的 32×32 应用图标必须可解码")
 }
 
 /// 安装托盘：菜单事件处理器 + 基础图标。
 pub fn install(app: &AppHandle) -> tauri::Result<()> {
     app.on_menu_event(|app, event| match event.id.as_ref() {
-        MENU_OPEN => show_main(app),
+        MENU_OPEN => panel::show(app),
         MENU_QUIT => quit(app),
         _ => {}
     });
@@ -85,29 +83,16 @@ pub fn install(app: &AppHandle) -> tauri::Result<()> {
     build_tray(app, BASE_TRAY_ID, app_icon(), "VoltNest")
 }
 
-/// 显示并聚焦主窗口（二次启动、托盘点击、菜单项都走这里）。
-pub fn show_main(app: &AppHandle) {
-    if let Some(window) = app.get_webview_window("main") {
-        let _ = window.show();
-        let _ = window.unminimize();
-        let _ = window.set_focus();
-    }
-}
-
 /// 退出进程：任意一张图标的右键菜单都能到这儿。
 fn quit(app: &AppHandle) {
     app.exit(0);
 }
 
-/// 按快照同步设备托盘图标：增、改、删。
+/// 按快照同步设备托盘图标：增、改、删。离线设备不收图标（快照已把它排除在可见集合外）。
 pub fn sync_tray_icons(app: &AppHandle, shared: &Arc<HostState>, snap: &Snapshot) {
     let mut known = lock(&shared.tray_ids);
-    let visible: &[String] = if all_devices_offline(snap) {
-        &[]
-    } else {
-        &snap.tray.visible_device_ids
-    };
-    let truncated = snap.devices.len().saturating_sub(visible.len());
+    let visible: &[String] = &snap.tray.visible_device_ids;
+    let truncated = snap.tray.overflow;
     let mut wanted: Vec<String> = Vec::with_capacity(visible.len());
 
     for (idx, stable_id) in visible.iter().enumerate() {
@@ -151,11 +136,6 @@ pub fn sync_tray_icons(app: &AppHandle, shared: &Arc<HostState>, snap: &Snapshot
     drop(known);
 
     update_base(app, snap, has_device_icons);
-}
-
-/// 全部设备都在 `Offline`（空列表与 `Unknown`/`Unavailable` 不算）。
-fn all_devices_offline(snap: &Snapshot) -> bool {
-    !snap.devices.is_empty() && snap.devices.iter().all(|d| d.state == DeviceState::Offline)
 }
 
 /// 基础图标显隐：有设备图标就隐身让位，没有就出来占位（只切可见性，不重建）。
@@ -215,7 +195,7 @@ fn build_tray(
                     | TrayIconEvent::DoubleClick {
                         button: MouseButton::Left,
                         ..
-                    } => show_main(tray.app_handle()),
+                    } => panel::show(tray.app_handle()),
                     _ => {}
                 })
                 .build(&handle)
@@ -267,9 +247,9 @@ pub enum BubbleOutcome {
 
 /// 托盘气泡模式：把提示写进对应图标 tooltip，6 秒后恢复。
 ///
-/// 判定顺序：先找落脚图标（无 → [`BubbleOutcome::NoIcon`]），再看平台（Linux → [`BubbleOutcome::UnsupportedPlatform`]），最后写 tooltip → [`BubbleOutcome::Sent`]。
-pub fn bubble(app: &AppHandle, stable_id: &str, text: &str) -> BubbleOutcome {
-    let Some(tray) = notification_tray(app, stable_id) else {
+/// 判定顺序：先找落脚图标（设备自身 → 其呈现单元主成员 → 基础图标，都没有 → [`BubbleOutcome::NoIcon`]），再看平台（Linux → [`BubbleOutcome::UnsupportedPlatform`]），最后写 tooltip → [`BubbleOutcome::Sent`]。
+pub fn bubble(app: &AppHandle, snap: &Snapshot, stable_id: &str, text: &str) -> BubbleOutcome {
+    let Some(tray) = notification_tray(app, snap, stable_id) else {
         return BubbleOutcome::NoIcon;
     };
     if cfg!(target_os = "linux") {
@@ -290,9 +270,14 @@ pub fn bubble(app: &AppHandle, stable_id: &str, text: &str) -> BubbleOutcome {
     BubbleOutcome::Sent
 }
 
-/// 低电量提示挂哪张图标：优先设备自己的，其次露在托盘里的基础图标。
-fn notification_tray(app: &AppHandle, stable_id: &str) -> Option<TrayIcon> {
+/// 低电量提示挂哪张图标：设备自己的 → 它所在呈现单元的主成员 → 露在托盘里的基础图标。
+fn notification_tray(app: &AppHandle, snap: &Snapshot, stable_id: &str) -> Option<TrayIcon> {
     if let Some(tray) = app.tray_by_id(&TrayIconId::new(tray_id_for(stable_id))) {
+        return Some(tray);
+    }
+    if let Some(owner) = unit_owner(snap, stable_id)
+        && let Some(tray) = app.tray_by_id(&TrayIconId::new(tray_id_for(&owner)))
+    {
         return Some(tray);
     }
     if BASE_VISIBLE.load(Ordering::Relaxed) {
@@ -301,13 +286,21 @@ fn notification_tray(app: &AppHandle, stable_id: &str) -> Option<TrayIcon> {
     None
 }
 
-/// 基础托盘图标的 tooltip（只在没有设备图标时可见）。
+/// 该记录所属呈现单元的主成员 id（未分组时为 `None`）。
+fn unit_owner(snap: &Snapshot, stable_id: &str) -> Option<String> {
+    snap.cards
+        .iter()
+        .find(|c| c.member_device_ids.iter().any(|m| m == stable_id))
+        .map(|c| c.primary_device_id.clone())
+}
+
+/// 基础图标的 tooltip（只在没有设备图标时可见）。数字取自快照的托盘统计，不自行数记录。
 fn summary_tooltip(snap: &Snapshot) -> String {
-    let total = snap.devices.len();
+    let total = snap.tray.present;
     if total == 0 {
         return "VoltNest".to_string();
     }
-    if all_devices_offline(snap) {
+    if snap.tray.live == 0 {
         return format!("VoltNest · {total} 台设备（全部离线）");
     }
     if snap.tray.visible_device_ids.is_empty() {
@@ -321,7 +314,7 @@ fn tray_id_for(stable_id: &str) -> String {
     format!("tray:{stable_id}")
 }
 
-/// tooltip 文案：`型号 · 92%` / `型号 · —（离线）` / `型号 · 87%（上次读数）`。`extra > 0` 表示还有设备没进托盘，挂在最后一张图标上；整串 ≤128 字符。
+/// tooltip 文案：`型号 · 92%` / `型号 · —` / `型号 · 87%（上次读数）`。`extra > 0` 表示还有设备没进托盘，挂在最后一张图标上；整串 ≤128 字符。
 fn tooltip_for(device: &DeviceDto, extra: usize) -> String {
     let reading = displayed_battery(device);
     let battery = match reading {
@@ -331,9 +324,6 @@ fn tooltip_for(device: &DeviceDto, extra: usize) -> String {
     let mut body = format!("{} · {battery}", device.display_name);
     if reading.is_some_and(|r| r.from_cache) {
         body.push_str("（上次读数）");
-    }
-    if device.state == DeviceState::Offline {
-        body.push_str("（离线）");
     }
     let suffix = if extra > 0 {
         format!(" · 还有 {extra} 台")
@@ -569,26 +559,27 @@ mod tests {
         }
     }
 
+    /// 构造快照：`devices` 台物理存在且在线，前 `visible` 台进托盘。
     fn snapshot(devices: usize, visible: usize) -> Snapshot {
-        let mut snap = Snapshot {
-            rev: 1,
-            server_now_ms: 0,
-            devices: Vec::new(),
-            cards: Vec::new(),
-            tray: voltnest_core::TraySnapshotDto {
-                visible_device_ids: Vec::new(),
-            },
-        };
-        snap.devices = (0..devices)
+        let devices: Vec<DeviceDto> = (0..devices)
             .map(|_| device(Some(80), DeviceState::Online))
             .collect();
-        snap.tray.visible_device_ids = snap
-            .devices
-            .iter()
-            .take(visible)
-            .map(|d| d.stable_id.clone())
-            .collect();
-        snap
+        Snapshot {
+            rev: 1,
+            server_now_ms: 0,
+            tray: voltnest_core::TraySnapshotDto {
+                visible_device_ids: devices
+                    .iter()
+                    .take(visible)
+                    .map(|d| d.stable_id.clone())
+                    .collect(),
+                present: devices.len(),
+                live: devices.len(),
+                overflow: devices.len().saturating_sub(visible),
+            },
+            devices,
+            cards: Vec::new(),
+        }
     }
 
     #[test]
@@ -629,36 +620,45 @@ mod tests {
     }
 
     #[test]
-    fn all_offline_yields_only_the_app_icon() {
-        let mut snap = snapshot(2, 2);
-        assert!(!all_devices_offline(&snap));
-        for d in &mut snap.devices {
-            d.state = DeviceState::Offline;
-            d.battery = None;
-        }
-        assert!(all_devices_offline(&snap), "全离线时设备图标要整体退位");
+    fn summary_tooltip_reports_devices_that_are_all_offline() {
+        let mut snap = snapshot(1, 0);
+        snap.tray.live = 0;
+        snap.tray.overflow = 0;
         assert_eq!(
             summary_tooltip(&snap),
-            "VoltNest · 2 台设备（全部离线）",
+            "VoltNest · 1 台设备（全部离线）",
             "应用图标顶替之后，tooltip 得说明设备还在、只是断了"
+        );
+
+        let empty = snapshot(0, 0);
+        assert!(
+            !summary_tooltip(&empty).contains("离线"),
+            "没有设备不能报「全部离线」"
         );
     }
 
     #[test]
-    fn all_offline_needs_every_device_and_at_least_one() {
-        assert!(!all_devices_offline(&snapshot(0, 0)), "没有设备不算全离线");
-        let mut mixed = snapshot(2, 2);
-        mixed.devices[1].state = DeviceState::Offline;
-        assert!(!all_devices_offline(&mixed), "还有在线设备就保留电量环");
-        let mut waiting = snapshot(1, 1);
-        waiting.devices[0].state = DeviceState::Unknown;
-        assert!(!all_devices_offline(&waiting), "等待读数仍要画蓝环");
+    fn tooltip_without_any_reading_has_no_status_suffix() {
+        let d = device(None, DeviceState::Unknown);
+        assert_eq!(tooltip_for(&d, 0), "AJ159 NL · —");
     }
 
     #[test]
-    fn tooltip_marks_offline_and_null_battery() {
-        let d = device(None, DeviceState::Offline);
-        assert_eq!(tooltip_for(&d, 0), "AJ159 NL · —（离线）");
+    fn overflow_note_comes_straight_from_the_snapshot() {
+        let mut snap = snapshot(2, 1);
+        snap.tray.overflow = 1;
+        assert_eq!(snap.tray.overflow, 1);
+        assert_eq!(
+            tooltip_for(&snap.devices[0], snap.tray.overflow),
+            "AJ159 NL · 80% · 还有 1 台",
+            "「还有 N 台」只读快照给的数字，不自己数记录"
+        );
+
+        snap.tray.overflow = 0;
+        assert_eq!(
+            tooltip_for(&snap.devices[0], snap.tray.overflow),
+            "AJ159 NL · 80%"
+        );
     }
 
     #[test]
