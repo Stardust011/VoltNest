@@ -65,7 +65,10 @@ const typeIconLabel = computed(() => typeLabel.value ?? transportLabel(props.dev
 /** 合并卡用合并名，单机用设备名。 */
 const title = computed(() => props.card?.displayName || props.device.displayName);
 
-/** 用户手动合并的卡片：副行标「已合并」，自动合并卡不标。 */
+/** 只要并成了卡（自动合并或用户合并）就在副行标「已合并」。 */
+const merged = computed(() => props.card !== undefined);
+
+/** 用户手动合并：菜单文案与副行说明按此区分。 */
 const userMerged = computed(() => props.card?.userMerged === true);
 
 /** 副行：合并卡用非活跃链路说明（Rust 生成）；主数字为缓存值时补「上次读数 · 时间」；其余按充电状态。 */
@@ -136,7 +139,7 @@ const secondary = computed(() => {
             <p
               class="mt-1 flex min-w-0 items-center gap-1.5 text-xs leading-4 text-muted-foreground"
             >
-              <span v-if="userMerged" class="flex shrink-0 items-center gap-1">
+              <span v-if="merged" class="flex shrink-0 items-center gap-1">
                 <Link2 class="size-3" aria-hidden="true" />
                 已合并
               </span>
