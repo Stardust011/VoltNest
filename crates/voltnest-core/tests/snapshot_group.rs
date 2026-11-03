@@ -3,7 +3,7 @@
 mod common;
 
 use common::*;
-use voltnest_core::{DeviceState, Engine, EngineConfig};
+use voltnest_core::{DeviceState, Engine, EngineConfig, SeedEntry};
 use voltnest_provider::testing::{ble_fact, hid_fact};
 use voltnest_provider::{ProviderEvent, Sensitivity, StableId, Transport};
 
@@ -94,10 +94,20 @@ fn tray_respects_capacity_presence_and_hidden() {
         "上限 4 由配置给出，此处设为 2"
     );
     assert_eq!(snap.tray.visible_device_ids[0], ids[0].as_str());
+    assert_eq!(
+        (snap.tray.present, snap.tray.live, snap.tray.overflow),
+        (3, 3, 1),
+        "三台都在线，两台有位子，一台算「还有」"
+    );
 
     e.set_hidden(vec![ids[0].as_str().to_string()]);
     let snap = e.snapshot(T0);
     assert_eq!(snap.tray.visible_device_ids[0], ids[1].as_str());
+    assert_eq!(
+        (snap.tray.present, snap.tray.live, snap.tray.overflow),
+        (3, 3, 0),
+        "隐藏的设备不占图标位，也不该算进「还有」"
+    );
 
     let removed = ProviderEvent::Removed {
         stable_id: ids[1].clone(),
@@ -111,6 +121,77 @@ fn tray_respects_capacity_presence_and_hidden() {
             .visible_device_ids
             .contains(&ids[1].as_str().to_string())
     );
+    assert_eq!(
+        (snap.tray.present, snap.tray.live),
+        (2, 2),
+        "拔掉的设备不再计入设备数"
+    );
+}
+
+#[test]
+fn seeded_records_are_not_counted_as_devices() {
+    let mut e = engine();
+    e.seed(
+        &[SeedEntry {
+            stable_id: "hid:9999:0001".into(),
+            transport: Transport::Hid,
+            display_name: "Old Keyboard".into(),
+            model_name_raw: "Old Keyboard".into(),
+            last_known_battery: Some(60),
+            last_known_at_ms: Some(T0),
+            first_seen_at_ms: Some(T0),
+            last_seen_at_ms: Some(T0),
+            path: None,
+            notifications: Vec::new(),
+        }],
+        T0,
+    );
+    common::feed(&mut e, &hid_arrived(), Transport::Hid, T0);
+    common::feed(&mut e, &hid_reading(90), Transport::Hid, T0);
+
+    let snap = e.snapshot(T0 + 1);
+    assert_eq!(
+        snap.devices.len(),
+        2,
+        "回填记录仍留在 devices 里供面板显示缓存值"
+    );
+    assert_eq!(
+        (snap.tray.present, snap.tray.live),
+        (1, 1),
+        "本次没出现的回填记录不是一台在线设备"
+    );
+    assert_eq!(snap.tray.overflow, 0, "「还有 N 台」不能把回填记录数进去");
+    assert_eq!(
+        snap.tray.visible_device_ids,
+        vec![hid_id().as_str().to_string()]
+    );
+}
+
+#[test]
+fn merged_transports_count_as_one_device() {
+    let mut e = engine();
+    common::feed(&mut e, &hid_arrived(), Transport::Hid, T0);
+    common::feed(&mut e, &hid_reading(90), Transport::Hid, T0);
+    common::feed(&mut e, &ble_arrived(), Transport::Ble, T0);
+    common::feed(&mut e, &ble_reading(70), Transport::Ble, T0);
+
+    common::feed(&mut e, &hid_reading(89), Transport::Hid, T0 + 400_000);
+    e.tick(T0 + 400_000);
+
+    let snap = e.snapshot(T0 + 400_000);
+    assert_eq!(snap.devices.len(), 2, "两条链路各一条记录");
+    assert_eq!(snap.cards.len(), 1, "同型号合并成一台");
+    assert_eq!(
+        (snap.tray.present, snap.tray.live),
+        (1, 1),
+        "合并的两条链路只能算一台设备"
+    );
+    assert_eq!(
+        snap.tray.visible_device_ids,
+        vec![hid_id().as_str().to_string()],
+        "一台设备一个图标"
+    );
+    assert_eq!(snap.tray.overflow, 0);
 }
 
 #[test]

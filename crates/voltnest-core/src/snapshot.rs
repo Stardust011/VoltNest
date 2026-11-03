@@ -18,7 +18,7 @@ pub struct Snapshot {
     pub devices: Vec<DeviceDto>,
     /// 呈现分组卡片：仅满足分组谓词的两条记录才出现。未分组设备由前端从 `devices` 中取未被引用的成员。
     pub cards: Vec<CardDto>,
-    /// 托盘可见集合。
+    /// 托盘视图：图标与设备计数（同一口径）。
     pub tray: TraySnapshotDto,
 }
 
@@ -76,12 +76,18 @@ pub struct CardDto {
     pub inactive_member_text: String,
 }
 
-/// 托盘可见集合与顺序。
+/// 托盘视图：图标 id 与设备计数，全部按「呈现单元」计（同型号的两条链路合并成一台）。
 #[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TraySnapshotDto {
-    /// 应存在的托盘图标：物理存在、未隐藏、非 `Offline`，按 `settings.tray.order` 排序，上限 4。
+    /// 应存在的托盘图标：每个呈现单元一个，按 `settings.tray.order` 排序，上限 4。
     pub visible_device_ids: Vec<String>,
+    /// 物理存在的设备数（回填但本次没出现的记录不计）。
+    pub present: usize,
+    /// 物理存在且非 `Offline` 的设备数。
+    pub live: usize,
+    /// 非离线、但被图标上限挡在外面的设备数，即 tooltip 的「还有 N 台」。
+    pub overflow: usize,
 }
 
 #[cfg(test)]
@@ -112,6 +118,9 @@ mod tests {
             cards: vec![],
             tray: TraySnapshotDto {
                 visible_device_ids: vec![],
+                present: 1,
+                live: 0,
+                overflow: 0,
             },
         };
         let json = serde_json::to_string(&snap).unwrap();
@@ -146,6 +155,9 @@ mod tests {
             }],
             tray: TraySnapshotDto {
                 visible_device_ids: vec!["hid:7768:6426".into()],
+                present: 1,
+                live: 1,
+                overflow: 0,
             },
         };
         let json = serde_json::to_string(&snap).unwrap();

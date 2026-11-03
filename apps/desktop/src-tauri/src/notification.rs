@@ -19,7 +19,7 @@ use crate::tray;
 pub fn dispatch_notifications(
     app: &AppHandle,
     shared: &Arc<HostState>,
-    _snap: &Snapshot,
+    snap: &Snapshot,
     notifications: Vec<LowBatteryNotification>,
     _now: u64,
 ) {
@@ -50,7 +50,7 @@ pub fn dispatch_notifications(
                     "{} 电量 {}%（阈值 {}%）",
                     notification.display_name, notification.battery, notification.threshold
                 );
-                let outcome = tray::bubble(app, &notification.stable_id, &text);
+                let outcome = tray::bubble(app, snap, &notification.stable_id, &text);
                 match outcome {
                     tray::BubbleOutcome::Sent => {}
                     tray::BubbleOutcome::NoIcon => log::warn!(

@@ -98,6 +98,16 @@ pub struct SeedEntry {
     pub notifications: Vec<NotificationEntry>,
 }
 
+/// 托盘计数单位：卡片合并后的一个设备（未分组时就是记录本身）。
+struct TrayUnit {
+    /// 任一成员物理存在。
+    present: bool,
+    /// 任一成员非 `Offline`。
+    live: bool,
+    /// 代表该单元上托盘的记录 id，优先取卡片主成员。
+    icon_id: Option<String>,
+}
+
 /// 设备状态机 + 注册表 + 快照生成器。宿主只持有一个实例。
 #[derive(Debug)]
 pub struct Engine {
@@ -695,19 +705,66 @@ impl Engine {
         let order = self.sorted_indices();
         let devices: Vec<DeviceDto> = order.iter().map(|&i| self.device_dto(i)).collect();
         let cards = self.build_cards(&order, now_ms);
-        let visible_device_ids = order
-            .iter()
-            .map(|&i| &self.records[i])
-            .filter(|r| r.has_tray_icon(self.is_hidden(r.stable_id.as_str())))
-            .take(self.tray_capacity)
-            .map(|r| r.stable_id.as_str().to_string())
-            .collect();
+        let tray = self.tray_snapshot(&order, &cards);
         Snapshot {
             rev: self.rev,
             server_now_ms: now_ms,
             devices,
             cards,
-            tray: TraySnapshotDto { visible_device_ids },
+            tray,
+        }
+    }
+
+    /// 托盘视图：图标与计数都按呈现单元（卡片合并同型号的两条链路）计，避免一条设备算两次。
+    fn tray_snapshot(&self, order: &[usize], cards: &[CardDto]) -> TraySnapshotDto {
+        let mut owner: BTreeMap<&str, &str> = BTreeMap::new();
+        for card in cards {
+            for id in &card.member_device_ids {
+                owner.insert(id.as_str(), card.primary_device_id.as_str());
+            }
+        }
+
+        let mut units: Vec<TrayUnit> = Vec::new();
+        let mut index: BTreeMap<&str, usize> = BTreeMap::new();
+        for &i in order {
+            let rec = &self.records[i];
+            let unit_id = owner
+                .get(rec.stable_id.as_str())
+                .copied()
+                .unwrap_or(rec.stable_id.as_str());
+            let at = *index.entry(unit_id).or_insert_with(|| {
+                units.push(TrayUnit {
+                    present: false,
+                    live: false,
+                    icon_id: None,
+                });
+                units.len() - 1
+            });
+            let unit = &mut units[at];
+            unit.present |= rec.present;
+            unit.live |= rec.present && rec.state != DeviceState::Offline;
+
+            let eligible = rec.has_tray_icon(self.is_hidden(rec.stable_id.as_str()));
+            let is_primary = unit_id == rec.stable_id.as_str();
+            if eligible && (unit.icon_id.is_none() || is_primary) {
+                unit.icon_id = Some(rec.stable_id.as_str().to_string());
+            }
+        }
+
+        let present = units.iter().filter(|u| u.present).count();
+        let live = units.iter().filter(|u| u.live).count();
+        let candidates: Vec<&TrayUnit> = units.iter().filter(|u| u.icon_id.is_some()).collect();
+        let visible_device_ids = candidates
+            .iter()
+            .take(self.tray_capacity)
+            .filter_map(|u| u.icon_id.clone())
+            .collect();
+
+        TraySnapshotDto {
+            visible_device_ids,
+            present,
+            live,
+            overflow: candidates.len().saturating_sub(self.tray_capacity),
         }
     }
 
