@@ -1,8 +1,8 @@
 //! 桌面悬浮窗：始终置顶、无边框、圆角正方形的毛玻璃卡片，可拖拽移动、可拖右下角缩放。
 //!
 //! 运行：`cargo run -p voltnest-floating`。
-//! 窗口的置顶 / 无边框 / 透明 / 玻璃外观 / 圆角命中判定全部由
-//! `ui/floating-window.slint` 声明，本文件负责拖拽与缩放的坐标换算、数据绑定。
+//! 窗口的置顶 / 无边框 / 透明 / 玻璃外观 / 圆角命中判定 / 右键菜单全部由
+//! `ui/floating-window.slint` 声明，本文件只负责拖拽与缩放的坐标换算、数据绑定。
 //!
 //! 关于「背景模糊」：Windows 11 的 DWM Acrylic（`DWMWA_SYSTEMBACKDROP_TYPE`）会铺满
 //! 整个窗口矩形且不理会逐像素 alpha，圆角处会露出方块状的模糊底，与卡片的圆角外形
@@ -30,8 +30,8 @@ use ui::MainWindow;
 fn main() {
     logger::init();
     let ui = MainWindow::new().expect("创建悬浮窗失败");
-    let start = DEFAULT_SIDE + ui.get_pad();
-    ui.window().set_size(slint::LogicalSize::new(start, start));
+    ui.window()
+        .set_size(slint::LogicalSize::new(DEFAULT_SIDE, DEFAULT_SIDE));
 
     ui.show().expect("显示悬浮窗失败");
 
@@ -74,12 +74,12 @@ fn install_drag(ui: &MainWindow) {
         anchor_move.set(Some(cursor));
     });
 
-    let ui_weak = ui.as_weak();
-    ui.on_close_requested(move || {
-        if let Some(ui) = ui_weak.upgrade() {
-            let _ = ui.hide();
-        }
-        slint::quit_event_loop().expect("退出事件循环失败");
+    // 菜单项的回调是在原生菜单的消息处理里触发的，那时 Slint 内部状态仍被借用，
+    // 直接 hide / quit 会 panic（RefCell already borrowed），因此推迟到下一轮事件循环。
+    ui.on_close_requested(|| {
+        Timer::single_shot(Duration::ZERO, || {
+            slint::quit_event_loop().expect("退出事件循环失败");
+        });
     });
 }
 
@@ -120,22 +120,20 @@ fn install_resize(ui: &MainWindow) {
         let window = ui.window();
         let size = window.size();
         let scale = window.scale_factor();
-        // 窗口 = 卡片 + 上下留白（上边给卡片外的关闭按钮让位），换算回卡片边长。
-        let pad = ui.get_pad();
 
         // 第一次移动时记下基准尺寸与按下点；之后都以它们为原点计算总增量。
         if anchor_move.get().is_none() {
-            base_move.set(size.width as f32 / scale - pad);
+            base_move.set(size.width as f32 / scale);
         }
         let start = anchor_move.get().unwrap_or((x, y));
         anchor_move.set(Some(start));
 
-        let side = resized_side(base_move.get(), start, (x, y)) + pad;
+        let side = resized_side(base_move.get(), start, (x, y));
         window.set_size(slint::LogicalSize::new(side, side));
     });
 }
 
-/// 缩放后的边长：按下点到当前点的位移取横纵较大者，再夹在上下限内（不含窗口留白）。
+/// 缩放后的边长：按下点到当前点的位移取横纵较大者，再夹在上下限内。
 fn resized_side(base: f32, start: (f32, f32), now: (f32, f32)) -> f32 {
     (base + (now.0 - start.0).max(now.1 - start.1)).clamp(MIN_SIDE, MAX_SIDE)
 }
@@ -149,7 +147,7 @@ fn drag_delta(prev: (f32, f32), now: (f32, f32)) -> (i32, i32) {
 }
 
 /// 演示数据：接入 `voltnest-core` 前先用一组静态值把界面点亮，
-/// 顺带用 1s 心跳刷新进度条，验证属性绑定是活的。
+/// 顺带用 1s 心跳刷新进度环与右键菜单里的电量，验证属性绑定是活的。
 ///
 /// 返回的 `Timer` 必须由调用方持有到事件循环结束，否则定时器会被立刻析构。
 fn install_demo_data(ui: &MainWindow) -> Timer {
@@ -165,8 +163,9 @@ fn install_demo_data(ui: &MainWindow) -> Timer {
         // 0.60 ~ 0.95 之间来回摆动，仅用于演示。
         let wave = (tick % 36) as f32;
         let level = 0.60 + if wave <= 18.0 { wave } else { 36.0 - wave } / 18.0 * 0.35;
+        let percent = format!("{}%", (level * 100.0).round() as i32);
         ui.set_level(level);
-        ui.set_headline(format!("{}%", (level * 100.0).round() as i32).into());
+        ui.set_device_battery(percent.as_str().into());
     });
 
     timer

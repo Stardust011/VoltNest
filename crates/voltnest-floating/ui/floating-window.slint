@@ -1,76 +1,94 @@
 // VoltNest 桌面悬浮窗界面。
 //
 // 外形是圆角正方形卡片：无投影，窗口与卡片同尺寸，不留白边。
+// 卡面上只画一个进度圆环，环内是设备类型的标志（Lucide 图标，ISC 许可）。
 // 玻璃质感由半透明渐变底 + 顶缘高光 + 1px 细边叠加而成，全部在渲染层完成。
-// 图标是「进度圆环 + Lucide 设备图标」，环的端点由三角函数按电量算出。
 // 整卡按 `k = 窗口宽 / 180` 等比缩放，改窗口大小即整体缩放，布局不会走形。
+// 详细信息与退出都收在右键菜单里（Windows 上是原生菜单）。
 
 import { Palette } from "std-widgets.slint";
 
-// Lucide `image` 图标（ISC 许可），24×24 viewBox，描边 2。
-// 原始三个图元已展开成一条 path 命令：
-//   rect 3,3 18×18 r2                          → 四段圆角折线
-//   circle cx9 cy9 r2                          → 两段半圆弧
-//   m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21  → 折线 + 圆弧
-component LucideImage inherits Path {
-    in property <color> ink: #000;
+// Lucide 图标统一封装：24×24 viewBox，描边 2，圆头圆角。
+//
+// 注意 stroke-width 用的是元素像素而不是 viewbox 单位（Slint 只按 viewbox 缩放几何，
+// 不缩放描边），所以按「2/24 × 元素边长」换算成 2.83px。
+component TypeIcon inherits Path {
+    in property <string> d: "";
+    in property <color> tint: #000;
     in property <float> k: 1;
 
-    width: 40px * self.k;
-    height: 40px * self.k;
     viewbox-width: 24;
     viewbox-height: 24;
     fill: transparent;
-    stroke: ink;
-    stroke-width: 2px;
+    stroke: tint;
+    stroke-width: 3.67px * self.k;
     stroke-line-cap: round;
     stroke-line-join: round;
-    commands: "M 5 3 L 19 3 A 2 2 0 0 1 21 5 L 21 19 A 2 2 0 0 1 19 21 L 5 21 A 2 2 0 0 1 3 19 L 3 5 A 2 2 0 0 1 5 3 Z M 11 9 A 2 2 0 1 1 7 9 A 2 2 0 1 1 11 9 Z M 21 15 L 17.914 11.914 A 2 2 0 0 0 15.086 11.914 L 6 21";
+    commands: self.d;
 }
 
-// 关闭按钮：浮在卡片右上角外侧，指针悬停时才浮出淡红圆底 + ×。
-component CloseButton inherits Rectangle {
-    callback closed();
-    in property <color> bg: #000;
+// 环内的设备类型标志：按 device-type 选一个图标，认不出的类型退回问号。
+//
+// 各图标的原始 SVG 图元（rect / circle / line / path）已展开成单条 path 命令。
+component DeviceGlyph inherits Rectangle {
+    in property <string> kind: "mouse";
     in property <color> ink: #000;
+    in property <float> k: 1;
 
-    width: 32px;
-    height: 32px;
-    background: transparent;
+    width: 44px * self.k;
+    height: 44px * self.k;
 
-    // 淡红圆底：只有悬停才出现，避免常驻元素打断玻璃卡片。
-    Rectangle {
-        width: 26px;
-        height: 26px;
-        border-radius: 13px;
-        x: (parent.width - self.width) / 2;
-        y: (parent.height - self.height) / 2;
-        background: root.bg;
-        opacity: root.hovered ? 1 : 0;
-        animate opacity { duration: 140ms; }
+    property <bool> is-gamepad: kind == "gamepad" || kind == "controller";
+    property <bool> is-headset: kind == "headset" || kind == "headphones";
+    property <bool> known: kind == "mouse" || kind == "keyboard" || is-gamepad
+        || is-headset || kind == "speaker";
+
+    // mouse: rect(5,2,14,20,r7) + 竖线
+    TypeIcon {
+        visible: root.kind == "mouse";
+        k: root.k;
+        tint: root.ink;
+        d: "M 12 2 A 7 7 0 0 1 19 9 L 19 15 A 7 7 0 0 1 12 22 A 7 7 0 0 1 5 15 L 5 9 A 7 7 0 0 1 12 2 Z M 12 6 L 12 10";
     }
 
-    Path {
-        width: 9px;
-        height: 9px;
-        x: (parent.width - self.width) / 2;
-        y: (parent.height - self.height) / 2;
-        viewbox-width: 10;
-        viewbox-height: 10;
-        commands: "M 1 1 L 9 9 M 9 1 L 1 9";
-        stroke: root.ink;
-        stroke-width: 1.7px;
-        stroke-line-cap: round;
-        opacity: root.hovered ? 1 : 0;
-        animate opacity { duration: 140ms; }
+    // keyboard: 外框 + 一排按键点 + 空格键
+    TypeIcon {
+        visible: root.kind == "keyboard";
+        k: root.k;
+        tint: root.ink;
+        d: "M 10 8 L 10.01 8 M 12 12 L 12.01 12 M 14 8 L 14.01 8 M 16 12 L 16.01 12 M 18 8 L 18.01 8 M 6 8 L 6.01 8 M 7 16 L 17 16 M 8 12 L 8.01 12 M 4 4 L 20 4 A 2 2 0 0 1 22 6 L 22 18 A 2 2 0 0 1 20 20 L 4 20 A 2 2 0 0 1 2 18 L 2 6 A 2 2 0 0 1 4 4 Z";
     }
 
-    property <bool> hovered: false;
+    // gamepad-2: 十字键 + 两个摇杆/按键 + 手柄轮廓
+    TypeIcon {
+        visible: root.is-gamepad;
+        k: root.k;
+        tint: root.ink;
+        d: "M 6 11 L 10 11 M 8 9 L 8 13 M 15 12 L 15.01 12 M 18 10 L 18.01 10 M 17.32 5 L 6.68 5 A 4 4 0 0 0 2.702 8.59 C 2.696 8.642 2.692 8.691 2.685 8.742 C 2.604 9.416 2 14.456 2 16 A 3 3 0 0 0 5 19 C 6 19 6.5 18.5 7 18 L 8.414 16.586 A 2 2 0 0 1 9.828 16 L 14.172 16 A 2 2 0 0 1 15.586 16.586 L 17 18 C 17.5 18.5 18 19 19 19 A 3 3 0 0 0 22 16 C 22 14.455 21.396 9.416 21.315 8.742 C 21.308 8.692 21.304 8.642 21.298 8.591 A 4 4 0 0 0 17.32 5 Z";
+    }
 
-    TouchArea {
-        mouse-cursor: pointer;
-        changed has-hover => { root.hovered = self.has-hover; }
-        clicked => { root.closed(); }
+    // headphones: 耳罩 + 头梁
+    TypeIcon {
+        visible: root.is-headset;
+        k: root.k;
+        tint: root.ink;
+        d: "M 3 14 L 6 14 A 2 2 0 0 1 8 16 L 8 19 A 2 2 0 0 1 6 21 L 5 21 A 2 2 0 0 1 3 19 L 3 12 A 9 9 0 0 1 21 12 L 21 19 A 2 2 0 0 1 19 21 L 18 21 A 2 2 0 0 1 16 19 L 16 16 A 2 2 0 0 1 18 14 L 21 14";
+    }
+
+    // speaker: 箱体 + 上下两个单元
+    TypeIcon {
+        visible: root.kind == "speaker";
+        k: root.k;
+        tint: root.ink;
+        d: "M 6 2 L 18 2 A 2 2 0 0 1 20 4 L 20 20 A 2 2 0 0 1 18 22 L 6 22 A 2 2 0 0 1 4 20 L 4 4 A 2 2 0 0 1 6 2 Z M 12 6 L 12.01 6 M 12 10 A 4 4 0 1 1 11.999 10 Z M 12 14 L 12.01 14";
+    }
+
+    // help-circle: 类型未知时的兜底
+    TypeIcon {
+        visible: !root.known;
+        k: root.k;
+        tint: root.ink;
+        d: "M 12 2 A 10 10 0 1 1 11.999 2 Z M 9.09 9 A 3 3 0 0 1 14.92 10 C 14.92 12 11.92 13 11.92 13 M 12 17 L 12.01 17";
     }
 }
 
@@ -81,8 +99,6 @@ component ResizeGrip inherits Rectangle {
     callback moved-to(length, length);
     in property <color> ink: #000;
     in property <float> k: 1;
-    // 卡片相对窗口的纵向偏移，用于把局部坐标换算成窗口坐标。
-    in property <length> offset-y: 0px;
     property <bool> hovered: false;
 
     width: 34px * self.k;
@@ -115,14 +131,17 @@ component ResizeGrip inherits Rectangle {
             }
         }
         // 上报相对窗口左上角的坐标：窗口左上角在缩放时不动，位移可直接换算成尺寸增量。
-        moved => { root.moved-to(root.x + self.mouse-x, root.y + self.mouse-y + root.offset-y); }
+        moved => { root.moved-to(root.x + self.mouse-x, root.y + self.mouse-y); }
     }
 }
 
 export component MainWindow inherits Window {
-    // 主数值（如电量百分比）与其说明文字。
-    in property <string> headline: "87%";
-    in property <string> caption: "VoltNest · 已连接 2 台";
+    // 设备类型，取值与 `voltnest-provider` 的 `DeviceType::as_str()` 一致。
+    in property <string> device-type: "mouse";
+    // 右键菜单「详细信息」里的三行。
+    in property <string> device-name: "MCHOSE A5 Pro";
+    in property <string> device-battery: "87%";
+    in property <string> device-status: "已连接 · 蓝牙";
     // 0.0 ~ 1.0，圆环的进度。
     in property <float> level: 0.87;
 
@@ -134,22 +153,18 @@ export component MainWindow inherits Window {
     callback resize-begin();
     callback resize-move(length, length);
     callback resize-end();
+    // 右键菜单里的「退出」。
     callback close-requested();
 
     title: "VoltNest";
     no-frame: true;
     always-on-top: true;
     background: transparent;
-    // 初始尺寸由 Rust 端按「卡片 180 + 留白」设置；这里不绑 width/height，
+    // 初始尺寸由 Rust 端设置；这里不绑 width/height，
     // 否则会成为常量绑定、挡住系统缩放带来的尺寸回写。
 
-    // 卡片外留白：上边给关闭按钮，右边同样让出，卡片三边贴窗口。
-    out property <length> pad: 30px;
-    // 卡片边长。
-    property <length> side: root.width - root.pad;
-
     // 等比缩放系数：所有尺寸都以 180×180 为基准乘以它。
-    property <float> k: root.side / 180px;
+    property <float> k: root.width / 180px;
     property <length> radius: 40px * root.k;
     // 按下并进入拖拽状态后才响应移动，避免悬停时的 pointer-event 误移动窗口。
     property <bool> dragging: false;
@@ -170,17 +185,15 @@ export component MainWindow inherits Window {
         return max(max(root.radius - offset, 0px), offset - (edge - root.radius)) / 1px;
     }
     function inside-card(px: length, py: length) -> bool {
-        return root.shoulder(px, root.side) * root.shoulder(px, root.side)
-            + root.shoulder(py - root.pad, root.side) * root.shoulder(py - root.pad, root.side)
+        return root.shoulder(px, root.width) * root.shoulder(px, root.width)
+            + root.shoulder(py, root.height) * root.shoulder(py, root.height)
             <= (root.radius / 1px) * (root.radius / 1px);
     }
 
-    // 卡片：上边让出 pad，其余三边贴窗口。
+    // 卡片铺满窗口：没有投影就不需要留白，圆角靠窗口的透明区域让出。
     card := Rectangle {
-        x: 0;
-        y: root.pad;
-        width: root.side;
-        height: root.side;
+        width: parent.width;
+        height: parent.height;
         border-radius: root.radius;
         background: @linear-gradient(
             155deg,
@@ -200,76 +213,49 @@ export component MainWindow inherits Window {
             );
         }
 
-        VerticalLayout {
-            x: 0;
-            y: 0;
-            width: parent.width;
-            height: parent.height;
-            alignment: center;
-            spacing: 8px * root.k;
+        // 圆环 + 环内类型图标，整体居中。
+        Rectangle {
+            width: 104px * root.k;
+            height: 104px * root.k;
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
 
-            HorizontalLayout {
-                alignment: center;
-
-                // 圆环 + 设备图标
-                Rectangle {
-                    width: 92px * root.k;
-                    height: 92px * root.k;
-
-                    // 底环
-                    Path {
-                        viewbox-width: 92;
-                        viewbox-height: 92;
-                        commands: "M 46 4 A 42 42 0 1 1 45.9 4 Z";
-                        stroke: dark ? rgba(255, 255, 255, 0.16) : rgba(23, 24, 28, 0.10);
-                        stroke-width: 6px * root.k;
-                    }
-
-                    // 进度弧：从 12 点方向顺时针画到 level 对应的角度。
-                    Path {
-                        viewbox-width: 92;
-                        viewbox-height: 92;
-                        commands: "M \{root.ring-c} \{root.ring-c - root.ring-r} A \{root.ring-r} \{root.ring-r} 0 \{root.level > 0.5 ? 1 : 0} 1 \{root.ring-end-x} \{root.ring-end-y}";
-                        stroke: @linear-gradient(120deg, #6366f1, #a855f7);
-                        stroke-width: 6px * root.k;
-                        stroke-line-cap: round;
-                    }
-
-                    LucideImage {
-                        x: (parent.width - self.width) / 2;
-                        y: (parent.height - self.height) / 2;
-                        k: root.k;
-                        ink: root.ink;
-                    }
-                }
+            // 底环
+            Path {
+                viewbox-width: 92;
+                viewbox-height: 92;
+                commands: "M 46 4 A 42 42 0 1 1 45.9 4 Z";
+                stroke: dark ? rgba(255, 255, 255, 0.16) : rgba(23, 24, 28, 0.10);
+                stroke-width: 7px * root.k;
             }
 
-            Text {
-                text: root.headline;
-                font-size: 21px * root.k;
-                font-weight: 700;
-                color: root.ink;
-                horizontal-alignment: center;
+            // 进度弧：从 12 点方向顺时针画到 level 对应的角度。
+            Path {
+                viewbox-width: 92;
+                viewbox-height: 92;
+                commands: "M \{root.ring-c} \{root.ring-c - root.ring-r} A \{root.ring-r} \{root.ring-r} 0 \{root.level > 0.5 ? 1 : 0} 1 \{root.ring-end-x} \{root.ring-end-y}";
+                stroke: @linear-gradient(120deg, #6366f1, #a855f7);
+                stroke-width: 7px * root.k;
+                stroke-line-cap: round;
             }
 
-            Text {
-                text: root.caption;
-                font-size: 10px * root.k;
-                color: root.ink-dim;
-                horizontal-alignment: center;
-                wrap: no-wrap;
-                overflow: elide;
+            DeviceGlyph {
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+                kind: root.device-type;
+                ink: root.ink;
+                k: root.k;
             }
         }
 
-        // 拖拽层覆盖整卡；落在圆角外的透明区域不响应。置于内容之上、手柄与按钮之下。
+        // 拖拽层覆盖整卡；落在圆角外的透明区域不响应。置于内容之上、手柄之下。
         TouchArea {
-            mouse-cursor: root.inside-card(self.mouse-x, self.mouse-y + root.pad) ? MouseCursor.move : MouseCursor.default;
+            mouse-cursor: root.inside-card(self.mouse-x, self.mouse-y) ? MouseCursor.move : MouseCursor.default;
             pointer-event(event) => {
                 if (event.kind == PointerEventKind.down) {
                     // 只有左键按在可见卡片内才进入拖拽；圆角外的透明区域不响应。
                     if (event.button == PointerEventButton.left
-                        && root.inside-card(self.mouse-x, self.mouse-y + root.pad)) {
+                        && root.inside-card(self.mouse-x, self.mouse-y)) {
                         root.dragging = true;
                         root.drag-begin();
                     }
@@ -280,7 +266,7 @@ export component MainWindow inherits Window {
                     }
                 } else if (event.kind == PointerEventKind.move) {
                     if (root.dragging) {
-                        root.drag-move(self.mouse-x, self.mouse-y + root.pad);
+                        root.drag-move(self.mouse-x, self.mouse-y);
                     }
                 }
             }
@@ -291,19 +277,35 @@ export component MainWindow inherits Window {
             y: parent.height - self.height;
             k: root.k;
             ink: root.ink-dim;
-            offset-y: root.pad;
             grab() => { root.resize-begin(); }
             moved-to(x, y) => { root.resize-move(x, y); }
             release() => { root.resize-end(); }
         }
     }
 
-    // 关闭按钮浮在卡片右上角外侧（窗口的右上角），与卡片不重叠。
-    CloseButton {
-        x: root.width - self.width - 2px;
-        y: 2px;
-        bg: rgba(239, 68, 68, dark ? 0.28 : 0.18);
-        ink: dark ? rgba(255, 170, 170, 0.95) : rgba(220, 38, 38, 0.90);
-        closed => { root.close-requested(); }
+    // 右键菜单：Windows 上由系统绘制（muda），点击空白处自动收起。
+    ContextMenuArea {
+        Menu {
+            Menu {
+                title: "详细信息";
+                MenuItem {
+                    title: "设备：" + root.device-name;
+                    enabled: false;
+                }
+                MenuItem {
+                    title: "电量：" + root.device-battery;
+                    enabled: false;
+                }
+                MenuItem {
+                    title: "状态：" + root.device-status;
+                    enabled: false;
+                }
+            }
+            MenuSeparator { }
+            MenuItem {
+                title: "退出";
+                activated => { root.close-requested(); }
+            }
+        }
     }
 }
