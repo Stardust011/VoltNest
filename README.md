@@ -16,6 +16,7 @@ crates/
   voltnest-ble/        ble-bas：发现、连接、通知、轮询、解析
   voltnest-platform/   平台适配（自启、单实例；Windows 另含 AUMID 注册）
   voltnest-storage/    settings.json / state.json 原子读写
+  voltnest-floating/   桌面悬浮窗独立进程（Slint）：置顶、无边框、半透明玻璃、可拖拽
 apps/desktop/          Tauri 宿主（src-tauri）+ Vue 前端（src）
 ```
 
