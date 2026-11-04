@@ -7199,6 +7199,7 @@ dependencies = [
  "tauri-winrt-notification",
  "voltnest-ble",
  "voltnest-core",
+ "voltnest-floating",
  "voltnest-hid",
  "voltnest-platform",
  "voltnest-provider",
@@ -7210,6 +7211,8 @@ name = "voltnest-floating"
 version = "0.3.1"
 dependencies = [
  "log",
+ "serde",
+ "serde_json",
  "slint",
  "slint-build",
 ]
