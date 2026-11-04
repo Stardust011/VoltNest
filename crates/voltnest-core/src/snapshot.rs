@@ -61,7 +61,15 @@ pub struct DeviceDto {
 #[serde(rename_all = "camelCase")]
 pub struct CardDto {
     /// 卡片 ID（自动合并 = `modelKey`；用户合并 = `user:<主设备 stableId>`）。
+    ///
+    /// 会漂移：`modelKey` 随归一化规则/映射表变化，不要拿它做持久化键。
     pub card_id: String,
+    /// 呈现单元的稳定锚点，恒等于本卡某个成员的 `stableId`。
+    ///
+    /// 用户合并取配置里的主设备（改主设备 = 换锚点）；自动合并取 HID 那一侧
+    /// （自动合并必然是 HID + BLE 异链路）。悬浮窗等「按单元持久化」的场景用它，
+    /// 这样合并/解合并不会丢配置：单设备单元的键与它当锚点时的键完全相同。
+    pub anchor_id: String,
     /// 卡片标题。用户合并取合并名，自动合并取主成员显示名。
     pub display_name: String,
     /// 是否由用户手动合并（决定是否提供「分离合并」）。
@@ -150,6 +158,7 @@ mod tests {
             devices: vec![],
             cards: vec![CardDto {
                 card_id: "aj159 nl".into(),
+                anchor_id: "hid:7768:6426".into(),
                 display_name: "AJ159 NL".into(),
                 user_merged: false,
                 primary_device_id: "ble:01:00:00:23:04:35".into(),
