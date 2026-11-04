@@ -264,6 +264,103 @@ impl DeviceSettings {
     }
 }
 
+/// 单个呈现单元的悬浮窗偏好。
+///
+/// 键（`FloatingSettings::windows` 的 key）是单元的锚点 `stableId`，与 `CardDto.anchorId`
+/// 同源：用户合并取配置主设备、自动合并取 HID 一侧、单设备取自身。
+#[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct FloatingWindow {
+    /// 是否应显示该单元的悬浮窗（期望状态，不代表当前进程里一定有窗口）。
+    pub visible: bool,
+    /// 窗口左上角的物理像素坐标（多显示器拼接坐标系）；`None` 表示用级联默认位。
+    pub x: Option<i32>,
+    /// 同 [`FloatingWindow::x`]。
+    pub y: Option<i32>,
+    /// 卡片边长（逻辑像素），夹在 [`FloatingWindow::MIN_SIDE`]..=[`FloatingWindow::MAX_SIDE`]。
+    pub side: u16,
+    /// 透明度 0~100，100 为最透（只作用于玻璃底，图标与圆环保持不透明）。
+    pub transparency: u8,
+    /// 未知字段。
+    #[serde(flatten)]
+    pub extra: Map<String, Value>,
+}
+
+impl FloatingWindow {
+    /// 卡片边长下限（逻辑像素），与 Slint 侧的 `MIN_SIDE` 一致。
+    pub const MIN_SIDE: u16 = 88;
+    /// 卡片边长上限（逻辑像素），与 Slint 侧的 `MAX_SIDE` 一致。
+    pub const MAX_SIDE: u16 = 520;
+    /// 默认边长。
+    pub const DEFAULT_SIDE: u16 = 180;
+}
+
+impl Default for FloatingWindow {
+    fn default() -> Self {
+        Self {
+            visible: false,
+            x: None,
+            y: None,
+            side: Self::DEFAULT_SIDE,
+            transparency: 0,
+            extra: Map::new(),
+        }
+    }
+}
+
+/// 悬浮窗设置：按「单元锚点」索引，一张卡 / 一台设备各占一条。
+///
+/// 刻意不做「锚点是否还存在」的裁剪：设备离线、拔线、被合并时都必须留住配置，
+/// 否则重新上线后窗口位置与透明度会丢。只有用户删除设备时才由宿主删键。
+#[derive(Clone, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct FloatingSettings {
+    /// 锚点 `stableId` → 该单元窗口的偏好。
+    pub windows: BTreeMap<String, FloatingWindow>,
+    /// 未知字段。
+    #[serde(flatten)]
+    pub extra: Map<String, Value>,
+}
+
+impl FloatingSettings {
+    /// 单个单元的偏好（不存在时给默认值）。
+    pub fn window(&self, anchor: &str) -> FloatingWindow {
+        self.windows.get(anchor).cloned().unwrap_or_default()
+    }
+
+    /// 是否应显示该单元的悬浮窗。
+    pub fn is_visible(&self, anchor: &str) -> bool {
+        self.windows.get(anchor).is_some_and(|w| w.visible)
+    }
+
+    /// 收敛不变量，返回是否发生了修改（用于决定是否值得落盘）。
+    pub fn normalize(&mut self) -> bool {
+        let before = self.clone();
+
+        self.windows.retain(|key, _| !key.trim().is_empty());
+        for window in self.windows.values_mut() {
+            window.side = window
+                .side
+                .clamp(FloatingWindow::MIN_SIDE, FloatingWindow::MAX_SIDE);
+            window.transparency = window.transparency.min(100);
+            // 只有一半坐标无法定位，交给级联默认位。
+            if window.x.is_none() || window.y.is_none() {
+                window.x = None;
+                window.y = None;
+            }
+        }
+
+        *self != before
+    }
+
+    /// 丢弃若干锚点（设备被删除时调用）。
+    pub fn forget(&mut self, anchors: &[String]) {
+        for anchor in anchors {
+            self.windows.remove(anchor);
+        }
+    }
+}
+
 /// `settings.json` 的完整形状。
 #[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
@@ -284,6 +381,8 @@ pub struct Settings {
     pub tray: TraySettings,
     /// 设备管理（别名 / 删除 / 合并）。
     pub devices: DeviceSettings,
+    /// 悬浮窗：每个呈现单元一条。旧文件缺该段时取默认（无需升 schemaVersion）。
+    pub floating: FloatingSettings,
     /// 未知字段（读-改-写必须保留）。
     #[serde(flatten)]
     pub extra: Map<String, Value>,
@@ -300,6 +399,7 @@ impl Default for Settings {
             onboarding_completed: false,
             tray: TraySettings::default(),
             devices: DeviceSettings::default(),
+            floating: FloatingSettings::default(),
             extra: Map::new(),
         }
     }
@@ -688,6 +788,84 @@ mod tests {
         let mut settings = s.load(T).settings;
         assert!(settings.devices.reunite("aj159 nl"));
         assert!(!settings.devices.is_separated("aj159 nl"));
+    }
+
+    #[test]
+    fn legacy_file_without_floating_section_loads() {
+        // 老文件没有 floating 段：必须静默取默认，且不升 schemaVersion、不产生告警。
+        let (s, dir) = store();
+        fs::write(
+            dir.join("settings.json"),
+            r#"{"schemaVersion":1,"onboardingCompleted":true}"#,
+        )
+        .unwrap();
+        let loaded = s.load(T);
+        assert!(loaded.warning.is_none());
+        assert!(loaded.settings.floating.windows.is_empty());
+        assert_eq!(loaded.settings.schema_version, SCHEMA_VERSION);
+    }
+
+    #[test]
+    fn floating_section_round_trips_and_keeps_unknown_fields() {
+        let (s, dir) = store();
+        fs::write(
+            dir.join("settings.json"),
+            r#"{
+                "schemaVersion": 1,
+                "onboardingCompleted": true,
+                "floating": {
+                    "windows": {
+                        "hid:7768:6426": {
+                            "visible": true, "x": 1200, "y": 640,
+                            "side": 200, "transparency": 40,
+                            "futureWindow": { "pinned": true }
+                        }
+                    },
+                    "futureFloating": "keep"
+                }
+            }"#,
+        )
+        .unwrap();
+
+        let mut loaded = s.load(T).settings;
+        let window = loaded.floating.window("hid:7768:6426");
+        assert!(window.visible);
+        assert_eq!((window.x, window.y), (Some(1200), Some(640)));
+        assert_eq!((window.side, window.transparency), (200, 40));
+        assert!(loaded.floating.is_visible("hid:7768:6426"));
+        assert!(!loaded.floating.is_visible("ble:01:00:00:23:04:35"));
+
+        loaded.start_minimized = true;
+        s.save(&loaded).unwrap();
+        let text = fs::read_to_string(dir.join("settings.json")).unwrap();
+        assert!(text.contains("futureWindow"), "{text}");
+        assert!(text.contains("futureFloating"), "{text}");
+    }
+
+    #[test]
+    fn floating_normalize_clamps_and_pairs_coordinates() {
+        let mut floating = FloatingSettings::default();
+        floating.windows.insert(
+            "a".into(),
+            FloatingWindow {
+                side: 5,
+                transparency: 250,
+                x: Some(10),
+                y: None,
+                ..FloatingWindow::default()
+            },
+        );
+        floating
+            .windows
+            .insert("  ".into(), FloatingWindow::default());
+        assert!(floating.normalize(), "越界值应被视作修改");
+
+        let window = &floating.windows["a"];
+        assert_eq!(window.side, FloatingWindow::MIN_SIDE);
+        assert_eq!(window.transparency, 100);
+        assert_eq!((window.x, window.y), (None, None), "半对坐标无法定位");
+        assert_eq!(floating.windows.len(), 1, "空锚点被丢弃");
+        assert!(!floating.normalize(), "再收敛一次不应有变化");
     }
 
     #[test]

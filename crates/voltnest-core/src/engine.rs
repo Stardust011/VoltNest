@@ -893,8 +893,15 @@ impl Engine {
                     self.records[inactive].transport.display_label()
                 ),
             };
+            // 锚点恒取 HID 那一侧：自动合并必然是 HID + BLE，且 HID 的 stableId 是 VID:PID，不随地址轮换。
+            let anchor = if ra.transport == Transport::Hid {
+                ra.stable_id.as_str()
+            } else {
+                rb.stable_id.as_str()
+            };
             cards.push(CardDto {
                 card_id: key,
+                anchor_id: anchor.to_string(),
                 display_name: names
                     .get(&active)
                     .cloned()
@@ -945,6 +952,8 @@ impl Engine {
             };
             cards.push(CardDto {
                 card_id: format!("user:{}", group.primary),
+                // 用配置里的主设备而不是 pick_primary 的结果：主设备掉线时锚点不能跟着翻。
+                anchor_id: group.primary.clone(),
                 display_name: name,
                 user_merged: true,
                 primary_device_id: self.records[primary].stable_id.as_str().to_string(),
