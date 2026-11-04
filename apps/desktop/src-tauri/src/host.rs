@@ -38,7 +38,41 @@ pub const TICK_MS: u64 = 1_000;
 /// 队列深度告警阈值：超过 64 条报警。
 pub const QUEUE_ALERT_DEPTH: usize = 64;
 
-/// 宿主收到的三类唤醒。
+/// 悬浮窗子进程上报的事件。
+#[derive(Clone, Debug, PartialEq)]
+pub enum FloatingEvent {
+    /// 子进程就绪。
+    Ready,
+    /// 用户改了某个窗口的位置 / 尺寸 / 透明度。
+    Layout {
+        /// 单元锚点。
+        anchor: String,
+        /// 卡片左上角物理像素 X。
+        x: i32,
+        /// 卡片左上角物理像素 Y。
+        y: i32,
+        /// 卡片边长（逻辑像素）。
+        side: u16,
+        /// 透明度 0~100。
+        transparency: u8,
+    },
+    /// 用户在悬浮窗菜单里点了「隐藏悬浮窗」。
+    Hidden {
+        /// 单元锚点。
+        anchor: String,
+    },
+    /// 子进程内部日志。
+    Log {
+        /// 级别。
+        level: String,
+        /// 文本。
+        message: String,
+    },
+    /// 子进程退出。
+    Exited,
+}
+
+/// 宿主收到的四类唤醒。
 pub enum HostEvent {
     /// Provider 线程组上报的原始事件。
     Provider {
@@ -51,6 +85,8 @@ pub enum HostEvent {
     Wake,
     /// 采集线程组状态变化（重启次数/状态/最近错误）；只发信号不带载荷，数据从 `get_diagnostics` 拉。
     Diagnostics,
+    /// 悬浮窗子进程的上报（就绪 / 布局 / 隐藏 / 日志 / 退出）。
+    Floating(FloatingEvent),
 }
 
 /// 跨线程共享的宿主状态。
@@ -71,6 +107,8 @@ pub struct HostState {
     pub supervisors: Mutex<HashMap<Transport, Sender<SupervisorCmd>>>,
     /// 当前存在的设备托盘图标（用于删除过期图标）。
     pub tray_ids: Mutex<Vec<String>>,
+    /// 悬浮窗运行时（子进程句柄、上次下发的单元、去抖定时器）。
+    pub floating: Mutex<crate::floating::Runtime>,
     /// 数据根目录与版本号。
     pub paths: DataPaths,
     /// 事件发送端，Provider 监管线程与命令共用。
@@ -113,6 +151,7 @@ impl HostState {
             transports: Mutex::new(Vec::new()),
             supervisors: Mutex::new(HashMap::new()),
             tray_ids: Mutex::new(Vec::new()),
+            floating: Mutex::new(crate::floating::Runtime::default()),
             paths,
             tx,
             queued: AtomicUsize::new(0),
@@ -208,6 +247,7 @@ pub fn publish_snapshot(app: &AppHandle, shared: &Arc<HostState>, now: u64) {
         log::warn!("快照事件发送失败: {err}");
     }
     tray::sync_tray_icons(app, shared, &snap);
+    crate::floating::sync(app, shared, &snap);
     notification::dispatch_notifications(app, shared, &snap, notifications, now);
     persist_state(shared, now, false);
 }
@@ -355,6 +395,7 @@ pub fn spawn_host_loop(
                     }
                     Ok(HostEvent::Wake) => dirty = true,
                     Ok(HostEvent::Diagnostics) => emit_diagnostics(&app),
+                    Ok(HostEvent::Floating(event)) => crate::floating::handle(&shared, event),
                     Err(RecvTimeoutError::Timeout) => {}
                     Err(RecvTimeoutError::Disconnected) => break,
                 }
@@ -367,6 +408,7 @@ pub fn spawn_host_loop(
                         }
                         HostEvent::Wake => dirty = true,
                         HostEvent::Diagnostics => emit_diagnostics(&app),
+                        HostEvent::Floating(event) => crate::floating::handle(&shared, event),
                     }
                 }
 
