@@ -28,30 +28,30 @@ component LucideImage inherits Path {
     commands: "M 5 3 L 19 3 A 2 2 0 0 1 21 5 L 21 19 A 2 2 0 0 1 19 21 L 5 21 A 2 2 0 0 1 3 19 L 3 5 A 2 2 0 0 1 5 3 Z M 11 9 A 2 2 0 1 1 7 9 A 2 2 0 1 1 11 9 Z M 21 15 L 17.914 11.914 A 2 2 0 0 0 15.086 11.914 L 6 21";
 }
 
-// 悬停才浮出圆底的关闭按钮。
+// 左上角关闭按钮：与右下角缩放手柄同一套处理——角上留一块热区，指针进入才显形。
 component CloseButton inherits Rectangle {
     callback closed();
-    in property <color> glyph: #000;
+    in property <color> ink: #000;
     in property <float> k: 1;
     property <bool> hovered: false;
 
-    width: 22px * self.k;
-    height: 22px * self.k;
-    border-radius: 11px * self.k;
-    background: hovered ? glyph.with-alpha(0.14) : transparent;
-    animate background { duration: 140ms; }
+    width: 34px * self.k;
+    height: 34px * self.k;
+    background: transparent;
 
     Path {
-        width: 9px * root.k;
-        height: 9px * root.k;
-        x: (parent.width - self.width) / 2;
-        y: (parent.height - self.height) / 2;
+        width: 10px * root.k;
+        height: 10px * root.k;
+        x: 13px * root.k;
+        y: 13px * root.k;
         viewbox-width: 10;
         viewbox-height: 10;
         commands: "M 1 1 L 9 9 M 9 1 L 1 9";
-        stroke: root.glyph;
-        stroke-width: 1.4px * root.k;
+        stroke: root.ink;
+        stroke-width: 1.6px * root.k;
         stroke-line-cap: round;
+        opacity: root.hovered ? 0.6 : 0;
+        animate opacity { duration: 140ms; }
     }
 
     TouchArea {
@@ -275,10 +275,10 @@ export component MainWindow inherits Window {
         }
 
         CloseButton {
-            x: parent.width - self.width - 12px * root.k;
-            y: 12px * root.k;
+            x: 0;
+            y: 0;
             k: root.k;
-            glyph: root.ink-dim;
+            ink: root.ink-dim;
             closed => { root.close-requested(); }
         }
     }
