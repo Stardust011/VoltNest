@@ -284,22 +284,20 @@ export component MainWindow inherits Window {
     }
 
     // 右键菜单：Windows 上由系统绘制（muda），点击空白处自动收起。
+    // 详细信息平铺在最外层（不做二级菜单），三行只读、置灰。
     ContextMenuArea {
         Menu {
-            Menu {
-                title: "详细信息";
-                MenuItem {
-                    title: "设备：" + root.device-name;
-                    enabled: false;
-                }
-                MenuItem {
-                    title: "电量：" + root.device-battery;
-                    enabled: false;
-                }
-                MenuItem {
-                    title: "状态：" + root.device-status;
-                    enabled: false;
-                }
+            MenuItem {
+                title: "设备：" + root.device-name;
+                enabled: false;
+            }
+            MenuItem {
+                title: "电量：" + root.device-battery;
+                enabled: false;
+            }
+            MenuItem {
+                title: "状态：" + root.device-status;
+                enabled: false;
             }
             MenuSeparator { }
             MenuItem {
