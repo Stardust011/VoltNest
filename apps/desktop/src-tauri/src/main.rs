@@ -5,6 +5,7 @@
 mod commands;
 mod devices;
 mod dto;
+mod floating;
 mod host;
 mod logger;
 mod notification;
@@ -30,6 +31,13 @@ use crate::host::{HostState, lock};
 use crate::supervisor::{SupervisorCmd, TransportSpec};
 
 fn main() {
+    // 悬浮窗子进程：同一个 exe 的另一种人格，跑纯 Slint 会话。
+    // 必须在下面的单实例互斥之前分流，否则子进程会把自己判成 Second 直接 return，
+    // 表现为「窗口一闪而过」。
+    if std::env::args().any(|arg| arg == floating::HOST_FLAG) {
+        std::process::exit(run_floating_host());
+    }
+
     let guard = match acquire() {
         Instance::Second => return,
         Instance::First(guard) => Some(guard),
@@ -127,6 +135,8 @@ fn main() {
             probe::list_manual_devices,
             probe::remove_manual_device,
             probe::get_manual_report,
+            floating::get_floating_units,
+            floating::set_floating_visible,
         ])
         .setup(move |app| {
             let handle = app.handle().clone();
@@ -182,6 +192,7 @@ fn main() {
         } => api.prevent_exit(),
         RunEvent::Exit => {
             log::info!("VoltNest 退出");
+            floating::shutdown(&shared_for_exit);
             shared_for_exit
                 .shutting_down
                 .store(true, std::sync::atomic::Ordering::Relaxed);
@@ -193,4 +204,34 @@ fn main() {
         }
         _ => {}
     });
+}
+
+/// 子进程人格：跑悬浮窗会话直到 stdin 关闭。
+///
+/// 不装文件日志（会和父进程抢同一个 append 句柄）、不注册 AUMID、不碰 autostart。
+fn run_floating_host() -> i32 {
+    // panic 也要让父进程知道，否则它只会看到 EOF 而盲目重启。
+    std::panic::set_hook(Box::new(|info| {
+        let _ = std::io::Write::write_all(
+            &mut std::io::stdout(),
+            format!(
+                r#"{{"t":"bye","v":{},"reason":"panic: {info}"}}"#,
+                voltnest_floating::PROTOCOL_VERSION
+            )
+            .as_bytes(),
+        );
+        let _ = std::io::Write::flush(&mut std::io::stdout());
+        std::process::exit(1);
+    }));
+
+    let options = voltnest_floating::SessionOptions {
+        mode: voltnest_floating::SessionMode::Hosted,
+    };
+    match voltnest_floating::run_session(options) {
+        Ok(()) => 0,
+        Err(err) => {
+            eprintln!("{err}");
+            1
+        }
+    }
 }
