@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from "vue";
-import { Link2, Pencil, Split, Trash2, Zap } from "@lucide/vue";
+import { Eye, EyeOff, Link2, Pencil, Split, Trash2, Zap } from "@lucide/vue";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
@@ -34,6 +34,8 @@ const props = defineProps<{
   inactiveText?: string;
   /** 没有其它设备可合并时菜单项置灰。 */
   canMerge: boolean;
+  /** 该单元当前是否已显示悬浮窗（每台设备/每个合并组各自独立）。 */
+  floatingVisible: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -41,6 +43,7 @@ const emit = defineEmits<{
   merge: [];
   separate: [];
   remove: [];
+  "toggle-floating": [];
 }>();
 
 const tone = computed(() => toneFor(props.device.state));
@@ -166,6 +169,12 @@ const secondary = computed(() => {
     </ContextMenuTrigger>
 
     <ContextMenuContent class="w-44">
+      <ContextMenuItem @select="emit('toggle-floating')">
+        <EyeOff v-if="floatingVisible" aria-hidden="true" />
+        <Eye v-else aria-hidden="true" />
+        {{ floatingVisible ? "隐藏悬浮窗" : "显示悬浮窗" }}
+      </ContextMenuItem>
+      <ContextMenuSeparator />
       <ContextMenuItem @select="emit('rename')">
         <Pencil aria-hidden="true" />
         改名

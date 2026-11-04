@@ -6,6 +6,7 @@ import type {
   CaptureStartResult,
   DeviceCandidateDto,
   DiagnosticsDto,
+  FloatingStateDto,
   HidTargetDto,
   ManualDeviceDto,
   OnboardingChoice,
@@ -23,6 +24,9 @@ export const DIAGNOSTICS_EVENT = "state://diagnostics";
 
 // 抓包进度事件名（宿主侧 `probe::CAPTURE_EVENT`）。
 export const CAPTURE_EVENT = "probe://capture";
+
+// 悬浮窗状态事件名（宿主侧 `floating::FLOATING_EVENT`）。
+export const FLOATING_EVENT = "state://floating";
 
 export function getSnapshot(): Promise<Snapshot> {
   return invoke<Snapshot>("get_snapshot");
@@ -153,4 +157,18 @@ export function getManualReport(id: string): Promise<string> {
 
 export function subscribeCapture(handler: (event: CaptureEventDto) => void) {
   return listen<CaptureEventDto>(CAPTURE_EVENT, (event) => handler(event.payload));
+}
+
+/** 当前悬浮窗单元（含显隐状态）。 */
+export function getFloatingUnits(): Promise<FloatingStateDto> {
+  return invoke<FloatingStateDto>("get_floating_units");
+}
+
+/** 设置某个单元的悬浮窗显隐；`anchor` 必须是当前存在的单元。 */
+export function setFloatingVisible(anchor: string, visible: boolean): Promise<void> {
+  return invoke<void>("set_floating_visible", { anchor, visible });
+}
+
+export function subscribeFloating(handler: (state: FloatingStateDto) => void) {
+  return listen<FloatingStateDto>(FLOATING_EVENT, (event) => handler(event.payload));
 }
