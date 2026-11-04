@@ -19,6 +19,8 @@ export interface DeviceDto {
 
 export interface CardDto {
   cardId: string;
+  /** 呈现单元的稳定锚点（恒为某个成员的 stableId）；悬浮窗、托盘菜单都以它为键。 */
+  anchorId?: string;
   /** 卡片标题：用户合并取合并名，自动合并取主成员名称。 */
   displayName: string;
   /** 由用户手动合并（决定是否提供「分离合并」）。 */
@@ -42,6 +44,21 @@ export interface Snapshot {
     live: number;
     overflow: number;
   };
+}
+
+/** 悬浮窗单元：一个呈现单元（一台设备或一个合并组）对应一个可独立显隐的窗口。 */
+export interface FloatingUnitDto {
+  anchor: string;
+  title: string;
+  visible: boolean;
+  offline: boolean;
+  side: number;
+  transparency: number;
+}
+
+export interface FloatingStateDto {
+  rev: number;
+  units: FloatingUnitDto[];
 }
 
 export type NotificationMode = "system" | "trayBubble" | "off";

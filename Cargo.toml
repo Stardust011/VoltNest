@@ -17,10 +17,12 @@ voltnest-hid = { path = "crates/voltnest-hid" }
 voltnest-ble = { path = "crates/voltnest-ble" }
 voltnest-platform = { path = "crates/voltnest-platform" }
 voltnest-storage = { path = "crates/voltnest-storage" }
+voltnest-floating = { path = "crates/voltnest-floating" }
 
 serde = { version = ">=1.0.229", features = ["derive"] }
 serde_json = { version = ">=1.0.154", features = ["preserve_order"] }
 log = ">=0.4.34"
+slint = ">=1.18.1"
 
 [profile.release]
 codegen-units = 1

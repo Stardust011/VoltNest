@@ -114,6 +114,34 @@ fn clamp_low_battery_levels(pair: [u8; 2]) -> [u8; 2] {
     if high > low { [high, low] } else { [1, 0] }
 }
 
+/// 悬浮窗单元 DTO：一个呈现单元（一台设备或一个合并组）对应一个可独立显隐的窗口。
+#[derive(Clone, PartialEq, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FloatingUnitDto {
+    /// 单元锚点，恒为某个成员的 `stableId`；窗口身份的唯一键。
+    pub anchor: String,
+    /// 卡片标题。
+    pub title: String,
+    /// 是否应显示悬浮窗。
+    pub visible: bool,
+    /// 设备当前不可用（窗口仍显示，只是标离线）。
+    pub offline: bool,
+    /// 卡片边长（逻辑像素）。
+    pub side: u16,
+    /// 透明度 0~100。
+    pub transparency: u8,
+}
+
+/// 悬浮窗状态（命令 `get_floating_units` 与事件 `state://floating` 共用）。
+#[derive(Clone, PartialEq, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FloatingStateDto {
+    /// 单调递增；前端据此丢弃旧包。
+    pub rev: u64,
+    /// 全部单元，顺序与设备列表一致。
+    pub units: Vec<FloatingUnitDto>,
+}
+
 /// 诊断 DTO。
 #[derive(Clone, PartialEq, Eq, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]

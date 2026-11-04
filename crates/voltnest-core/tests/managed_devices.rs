@@ -253,3 +253,51 @@ fn separating_auto_merge_restores_two_rows() {
     assert_eq!(after.devices.len(), 2, "两台设备各自成行");
     assert_eq!(after.tray.present, 2, "托盘按呈现单元计数");
 }
+
+#[test]
+fn auto_merge_anchor_is_the_hid_side_member() {
+    let mut e = auto_merged();
+    let snap = e.snapshot(T0 + 20);
+    let card = &snap.cards[0];
+    assert_eq!(
+        card.anchor_id,
+        hid_id().as_str(),
+        "自动合并的锚点恒取 HID 那一侧，不随活跃度翻转"
+    );
+    assert!(
+        card.member_device_ids.contains(&card.anchor_id),
+        "锚点必须是本卡成员"
+    );
+}
+
+#[test]
+fn user_merge_anchor_ignores_which_member_is_active() {
+    // HID 只登记、没有读数（不活跃），BLE 有读数（活跃）。
+    let mut e = engine();
+    feed(&mut e, &hid_arrived(), Transport::Hid, T0);
+    feed(&mut e, &ble_arrived(), Transport::Ble, T0);
+    feed(&mut e, &ble_reading(55), Transport::Ble, T0 + 10);
+    e.set_managed(managed(
+        &[],
+        &[],
+        vec![ManagedMerge {
+            primary: hid_id().as_str().to_string(),
+            members: vec![hid_id().as_str().to_string(), ble_id().as_str().to_string()],
+            name: "合并组".into(),
+        }],
+    ));
+
+    let snap = e.snapshot(T0 + 20);
+    let card = &snap.cards[0];
+    assert!(card.user_merged);
+    assert_eq!(
+        card.primary_device_id,
+        ble_id().as_str(),
+        "主成员让位给活跃成员"
+    );
+    assert_eq!(
+        card.anchor_id,
+        hid_id().as_str(),
+        "锚点是配置主设备，不跟着活跃度翻，否则悬浮窗配置会丢"
+    );
+}

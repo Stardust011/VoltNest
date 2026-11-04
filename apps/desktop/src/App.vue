@@ -33,6 +33,7 @@ import { useSnapshot } from "./composables/useSnapshot";
 import {
   completeOnboarding,
   getDiagnostics,
+  getFloatingUnits,
   getSettings,
   listManualDevices,
   removeManualDevice,
@@ -40,12 +41,15 @@ import {
   restartTransport,
   separateMerge,
   setAutostart,
+  setFloatingVisible,
   subscribeDiagnostics,
+  subscribeFloating,
   updateSettings,
 } from "./lib/ipc";
 import type {
   CardDto,
   DiagnosticsDto,
+  FloatingStateDto,
   ManualDeviceDto,
   OnboardingChoice,
   SettingsDto,
@@ -58,6 +62,12 @@ const { snapshot, nowMs, connected, refresh } = useSnapshot();
 
 const settings = ref<SettingsDto | null>(null);
 const diagnostics = ref<DiagnosticsDto | null>(null);
+/** 悬浮窗状态：按单元锚点索引，每台设备/每个合并组各一条，互不影响。 */
+const floating = ref<FloatingStateDto | null>(null);
+
+const floatingByAnchor = computed(
+  () => new Map((floating.value?.units ?? []).map((unit) => [unit.anchor, unit])),
+);
 
 /** 手动上报的设备：独立于快照（不参与采集），故单独拉取与维护。 */
 const manualDevices = ref<ManualDeviceDto[]>([]);
@@ -93,6 +103,7 @@ const DIAGNOSTICS_REFRESH_MS = 120;
 let diagnosticsSeq = 0;
 let diagnosticsTimer: number | undefined;
 let unlistenDiagnostics: (() => void) | undefined;
+let unlistenFloating: (() => void) | undefined;
 let disposed = false;
 
 const navItems: Array<{ id: View; label: string; icon: Component }> = [
@@ -109,6 +120,8 @@ const navItems: Array<{ id: View; label: string; icon: Component }> = [
  */
 interface Row {
   key: string;
+  /** 呈现单元锚点：悬浮窗、托盘菜单、设置都以它为键。 */
+  anchor: string;
   deviceId: string;
   card?: CardDto;
   inactiveText?: string;
@@ -135,8 +148,11 @@ const rows = computed<Row[]>(() => {
     if (absorbed.has(device.stableId)) continue;
     const card = byPrimary.get(device.stableId);
     const members = new Set(card?.memberDeviceIds ?? [device.stableId]);
+    const anchor = card?.anchorId ?? device.stableId;
     result.push({
-      key: card?.cardId ?? device.stableId,
+      // 用锚点当行键：cardId 会随型号归一化漂移，锚点不会。
+      key: anchor,
+      anchor,
       deviceId: device.stableId,
       card,
       inactiveText: card?.inactiveMemberText,
@@ -148,6 +164,16 @@ const rows = computed<Row[]>(() => {
   }
   return result;
 });
+
+/** 切换某台设备 / 某个合并组的悬浮窗；其它单元不受影响。 */
+async function toggleFloating(row: Row) {
+  const visible = floatingByAnchor.value.get(row.anchor)?.visible ?? false;
+  try {
+    await setFloatingVisible(row.anchor, !visible);
+  } catch (cause) {
+    error.value = cause instanceof Error ? cause.message : String(cause);
+  }
+}
 
 const deviceById = computed(() => {
   const map = new Map<string, NonNullable<typeof snapshot.value>["devices"][number]>();
@@ -432,15 +458,29 @@ watch(view, (next) => {
   void loadDiagnostics();
 });
 
+/**
+ * 悬浮窗状态：先订阅再拉全量，避免中间态丢失；`rev` 单调，旧包直接丢。
+ * 与 `useSnapshot` 同一套写法。
+ */
+async function startFloatingFeed() {
+  unlistenFloating = await subscribeFloating((state) => {
+    if (!floating.value || state.rev >= floating.value.rev) floating.value = state;
+  });
+  const state = await getFloatingUnits();
+  if (!floating.value || state.rev >= floating.value.rev) floating.value = state;
+}
+
 onMounted(() => {
   void loadSettings();
   void startDiagnosticsFeed();
+  void startFloatingFeed();
   void loadManualDevices();
 });
 
 onBeforeUnmount(() => {
   disposed = true;
   unlistenDiagnostics?.();
+  unlistenFloating?.();
   if (diagnosticsTimer !== undefined) window.clearTimeout(diagnosticsTimer);
 });
 </script>
@@ -481,6 +521,8 @@ onBeforeUnmount(() => {
                     :now-ms="nowMs"
                     :inactive-text="row.inactiveText"
                     :can-merge="row.canMerge"
+                    :floating-visible="floatingByAnchor.get(row.anchor)?.visible ?? false"
+                    @toggle-floating="toggleFloating(row)"
                     @rename="openRename(row)"
                     @merge="openMerge(row)"
                     @separate="separateRow(row)"

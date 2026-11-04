@@ -10,7 +10,7 @@ use std::sync::{Arc, Mutex};
 
 use tauri::AppHandle;
 use tauri::image::Image;
-use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
+use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{
     MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent, TrayIconId,
 };
@@ -18,7 +18,7 @@ use tauri::tray::{
 use voltnest_core::{DeviceDto, DeviceState, Snapshot};
 
 use crate::host::{HostState, lock};
-use crate::panel;
+use crate::{floating, panel};
 
 /// 基础托盘图标的 id（没有设备图标时占位，点它打开面板）。
 pub const BASE_TRAY_ID: &str = "voltnest";
@@ -31,6 +31,18 @@ const BUBBLE_MS: u64 = 6_000;
 
 const MENU_OPEN: &str = "tray:open";
 const MENU_QUIT: &str = "tray:quit";
+/// 悬浮窗开关项 id 前缀：`float:<锚点>`。
+const FLOAT_PREFIX: &str = "float:";
+
+/// 每张图标上那个「悬浮窗」勾选项的句柄，用于后续只改勾选、不重建菜单。
+static FLOAT_ITEMS: Mutex<BTreeMap<String, CheckMenuItem<tauri::Wry>>> =
+    Mutex::new(BTreeMap::new());
+
+/// 一份菜单 + 它上面的悬浮窗勾选项（`Some` 表示这是设备图标菜单）。
+type TrayMenu = (
+    Menu<tauri::Wry>,
+    Option<(String, CheckMenuItem<tauri::Wry>)>,
+);
 
 /// 与前端 `lib/format.ts` 色值一一对应；充电统一用 `EMERALD`，靠闪电形状表达「在充电」。
 const EMERALD: [u8; 3] = [16, 185, 129];
@@ -74,13 +86,23 @@ fn app_icon() -> Image<'static> {
 
 /// 安装托盘：菜单事件处理器 + 基础图标。
 pub fn install(app: &AppHandle) -> tauri::Result<()> {
-    app.on_menu_event(|app, event| match event.id.as_ref() {
-        MENU_OPEN => panel::show(app),
-        MENU_QUIT => quit(app),
-        _ => {}
+    app.on_menu_event(|app, event| {
+        let id = event.id.as_ref();
+        match id {
+            MENU_OPEN => panel::show(app),
+            MENU_QUIT => quit(app),
+            _ => {
+                if let Some(anchor) = id.strip_prefix(FLOAT_PREFIX) {
+                    let shared = tauri::Manager::state::<Arc<HostState>>(app);
+                    if let Err(err) = floating::toggle(app, &shared, anchor) {
+                        log::warn!("切换悬浮窗失败（{anchor}）：{err}");
+                    }
+                }
+            }
+        }
     });
 
-    build_tray(app, BASE_TRAY_ID, app_icon(), "VoltNest")
+    build_tray(app, BASE_TRAY_ID, app_icon(), "VoltNest", None)
 }
 
 /// 退出进程：任意一张图标的右键菜单都能到这儿。
@@ -93,13 +115,17 @@ pub fn sync_tray_icons(app: &AppHandle, shared: &Arc<HostState>, snap: &Snapshot
     let mut known = lock(&shared.tray_ids);
     let visible: &[String] = &snap.tray.visible_device_ids;
     let truncated = snap.tray.overflow;
+    let floating_visible = lock(&shared.settings).floating.clone();
     let mut wanted: Vec<String> = Vec::with_capacity(visible.len());
 
     for (idx, stable_id) in visible.iter().enumerate() {
         let Some(device) = snap.devices.iter().find(|d| &d.stable_id == stable_id) else {
             continue;
         };
-        let tray_id = tray_id_for(stable_id);
+        // 图标 id 用「单元锚点」而不是主成员：链路切换让 primary 翻转时不必删了重建。
+        let anchor = anchor_of(snap, stable_id);
+        let checked = floating_visible.is_visible(&anchor);
+        let tray_id = tray_id_for(&anchor);
         let icon = ring_image(
             displayed_battery(device).map(|r| r.percent),
             device.is_charging == Some(true),
@@ -117,19 +143,22 @@ pub fn sync_tray_icons(app: &AppHandle, shared: &Arc<HostState>, snap: &Snapshot
                 let _ = tray.set_icon(Some(icon));
                 let _ = tray.set_tooltip(Some(&tooltip));
                 remember_tooltip(&tray_id, &tooltip);
+                set_floating_checked(&anchor, checked);
             }
             None => {
-                if let Err(err) = build_tray(app, &tray_id, icon, &tooltip) {
+                if let Err(err) =
+                    build_tray(app, &tray_id, icon, &tooltip, Some((&anchor, checked)))
+                {
                     log::warn!("创建托盘图标失败（{stable_id}）: {err}");
                     continue;
                 }
             }
         }
-        wanted.push(stable_id.clone());
+        wanted.push(anchor);
     }
 
     for stale in known.iter().filter(|id| !wanted.contains(id)) {
-        remove_tray(app, &tray_id_for(stale));
+        remove_tray(app, stale);
     }
     let has_device_icons = !wanted.is_empty();
     *known = wanted;
@@ -160,7 +189,7 @@ fn base_tray(app: &AppHandle, tooltip: &str) -> Option<TrayIcon> {
     if let Some(base) = app.tray_by_id(&TrayIconId::new(BASE_TRAY_ID)) {
         return Some(base);
     }
-    if let Err(err) = build_tray(app, BASE_TRAY_ID, app_icon(), tooltip) {
+    if let Err(err) = build_tray(app, BASE_TRAY_ID, app_icon(), tooltip, None) {
         log::warn!("创建基础托盘图标失败: {err}");
         return None;
     }
@@ -173,14 +202,22 @@ fn build_tray(
     tray_id: &str,
     icon: Image<'static>,
     tooltip: &str,
+    floating: Option<(&str, bool)>,
 ) -> tauri::Result<()> {
     let (tx, rx) = std::sync::mpsc::channel();
     let handle = app.clone();
     let id = tray_id.to_string();
     let tip = tooltip.to_string();
+    let floating = floating.map(|(anchor, checked)| (anchor.to_string(), checked));
 
     app.run_on_main_thread(move || {
-        let built = tray_menu(&handle).and_then(|menu| {
+        let built = (|| -> tauri::Result<()> {
+            let (menu, float_item) = tray_menu(
+                &handle,
+                floating
+                    .as_ref()
+                    .map(|(anchor, checked)| (anchor.as_str(), *checked)),
+            )?;
             TrayIconBuilder::with_id(&id)
                 .icon(icon)
                 .tooltip(&tip)
@@ -198,9 +235,12 @@ fn build_tray(
                     } => panel::show(tray.app_handle()),
                     _ => {}
                 })
-                .build(&handle)
-                .map(|_| ())
-        });
+                .build(&handle)?;
+            if let Some((anchor, item)) = float_item {
+                lock(&FLOAT_ITEMS).insert(anchor, item);
+            }
+            Ok(())
+        })();
         let _ = tx.send(built);
     })?;
     rx.recv()
@@ -210,18 +250,39 @@ fn build_tray(
     Ok(())
 }
 
-/// 每张图标都带一份同样的菜单：任意一张右键都能打开面板或退出。
-fn tray_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
+/// 每张图标一份菜单。
+///
+/// 设备图标：首项是该单元自己的「悬浮窗」勾选项（`float:<锚点>`）+ 打开面板 + 退出；
+/// 基础图标：只有打开面板与退出（这时还没有任何设备单元，放悬浮窗入口没有意义）。
+fn tray_menu(app: &AppHandle, floating: Option<(&str, bool)>) -> tauri::Result<TrayMenu> {
     let open = MenuItem::with_id(app, MENU_OPEN, "打开面板", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, MENU_QUIT, "退出 VoltNest", true, None::<&str>)?;
-    let separator = PredefinedMenuItem::separator(app)?;
-    Menu::with_items(app, &[&open, &separator, &quit])
+
+    let Some((anchor, checked)) = floating else {
+        let separator = PredefinedMenuItem::separator(app)?;
+        return Ok((Menu::with_items(app, &[&open, &separator, &quit])?, None));
+    };
+
+    let float = CheckMenuItem::with_id(
+        app,
+        format!("{FLOAT_PREFIX}{anchor}"),
+        "悬浮窗",
+        true,
+        checked,
+        None::<&str>,
+    )?;
+    let head = PredefinedMenuItem::separator(app)?;
+    let tail = PredefinedMenuItem::separator(app)?;
+    let menu = Menu::with_items(app, &[&float, &head, &open, &tail, &quit])?;
+    Ok((menu, Some((anchor.to_string(), float))))
 }
 
-/// 移除图标，顺手丢掉它的 tooltip 记录。
-fn remove_tray(app: &AppHandle, tray_id: &str) {
-    app.remove_tray_by_id(&TrayIconId::new(tray_id));
-    lock(&BASELINE_TOOLTIPS).remove(tray_id);
+/// 移除图标，顺手丢掉它的 tooltip 与菜单项句柄。
+fn remove_tray(app: &AppHandle, anchor: &str) {
+    let tray_id = tray_id_for(anchor);
+    app.remove_tray_by_id(&TrayIconId::new(&tray_id));
+    lock(&BASELINE_TOOLTIPS).remove(&tray_id);
+    lock(&FLOAT_ITEMS).remove(anchor);
 }
 
 /// 记下这张图标应有的 tooltip，供气泡提示结束后恢复。
@@ -309,9 +370,29 @@ fn summary_tooltip(snap: &Snapshot) -> String {
     format!("VoltNest · {total} 台设备")
 }
 
-/// 设备托盘图标的 id：`tray:<stableId>`。
-fn tray_id_for(stable_id: &str) -> String {
-    format!("tray:{stable_id}")
+/// 设备托盘图标的 id：`tray:<锚点 stableId>`。
+fn tray_id_for(anchor: &str) -> String {
+    format!("tray:{anchor}")
+}
+
+/// 设备所属呈现单元的锚点：落在某张卡上就用卡的 `anchorId`，否则就是它自己。
+fn anchor_of(snap: &Snapshot, stable_id: &str) -> String {
+    snap.cards
+        .iter()
+        .find(|card| card.primary_device_id == stable_id)
+        .map(|card| card.anchor_id.clone())
+        .unwrap_or_else(|| stable_id.to_string())
+}
+
+/// 只改勾选状态，不重建菜单（`set_checked` 内部已搬到主线程）。
+fn set_floating_checked(anchor: &str, checked: bool) {
+    let items = lock(&FLOAT_ITEMS);
+    let Some(item) = items.get(anchor) else {
+        return;
+    };
+    if item.is_checked().unwrap_or(checked) != checked {
+        let _ = item.set_checked(checked);
+    }
 }
 
 /// tooltip 文案：`型号 · 92%` / `型号 · —` / `型号 · 87%（上次读数）`。`extra > 0` 表示还有设备没进托盘，挂在最后一张图标上；整串 ≤128 字符。

@@ -1,0 +1,24 @@
+[package]
+name = "voltnest-floating"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "VoltNest 桌面悬浮窗：置顶、无边框、半透明毛玻璃，可拖拽"
+
+[lib]
+name = "voltnest_floating"
+path = "src/lib.rs"
+
+[[bin]]
+name = "voltnest-floating"
+path = "src/main.rs"
+
+[dependencies]
+slint = { workspace = true, features = ["unstable-winit-030"] }
+log = { workspace = true, features = ["std"] }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+
+[build-dependencies]
+slint-build = ">=1.18.1"
