@@ -30,6 +30,8 @@ use ui::MainWindow;
 fn main() {
     logger::init();
     let ui = MainWindow::new().expect("创建悬浮窗失败");
+    let start = DEFAULT_SIDE + ui.get_pad();
+    ui.window().set_size(slint::LogicalSize::new(start, start));
 
     ui.show().expect("显示悬浮窗失败");
 
@@ -88,6 +90,8 @@ fn screen_cursor(origin: PhysicalPosition, scale: f32, x: f32, y: f32) -> (f32, 
     (origin.x as f32 + x * scale, origin.y as f32 + y * scale)
 }
 
+/// 卡片初始边长（逻辑像素）。
+const DEFAULT_SIDE: f32 = 180.0;
 /// 缩放边长下限 / 上限（逻辑像素）。
 const MIN_SIDE: f32 = 140.0;
 const MAX_SIDE: f32 = 520.0;
@@ -116,20 +120,22 @@ fn install_resize(ui: &MainWindow) {
         let window = ui.window();
         let size = window.size();
         let scale = window.scale_factor();
+        // 窗口 = 卡片 + 上下留白（上边给卡片外的关闭按钮让位），换算回卡片边长。
+        let pad = ui.get_pad();
 
         // 第一次移动时记下基准尺寸与按下点；之后都以它们为原点计算总增量。
         if anchor_move.get().is_none() {
-            base_move.set(size.width as f32 / scale);
+            base_move.set(size.width as f32 / scale - pad);
         }
         let start = anchor_move.get().unwrap_or((x, y));
         anchor_move.set(Some(start));
 
-        let side = resized_side(base_move.get(), start, (x, y));
+        let side = resized_side(base_move.get(), start, (x, y)) + pad;
         window.set_size(slint::LogicalSize::new(side, side));
     });
 }
 
-/// 缩放后的边长：按下点到当前点的位移取横纵较大者，再夹在上下限内。
+/// 缩放后的边长：按下点到当前点的位移取横纵较大者，再夹在上下限内（不含窗口留白）。
 fn resized_side(base: f32, start: (f32, f32), now: (f32, f32)) -> f32 {
     (base + (now.0 - start.0).max(now.1 - start.1)).clamp(MIN_SIDE, MAX_SIDE)
 }

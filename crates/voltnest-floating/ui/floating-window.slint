@@ -28,31 +28,44 @@ component LucideImage inherits Path {
     commands: "M 5 3 L 19 3 A 2 2 0 0 1 21 5 L 21 19 A 2 2 0 0 1 19 21 L 5 21 A 2 2 0 0 1 3 19 L 3 5 A 2 2 0 0 1 5 3 Z M 11 9 A 2 2 0 1 1 7 9 A 2 2 0 1 1 11 9 Z M 21 15 L 17.914 11.914 A 2 2 0 0 0 15.086 11.914 L 6 21";
 }
 
-// 左上角关闭按钮：与右下角缩放手柄同一套处理——角上留一块热区，指针进入才显形。
+// 关闭按钮：浮在卡片右上角外侧，指针悬停时才浮出淡红圆底 + ×。
 component CloseButton inherits Rectangle {
     callback closed();
+    in property <color> bg: #000;
     in property <color> ink: #000;
-    in property <float> k: 1;
-    property <bool> hovered: false;
 
-    width: 34px * self.k;
-    height: 34px * self.k;
+    width: 32px;
+    height: 32px;
     background: transparent;
 
+    // 淡红圆底：只有悬停才出现，避免常驻元素打断玻璃卡片。
+    Rectangle {
+        width: 26px;
+        height: 26px;
+        border-radius: 13px;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        background: root.bg;
+        opacity: root.hovered ? 1 : 0;
+        animate opacity { duration: 140ms; }
+    }
+
     Path {
-        width: 10px * root.k;
-        height: 10px * root.k;
-        x: 13px * root.k;
-        y: 13px * root.k;
+        width: 9px;
+        height: 9px;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
         viewbox-width: 10;
         viewbox-height: 10;
         commands: "M 1 1 L 9 9 M 9 1 L 1 9";
         stroke: root.ink;
-        stroke-width: 1.6px * root.k;
+        stroke-width: 1.7px;
         stroke-line-cap: round;
-        opacity: root.hovered ? 0.6 : 0;
+        opacity: root.hovered ? 1 : 0;
         animate opacity { duration: 140ms; }
     }
+
+    property <bool> hovered: false;
 
     TouchArea {
         mouse-cursor: pointer;
@@ -68,6 +81,8 @@ component ResizeGrip inherits Rectangle {
     callback moved-to(length, length);
     in property <color> ink: #000;
     in property <float> k: 1;
+    // 卡片相对窗口的纵向偏移，用于把局部坐标换算成窗口坐标。
+    in property <length> offset-y: 0px;
     property <bool> hovered: false;
 
     width: 34px * self.k;
@@ -100,7 +115,7 @@ component ResizeGrip inherits Rectangle {
             }
         }
         // 上报相对窗口左上角的坐标：窗口左上角在缩放时不动，位移可直接换算成尺寸增量。
-        moved => { root.moved-to(root.x + self.mouse-x, root.y + self.mouse-y); }
+        moved => { root.moved-to(root.x + self.mouse-x, root.y + self.mouse-y + root.offset-y); }
     }
 }
 
@@ -125,11 +140,16 @@ export component MainWindow inherits Window {
     no-frame: true;
     always-on-top: true;
     background: transparent;
-    width: 180px;
-    height: 180px;
+    // 初始尺寸由 Rust 端按「卡片 180 + 留白」设置；这里不绑 width/height，
+    // 否则会成为常量绑定、挡住系统缩放带来的尺寸回写。
+
+    // 卡片外留白：上边给关闭按钮，右边同样让出，卡片三边贴窗口。
+    out property <length> pad: 30px;
+    // 卡片边长。
+    property <length> side: root.width - root.pad;
 
     // 等比缩放系数：所有尺寸都以 180×180 为基准乘以它。
-    property <float> k: root.width / 180px;
+    property <float> k: root.side / 180px;
     property <length> radius: 40px * root.k;
     // 按下并进入拖拽状态后才响应移动，避免悬停时的 pointer-event 误移动窗口。
     property <bool> dragging: false;
@@ -150,15 +170,17 @@ export component MainWindow inherits Window {
         return max(max(root.radius - offset, 0px), offset - (edge - root.radius)) / 1px;
     }
     function inside-card(px: length, py: length) -> bool {
-        return root.shoulder(px, root.width) * root.shoulder(px, root.width)
-            + root.shoulder(py, root.height) * root.shoulder(py, root.height)
+        return root.shoulder(px, root.side) * root.shoulder(px, root.side)
+            + root.shoulder(py - root.pad, root.side) * root.shoulder(py - root.pad, root.side)
             <= (root.radius / 1px) * (root.radius / 1px);
     }
 
-    // 卡片铺满窗口：没有投影就不需要留白，圆角靠窗口的透明区域让出。
-    Rectangle {
-        width: parent.width;
-        height: parent.height;
+    // 卡片：上边让出 pad，其余三边贴窗口。
+    card := Rectangle {
+        x: 0;
+        y: root.pad;
+        width: root.side;
+        height: root.side;
         border-radius: root.radius;
         background: @linear-gradient(
             155deg,
@@ -242,12 +264,12 @@ export component MainWindow inherits Window {
 
         // 拖拽层覆盖整卡；落在圆角外的透明区域不响应。置于内容之上、手柄与按钮之下。
         TouchArea {
-            mouse-cursor: root.inside-card(self.mouse-x, self.mouse-y) ? MouseCursor.move : MouseCursor.default;
+            mouse-cursor: root.inside-card(self.mouse-x, self.mouse-y + root.pad) ? MouseCursor.move : MouseCursor.default;
             pointer-event(event) => {
                 if (event.kind == PointerEventKind.down) {
                     // 只有左键按在可见卡片内才进入拖拽；圆角外的透明区域不响应。
                     if (event.button == PointerEventButton.left
-                        && root.inside-card(self.mouse-x, self.mouse-y)) {
+                        && root.inside-card(self.mouse-x, self.mouse-y + root.pad)) {
                         root.dragging = true;
                         root.drag-begin();
                     }
@@ -258,7 +280,7 @@ export component MainWindow inherits Window {
                     }
                 } else if (event.kind == PointerEventKind.move) {
                     if (root.dragging) {
-                        root.drag-move(self.mouse-x, self.mouse-y);
+                        root.drag-move(self.mouse-x, self.mouse-y + root.pad);
                     }
                 }
             }
@@ -269,17 +291,19 @@ export component MainWindow inherits Window {
             y: parent.height - self.height;
             k: root.k;
             ink: root.ink-dim;
+            offset-y: root.pad;
             grab() => { root.resize-begin(); }
             moved-to(x, y) => { root.resize-move(x, y); }
             release() => { root.resize-end(); }
         }
+    }
 
-        CloseButton {
-            x: 0;
-            y: 0;
-            k: root.k;
-            ink: root.ink-dim;
-            closed => { root.close-requested(); }
-        }
+    // 关闭按钮浮在卡片右上角外侧（窗口的右上角），与卡片不重叠。
+    CloseButton {
+        x: root.width - self.width - 2px;
+        y: 2px;
+        bg: rgba(239, 68, 68, dark ? 0.28 : 0.18);
+        ink: dark ? rgba(255, 170, 170, 0.95) : rgba(220, 38, 38, 0.90);
+        closed => { root.close-requested(); }
     }
 }
