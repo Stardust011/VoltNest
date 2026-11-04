@@ -1,8 +1,8 @@
 // VoltNest 桌面悬浮窗界面。
 //
-// 玻璃质感由三层叠加而成：外投影（drop-shadow）→ 半透明渐变底 → 顶缘高光。
-// 未使用 DWM Acrylic：它会铺满整个窗口矩形且忽略逐像素 alpha，与卡片外留白的
-// 柔和阴影冲突，因此玻璃效果完全由渲染层绘制，跨平台表现一致。
+// 外形是圆角正方形卡片：无投影，窗口与卡片同尺寸，不留白边。
+// 玻璃质感由半透明渐变底 + 顶缘高光 + 1px 细边叠加而成，全部在渲染层完成。
+// 图标是「进度圆环 + 设备标志」：环用 SVG 圆弧绘制，端点由三角函数按电量算出。
 
 import { Palette } from "std-widgets.slint";
 
@@ -15,7 +15,7 @@ component CloseButton inherits Rectangle {
     width: 22px;
     height: 22px;
     border-radius: 11px;
-    background: hovered ? glyph.with-alpha(0.12) : transparent;
+    background: hovered ? glyph.with-alpha(0.14) : transparent;
     animate background { duration: 140ms; }
 
     Path {
@@ -27,7 +27,7 @@ component CloseButton inherits Rectangle {
         viewbox-height: 10;
         commands: "M 1 1 L 9 9 M 9 1 L 1 9";
         stroke: root.glyph;
-        stroke-width: 1.3px;
+        stroke-width: 1.4px;
         stroke-line-cap: round;
     }
 
@@ -38,11 +38,32 @@ component CloseButton inherits Rectangle {
     }
 }
 
+// 设备标志：鼠标轮廓 + 滚轮。用纯几何绘制，不依赖图标字体。
+component DeviceGlyph inherits Rectangle {
+    in property <color> ink: #000;
+
+    width: 24px;
+    height: 34px;
+    border-radius: 12px;
+    border-width: 1.8px;
+    border-color: ink;
+    background: transparent;
+
+    Rectangle {
+        x: (parent.width - self.width) / 2;
+        y: 5px;
+        width: 2px;
+        height: 8px;
+        border-radius: 1px;
+        background: root.ink;
+    }
+}
+
 export component MainWindow inherits Window {
     // 主数值（如电量百分比）与其说明文字。
     in property <string> headline: "87%";
-    in property <string> caption: "示例数据 · 拖动面板移动";
-    // 0.0 ~ 1.0，底部进度条长度。
+    in property <string> caption: "VoltNest · 已连接 2 台";
+    // 0.0 ~ 1.0，圆环的进度。
     in property <float> level: 0.87;
 
     // 拖拽：press 时通知 Rust 建立锚点，move 时上报指针在窗口内的逻辑坐标。
@@ -55,112 +76,98 @@ export component MainWindow inherits Window {
     no-frame: true;
     always-on-top: true;
     background: transparent;
-    width: 320px;
-    height: 156px;
+    width: 180px;
+    height: 180px;
 
     property <bool> dark: Palette.color-scheme == ColorScheme.dark;
     property <color> ink: dark ? rgba(255, 255, 255, 0.95) : rgba(23, 24, 28, 0.92);
-    property <color> ink-dim: dark ? rgba(255, 255, 255, 0.58) : rgba(23, 24, 28, 0.52);
-    property <color> glass-top: dark ? rgba(44, 46, 54, 0.66) : rgba(255, 255, 255, 0.72);
-    property <color> glass-bottom: dark
-        ? rgba(18, 19, 24, 0.54)
-        : rgba(244, 245, 250, 0.54);
+    property <color> ink-dim: dark ? rgba(255, 255, 255, 0.58) : rgba(23, 24, 28, 0.55);
 
-    // 外层留 24px 边距，供阴影扩散；卡片本身不占满窗口。
-    card := Rectangle {
-        x: 24px;
-        y: 18px;
-        width: parent.width - 48px;
-        height: parent.height - 36px;
-        border-radius: 26px;
-        background: @linear-gradient(150deg, root.glass-top, root.glass-bottom);
+    // 进度环几何：view box 与控件同为 92×92，圆心 (46, 46)。
+    property <float> ring-r: 42;
+    property <float> ring-c: 46;
+    property <float> ring-end-x: root.ring-c + root.ring-r * cos(-90deg + root.level * 360deg);
+    property <float> ring-end-y: root.ring-c + root.ring-r * sin(-90deg + root.level * 360deg);
+
+    // 卡片铺满窗口：没有投影就不需要留白，圆角靠窗口的透明区域让出。
+    Rectangle {
+        width: parent.width;
+        height: parent.height;
+        border-radius: 40px;
+        background: @linear-gradient(
+            155deg,
+            dark ? rgba(42, 44, 52, 0.94) : rgba(255, 255, 255, 0.94),
+            dark ? rgba(20, 21, 27, 0.86) : rgba(238, 240, 248, 0.84)
+        );
         border-width: 1px;
-        border-color: dark ? rgba(255, 255, 255, 0.16) : rgba(255, 255, 255, 0.78);
-        drop-shadow-blur: 24px;
-        drop-shadow-offset-y: 10px;
-        drop-shadow-color: dark ? rgba(0, 0, 0, 0.55) : rgba(16, 20, 40, 0.24);
+        border-color: dark ? rgba(255, 255, 255, 0.16) : rgba(18, 20, 30, 0.10);
 
         // 顶缘高光：一层垂直淡出的白色渐变，模拟玻璃受光。
         Rectangle {
             border-radius: parent.border-radius;
             background: @linear-gradient(
                 180deg,
-                rgba(255, 255, 255, dark ? 0.10 : 0.55) 0%,
-                rgba(255, 255, 255, 0.0) 42%
+                rgba(255, 255, 255, dark ? 0.12 : 0.55) 0%,
+                rgba(255, 255, 255, 0.0) 40%
             );
         }
 
         VerticalLayout {
-            padding-left: 16px;
-            padding-right: 16px;
-            padding-top: 14px;
-            padding-bottom: 13px;
-            spacing: 9px;
+            x: 0;
+            y: 0;
+            width: parent.width;
+            height: parent.height;
+            alignment: center;
+            spacing: 8px;
 
             HorizontalLayout {
-                spacing: 12px;
+                alignment: center;
 
-                // 徽标：渐变方块 + 手绘闪电，避免依赖图标字体。
+                // 圆环 + 设备标志
                 Rectangle {
-                    width: 44px;
-                    height: 44px;
-                    border-radius: 14px;
-                    background: @linear-gradient(140deg, #6366f1, #8b5cf6);
-                    drop-shadow-blur: 12px;
-                    drop-shadow-offset-y: 4px;
-                    drop-shadow-color: rgba(99, 102, 241, 0.45);
+                    width: 92px;
+                    height: 92px;
 
+                    // 底环
                     Path {
-                        width: 16px;
-                        height: 21px;
+                        viewbox-width: 92;
+                        viewbox-height: 92;
+                        commands: "M 46 4 A 42 42 0 1 1 45.9 4 Z";
+                        stroke: dark ? rgba(255, 255, 255, 0.16) : rgba(23, 24, 28, 0.10);
+                        stroke-width: 6px;
+                    }
+
+                    // 进度弧：从 12 点方向顺时针画到 level 对应的角度。
+                    Path {
+                        viewbox-width: 92;
+                        viewbox-height: 92;
+                        commands: "M \{root.ring-c} \{root.ring-c - root.ring-r} A \{root.ring-r} \{root.ring-r} 0 \{root.level > 0.5 ? 1 : 0} 1 \{root.ring-end-x} \{root.ring-end-y}";
+                        stroke: @linear-gradient(120deg, #6366f1, #a855f7);
+                        stroke-width: 6px;
+                        stroke-line-cap: round;
+                    }
+
+                    DeviceGlyph {
                         x: (parent.width - self.width) / 2;
                         y: (parent.height - self.height) / 2;
-                        viewbox-width: 16;
-                        viewbox-height: 20;
-                        commands: "M 10 0 L 0 12 L 6 12 L 4 20 L 16 8 L 9 8 Z";
-                        fill: #ffffff;
+                        ink: root.ink;
                     }
-                }
-
-                VerticalLayout {
-                    alignment: center;
-                    spacing: 1px;
-
-                    Text {
-                        text: "VOLTNEST";
-                        font-size: 10px;
-                        font-weight: 700;
-                        color: root.ink-dim;
-                    }
-                    Text {
-                        text: root.headline;
-                        font-size: 19px;
-                        font-weight: 700;
-                        color: root.ink;
-                    }
-                }
-
-                Rectangle {} // 弹性占位，把关闭按钮推到最右
-            }
-
-            Rectangle {
-                height: 4px;
-                border-radius: 2px;
-                background: dark ? rgba(255, 255, 255, 0.14) : rgba(23, 24, 28, 0.10);
-
-                Rectangle {
-                    width: parent.width * root.level;
-                    height: 100%;
-                    border-radius: 2px;
-                    background: @linear-gradient(90deg, #6366f1, #a855f7);
-                    animate width { duration: 400ms; easing: ease-out; }
                 }
             }
 
             Text {
+                text: root.headline;
+                font-size: 21px;
+                font-weight: 700;
+                color: root.ink;
+                horizontal-alignment: center;
+            }
+
+            Text {
                 text: root.caption;
-                font-size: 11px;
+                font-size: 10px;
                 color: root.ink-dim;
+                horizontal-alignment: center;
                 wrap: no-wrap;
                 overflow: elide;
             }
@@ -176,8 +183,7 @@ export component MainWindow inherits Window {
                     root.drag-end();
                 }
             }
-            // 坐标换算成相对窗口左上角，Rust 端直接与窗口位置相加即得屏幕坐标。
-            moved => { root.drag-move(parent.x + self.mouse-x, parent.y + self.mouse-y); }
+            moved => { root.drag-move(self.mouse-x, self.mouse-y); }
         }
 
         CloseButton {
