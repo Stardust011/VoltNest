@@ -170,7 +170,10 @@ export component MainWindow inherits Window {
     // 菜单展开：把点击处的横坐标交给 Rust，由它算窗口与面板的位置。
     callback menu-open-requested(length);
     // 菜单收起（点空白 / 再点右键 / 开始拖拽缩放）：Rust 据此把窗口缩回卡片大小。
+    // 另外窗口一旦失焦（点了桌面或别的程序），Rust 侧也会主动把 panel 收掉。
     callback menu-closed();
+    // 用户拖动了透明度滑块：Rust 去抖后上报给宿主持久化。
+    callback transparency-adjusted();
     callback close-requested();
 
     title: "VoltNest";
@@ -372,6 +375,7 @@ export component MainWindow inherits Window {
                 minimum: 0;
                 maximum: 100;
                 value <=> root.transparency;
+                changed(v) => { root.transparency-adjusted(); }
             }
 
             Rectangle { height: 1px; background: root.hairline; }
@@ -406,7 +410,7 @@ export component MainWindow inherits Window {
             Rectangle {
                 height: 26px;
                 border-radius: 7px;
-                background: exit.has-hover ? rgba(239, 68, 68, dark ? 0.22 : 0.12) : transparent;
+                background: exit.has-hover ? (dark ? rgba(255, 255, 255, 0.10) : rgba(18, 20, 30, 0.06)) : transparent;
 
                 exit := TouchArea {
                     mouse-cursor: pointer;
@@ -417,9 +421,9 @@ export component MainWindow inherits Window {
                     x: 8px;
                     width: parent.width - 16px;
                     height: parent.height;
-                    text: "退出";
+                    text: "隐藏悬浮窗";
                     font-size: 11px;
-                    color: exit.has-hover ? (dark ? rgba(255, 170, 170, 0.95) : rgba(185, 28, 28, 0.92)) : root.ink;
+                    color: root.ink;
                     vertical-alignment: center;
                 }
             }
