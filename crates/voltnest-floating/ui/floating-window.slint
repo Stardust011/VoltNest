@@ -1,0 +1,190 @@
+// VoltNest 桌面悬浮窗界面。
+//
+// 玻璃质感由三层叠加而成：外投影（drop-shadow）→ 半透明渐变底 → 顶缘高光。
+// 未使用 DWM Acrylic：它会铺满整个窗口矩形且忽略逐像素 alpha，与卡片外留白的
+// 柔和阴影冲突，因此玻璃效果完全由渲染层绘制，跨平台表现一致。
+
+import { Palette } from "std-widgets.slint";
+
+// 悬停才浮出圆底的关闭按钮。
+component CloseButton inherits Rectangle {
+    callback closed();
+    in property <color> glyph: #000;
+    property <bool> hovered: false;
+
+    width: 22px;
+    height: 22px;
+    border-radius: 11px;
+    background: hovered ? glyph.with-alpha(0.12) : transparent;
+    animate background { duration: 140ms; }
+
+    Path {
+        width: 9px;
+        height: 9px;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        viewbox-width: 10;
+        viewbox-height: 10;
+        commands: "M 1 1 L 9 9 M 9 1 L 1 9";
+        stroke: root.glyph;
+        stroke-width: 1.3px;
+        stroke-line-cap: round;
+    }
+
+    TouchArea {
+        mouse-cursor: pointer;
+        changed has-hover => { root.hovered = self.has-hover; }
+        clicked => { root.closed(); }
+    }
+}
+
+export component MainWindow inherits Window {
+    // 主数值（如电量百分比）与其说明文字。
+    in property <string> headline: "87%";
+    in property <string> caption: "示例数据 · 拖动面板移动";
+    // 0.0 ~ 1.0，底部进度条长度。
+    in property <float> level: 0.87;
+
+    // 拖拽：press 时通知 Rust 建立锚点，move 时上报指针在窗口内的逻辑坐标。
+    callback drag-begin();
+    callback drag-move(length, length);
+    callback drag-end();
+    callback close-requested();
+
+    title: "VoltNest";
+    no-frame: true;
+    always-on-top: true;
+    background: transparent;
+    width: 320px;
+    height: 156px;
+
+    property <bool> dark: Palette.color-scheme == ColorScheme.dark;
+    property <color> ink: dark ? rgba(255, 255, 255, 0.95) : rgba(23, 24, 28, 0.92);
+    property <color> ink-dim: dark ? rgba(255, 255, 255, 0.58) : rgba(23, 24, 28, 0.52);
+    property <color> glass-top: dark ? rgba(44, 46, 54, 0.66) : rgba(255, 255, 255, 0.72);
+    property <color> glass-bottom: dark
+        ? rgba(18, 19, 24, 0.54)
+        : rgba(244, 245, 250, 0.54);
+
+    // 外层留 24px 边距，供阴影扩散；卡片本身不占满窗口。
+    card := Rectangle {
+        x: 24px;
+        y: 18px;
+        width: parent.width - 48px;
+        height: parent.height - 36px;
+        border-radius: 26px;
+        background: @linear-gradient(150deg, root.glass-top, root.glass-bottom);
+        border-width: 1px;
+        border-color: dark ? rgba(255, 255, 255, 0.16) : rgba(255, 255, 255, 0.78);
+        drop-shadow-blur: 24px;
+        drop-shadow-offset-y: 10px;
+        drop-shadow-color: dark ? rgba(0, 0, 0, 0.55) : rgba(16, 20, 40, 0.24);
+
+        // 顶缘高光：一层垂直淡出的白色渐变，模拟玻璃受光。
+        Rectangle {
+            border-radius: parent.border-radius;
+            background: @linear-gradient(
+                180deg,
+                rgba(255, 255, 255, dark ? 0.10 : 0.55) 0%,
+                rgba(255, 255, 255, 0.0) 42%
+            );
+        }
+
+        VerticalLayout {
+            padding-left: 16px;
+            padding-right: 16px;
+            padding-top: 14px;
+            padding-bottom: 13px;
+            spacing: 9px;
+
+            HorizontalLayout {
+                spacing: 12px;
+
+                // 徽标：渐变方块 + 手绘闪电，避免依赖图标字体。
+                Rectangle {
+                    width: 44px;
+                    height: 44px;
+                    border-radius: 14px;
+                    background: @linear-gradient(140deg, #6366f1, #8b5cf6);
+                    drop-shadow-blur: 12px;
+                    drop-shadow-offset-y: 4px;
+                    drop-shadow-color: rgba(99, 102, 241, 0.45);
+
+                    Path {
+                        width: 16px;
+                        height: 21px;
+                        x: (parent.width - self.width) / 2;
+                        y: (parent.height - self.height) / 2;
+                        viewbox-width: 16;
+                        viewbox-height: 20;
+                        commands: "M 10 0 L 0 12 L 6 12 L 4 20 L 16 8 L 9 8 Z";
+                        fill: #ffffff;
+                    }
+                }
+
+                VerticalLayout {
+                    alignment: center;
+                    spacing: 1px;
+
+                    Text {
+                        text: "VOLTNEST";
+                        font-size: 10px;
+                        font-weight: 700;
+                        color: root.ink-dim;
+                    }
+                    Text {
+                        text: root.headline;
+                        font-size: 19px;
+                        font-weight: 700;
+                        color: root.ink;
+                    }
+                }
+
+                Rectangle {} // 弹性占位，把关闭按钮推到最右
+            }
+
+            Rectangle {
+                height: 4px;
+                border-radius: 2px;
+                background: dark ? rgba(255, 255, 255, 0.14) : rgba(23, 24, 28, 0.10);
+
+                Rectangle {
+                    width: parent.width * root.level;
+                    height: 100%;
+                    border-radius: 2px;
+                    background: @linear-gradient(90deg, #6366f1, #a855f7);
+                    animate width { duration: 400ms; easing: ease-out; }
+                }
+            }
+
+            Text {
+                text: root.caption;
+                font-size: 11px;
+                color: root.ink-dim;
+                wrap: no-wrap;
+                overflow: elide;
+            }
+        }
+
+        // 拖拽层覆盖整卡；置于内容之上、关闭按钮之下。
+        TouchArea {
+            mouse-cursor: move;
+            changed pressed => {
+                if (self.pressed) {
+                    root.drag-begin();
+                } else {
+                    root.drag-end();
+                }
+            }
+            // 坐标换算成相对窗口左上角，Rust 端直接与窗口位置相加即得屏幕坐标。
+            moved => { root.drag-move(parent.x + self.mouse-x, parent.y + self.mouse-y); }
+        }
+
+        CloseButton {
+            x: parent.width - self.width - 12px;
+            y: 12px;
+            glyph: root.ink-dim;
+            closed => { root.close-requested(); }
+        }
+    }
+}
