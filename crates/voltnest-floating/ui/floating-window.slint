@@ -1,12 +1,13 @@
 // VoltNest 桌面悬浮窗界面。
 //
-// 外形是圆角正方形卡片：无投影，窗口与卡片同尺寸，不留白边。
+// 外形是圆角正方形卡片：无投影，窗口平时与卡片同尺寸，不留白边。
 // 卡面上只画一个进度圆环，环内是设备类型的标志（Lucide 图标，ISC 许可）。
 // 玻璃质感由半透明渐变底 + 顶缘高光 + 1px 细边叠加而成，全部在渲染层完成。
-// 整卡按 `k = 窗口宽 / 180` 等比缩放，改窗口大小即整体缩放，布局不会走形。
-// 详细信息与退出都收在右键菜单里（Windows 上是原生菜单）。
+// 整卡按 `k = card-side / 180` 等比缩放，改尺寸即整体缩放，布局不会走形。
+// 右键菜单是自绘面板（原生菜单放不下滑块）：窗口在展开时临时扩成「卡片 ∪ 面板」，
+// 卡片靠 card-x / card-y 抵消窗口位移，所以视觉上不会移动。
 
-import { Palette } from "std-widgets.slint";
+import { Palette, Slider } from "std-widgets.slint";
 
 // Lucide 图标统一封装：24×24 viewBox，描边 2，圆头圆角。
 //
@@ -136,18 +137,29 @@ component ResizeGrip inherits Rectangle {
         moved => { root.moved-to(root.x + self.mouse-x, root.y + self.mouse-y); }
     }
 }
-
 export component MainWindow inherits Window {
     // 设备类型，取值与 `voltnest-provider` 的 `DeviceType::as_str()` 一致。
     in property <string> device-type: "mouse";
-    // 右键菜单「详细信息」里的三行。
+    // 右键菜单里的三行详细信息。
     in property <string> device-name: "MCHOSE A5 Pro";
     in property <string> device-battery: "87%";
     in property <string> device-status: "已连接 · 蓝牙";
     // 0.0 ~ 1.0，圆环的进度。
     in property <float> level: 0.87;
 
-    // 拖拽：press 时通知 Rust 建立锚点，move 时上报指针在窗口内的逻辑坐标。
+    // 卡片边长（逻辑像素）由 Rust 维护。右键菜单展开时窗口会比卡片大，
+    // 卡片靠 card-x / card-y 定位，这样面板可以摆在卡片四周而不移动卡片。
+    in-out property <length> card-side: 180px;
+    in property <length> card-x: 0px;
+    in property <length> card-y: 0px;
+    // 右键菜单：是否展开 + 面板在窗口内的位置（由 Rust 算好，保证不出屏）。
+    in-out property <bool> menu-open: false;
+    in property <length> menu-x: 0px;
+    in property <length> menu-y: 0px;
+    // 透明度 0~100（100 最透），只作用于卡片玻璃底，图标与文字保持不透明。
+    in-out property <float> transparency: 0;
+
+    // 拖拽：press 时通知 Rust 建立锚点，move 时上报指针在卡片内的逻辑坐标。
     callback drag-begin();
     callback drag-move(length, length);
     callback drag-end();
@@ -155,7 +167,10 @@ export component MainWindow inherits Window {
     callback resize-begin();
     callback resize-move(length, length);
     callback resize-end();
-    // 右键菜单里的「退出」。
+    // 菜单展开：把「卡片内」的点击坐标交给 Rust，由它算窗口与面板的位置。
+    callback menu-open-requested(length, length);
+    // 菜单收起（点空白 / 再点右键 / 开始拖拽缩放）：Rust 据此把窗口缩回卡片大小。
+    callback menu-closed();
     callback close-requested();
 
     title: "VoltNest";
@@ -166,14 +181,17 @@ export component MainWindow inherits Window {
     // 否则会成为常量绑定、挡住系统缩放带来的尺寸回写。
 
     // 等比缩放系数：所有尺寸都以 180×180 为基准乘以它。
-    property <float> k: root.width / 180px;
+    property <float> k: root.card-side / 180px;
     property <length> radius: 40px * root.k;
+    // 玻璃底的不透明度：transparency 100 时降到 25%，环与图标不受影响。
+    property <float> glass: 1 - root.transparency / 100 * 0.75;
     // 按下并进入拖拽状态后才响应移动，避免悬停时的 pointer-event 误移动窗口。
     property <bool> dragging: false;
 
     property <bool> dark: Palette.color-scheme == ColorScheme.dark;
     property <color> ink: dark ? rgba(255, 255, 255, 0.95) : rgba(23, 24, 28, 0.92);
     property <color> ink-dim: dark ? rgba(255, 255, 255, 0.58) : rgba(23, 24, 28, 0.55);
+    property <color> hairline: dark ? rgba(255, 255, 255, 0.12) : rgba(18, 20, 30, 0.10);
 
     // 进度环几何：view box 100×100，圆心 (50, 50)。图标与环一起随 k 缩放。
     property <float> ring-r: 44;
@@ -187,20 +205,37 @@ export component MainWindow inherits Window {
         return max(max(root.radius - offset, 0px), offset - (edge - root.radius)) / 1px;
     }
     function inside-card(px: length, py: length) -> bool {
-        return root.shoulder(px, root.width) * root.shoulder(px, root.width)
-            + root.shoulder(py, root.height) * root.shoulder(py, root.height)
+        return root.shoulder(px, root.card-side) * root.shoulder(px, root.card-side)
+            + root.shoulder(py, root.card-side) * root.shoulder(py, root.card-side)
             <= (root.radius / 1px) * (root.radius / 1px);
     }
 
-    // 卡片铺满窗口：没有投影就不需要留白，圆角靠窗口的透明区域让出。
+    // 收起菜单并让 Rust 把窗口缩回去。
+    function close-menu() {
+        if (root.menu-open) {
+            root.menu-open = false;
+            root.menu-closed();
+        }
+    }
+
+    // 菜单展开时铺满窗口的透明层：点卡片以外的地方收起。
+    // 放在最底层，卡片与面板都在它上面，因此不会抢它们的手势。
+    TouchArea {
+        visible: root.menu-open;
+        clicked => { root.close-menu(); }
+    }
+
+    // 卡片：位置由 Rust 给出（通常是窗口左上角）。
     card := Rectangle {
-        width: parent.width;
-        height: parent.height;
+        x: root.card-x;
+        y: root.card-y;
+        width: root.card-side;
+        height: root.card-side;
         border-radius: root.radius;
         background: @linear-gradient(
             155deg,
-            dark ? rgba(44, 46, 54, 0.96) : rgba(255, 255, 255, 0.97),
-            dark ? rgba(20, 21, 27, 0.90) : rgba(240, 242, 249, 0.90)
+            (dark ? #2c2e36 : #ffffff).with-alpha(0.97 * root.glass),
+            (dark ? #14151b : #f0f2f9).with-alpha(0.90 * root.glass)
         );
         border-width: 1px;
         border-color: dark ? rgba(255, 255, 255, 0.16) : rgba(18, 20, 30, 0.10);
@@ -210,7 +245,7 @@ export component MainWindow inherits Window {
             border-radius: parent.border-radius;
             background: @linear-gradient(
                 180deg,
-                rgba(255, 255, 255, dark ? 0.12 : 0.55) 0%,
+                rgba(255, 255, 255, (dark ? 0.12 : 0.55) * root.glass) 0%,
                 rgba(255, 255, 255, 0.0) 40%
             );
         }
@@ -254,9 +289,18 @@ export component MainWindow inherits Window {
         TouchArea {
             mouse-cursor: root.inside-card(self.mouse-x, self.mouse-y) ? MouseCursor.move : MouseCursor.default;
             pointer-event(event) => {
-                if (event.kind == PointerEventKind.down) {
-                    // 只有左键按在可见卡片内才进入拖拽；圆角外的透明区域不响应。
-                    if (event.button == PointerEventButton.left
+                if (root.menu-open) {
+                    // 菜单开着时，点卡片本身就是「点空白」：先收起。
+                    if (event.kind == PointerEventKind.down) {
+                        root.close-menu();
+                    }
+                } else if (event.kind == PointerEventKind.down) {
+                    // 左键拖拽、右键开菜单，都要落在可见卡片内；圆角外的透明区不响应。
+                    if (event.button == PointerEventButton.right
+                        && root.inside-card(self.mouse-x, self.mouse-y)) {
+                        root.menu-open = true;
+                        root.menu-open-requested(self.mouse-x, self.mouse-y);
+                    } else if (event.button == PointerEventButton.left
                         && root.inside-card(self.mouse-x, self.mouse-y)) {
                         root.dragging = true;
                         root.drag-begin();
@@ -279,32 +323,105 @@ export component MainWindow inherits Window {
             y: parent.height - self.height;
             k: root.k;
             ink: root.ink-dim;
-            grab() => { root.resize-begin(); }
+            grab() => { root.close-menu(); root.resize-begin(); }
             moved-to(x, y) => { root.resize-move(x, y); }
             release() => { root.resize-end(); }
         }
     }
 
-    // 右键菜单：Windows 上由系统绘制（muda），点击空白处自动收起。
-    // 详细信息平铺在最外层（不做二级菜单），三行只读、置灰。
-    ContextMenuArea {
-        Menu {
-            MenuItem {
-                title: "设备：" + root.device-name;
-                enabled: false;
+    // 右键菜单面板：固定 196×180（Rust 侧 MENU_W / MENU_H 必须一致）。
+    // 原生菜单放不下滑块，所以这里自绘：玻璃底 + 分隔线 + 自定义行。
+    menu := Rectangle {
+        visible: root.menu-open;
+        x: root.menu-x;
+        y: root.menu-y;
+        width: 196px;
+        height: 180px;
+        border-radius: 14px;
+        background: (dark ? #23252c : #ffffff).with-alpha(0.98);
+        border-width: 1px;
+        border-color: dark ? rgba(255, 255, 255, 0.14) : rgba(18, 20, 30, 0.09);
+
+        // 面板背景要吞掉点击，否则点空白行会穿透到底层的「点空白收起」。
+        TouchArea { }
+
+        VerticalLayout {
+            padding: 12px;
+            spacing: 6px;
+
+            // 透明度：标题 + 百分比
+            HorizontalLayout {
+                height: 16px;
+                Text {
+                    text: "透明度";
+                    font-size: 11px;
+                    color: root.ink-dim;
+                    vertical-alignment: center;
+                }
+                Rectangle { }
+                Text {
+                    text: round(root.transparency) + "%";
+                    font-size: 11px;
+                    color: root.ink;
+                    vertical-alignment: center;
+                }
             }
-            MenuItem {
-                title: "电量：" + root.device-battery;
-                enabled: false;
+
+            Slider {
+                height: 22px;
+                minimum: 0;
+                maximum: 100;
+                value <=> root.transparency;
             }
-            MenuItem {
-                title: "状态：" + root.device-status;
-                enabled: false;
+
+            Rectangle { height: 1px; background: root.hairline; }
+
+            Text {
+                height: 16px;
+                text: "设备：" + root.device-name;
+                font-size: 11px;
+                color: root.ink-dim;
+                vertical-alignment: center;
+                overflow: elide;
             }
-            MenuSeparator { }
-            MenuItem {
-                title: "退出";
-                activated => { root.close-requested(); }
+            Text {
+                height: 16px;
+                text: "电量：" + root.device-battery;
+                font-size: 11px;
+                color: root.ink-dim;
+                vertical-alignment: center;
+            }
+            Text {
+                height: 16px;
+                text: "状态：" + root.device-status;
+                font-size: 11px;
+                color: root.ink-dim;
+                vertical-alignment: center;
+                overflow: elide;
+            }
+
+            Rectangle { height: 1px; background: root.hairline; }
+
+            // 退出
+            Rectangle {
+                height: 26px;
+                border-radius: 7px;
+                background: exit.has-hover ? rgba(239, 68, 68, dark ? 0.22 : 0.12) : transparent;
+
+                exit := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { root.close-requested(); }
+                }
+
+                Text {
+                    x: 8px;
+                    width: parent.width - 16px;
+                    height: parent.height;
+                    text: "退出";
+                    font-size: 11px;
+                    color: exit.has-hover ? (dark ? rgba(255, 170, 170, 0.95) : rgba(185, 28, 28, 0.92)) : root.ink;
+                    vertical-alignment: center;
+                }
             }
         }
     }

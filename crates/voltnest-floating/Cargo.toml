@@ -7,7 +7,7 @@ license.workspace = true
 description = "VoltNest 桌面悬浮窗：置顶、无边框、半透明毛玻璃，可拖拽"
 
 [dependencies]
-slint.workspace = true
+slint = { workspace = true, features = ["unstable-winit-030"] }
 log = { workspace = true, features = ["std"] }
 
 [build-dependencies]

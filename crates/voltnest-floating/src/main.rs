@@ -30,6 +30,7 @@ use ui::MainWindow;
 fn main() {
     logger::init();
     let ui = MainWindow::new().expect("创建悬浮窗失败");
+    ui.set_card_side(DEFAULT_SIDE);
     ui.window()
         .set_size(slint::LogicalSize::new(DEFAULT_SIDE, DEFAULT_SIDE));
 
@@ -37,6 +38,7 @@ fn main() {
 
     install_drag(&ui);
     install_resize(&ui);
+    install_menu(&ui);
     let _ticker = install_demo_data(&ui);
 
     log::info!("VoltNest 悬浮窗已启动");
@@ -65,7 +67,8 @@ fn install_drag(ui: &MainWindow) {
         };
         let window = ui.window();
         let origin = window.position();
-        let cursor = screen_cursor(origin, window.scale_factor(), x, y);
+        let offset = (ui.get_card_x(), ui.get_card_y());
+        let cursor = screen_cursor(origin, window.scale_factor(), offset, x, y);
 
         if let Some(prev) = anchor_move.get() {
             let (dx, dy) = drag_delta(prev, cursor);
@@ -74,8 +77,8 @@ fn install_drag(ui: &MainWindow) {
         anchor_move.set(Some(cursor));
     });
 
-    // 菜单项的回调是在原生菜单的消息处理里触发的，那时 Slint 内部状态仍被借用，
-    // 直接 hide / quit 会 panic（RefCell already borrowed），因此推迟到下一轮事件循环。
+    // 退出回调是从 TouchArea 的事件处理里发出来的，那时 Slint 内部状态可能仍被借用，
+    // 直接 quit 会 panic（RefCell already borrowed），因此推迟到下一轮事件循环。
     ui.on_close_requested(|| {
         Timer::single_shot(Duration::ZERO, || {
             slint::quit_event_loop().expect("退出事件循环失败");
@@ -83,11 +86,21 @@ fn install_drag(ui: &MainWindow) {
     });
 }
 
-/// 把「指针在窗口内的逻辑坐标」还原成屏幕物理坐标。
+/// 把「指针在卡片内的逻辑坐标」还原成屏幕物理坐标。
 ///
-/// Slint 上报的是逻辑像素，而 `set_position` 用物理像素，二者差一个缩放比。
-fn screen_cursor(origin: PhysicalPosition, scale: f32, x: f32, y: f32) -> (f32, f32) {
-    (origin.x as f32 + x * scale, origin.y as f32 + y * scale)
+/// Slint 上报的是逻辑像素，而 `set_position` 用物理像素，二者差一个缩放比；
+/// 卡片在窗口内还可能被菜单挤开（`offset`），也要一起加上。
+fn screen_cursor(
+    origin: PhysicalPosition,
+    scale: f32,
+    offset: (f32, f32),
+    x: f32,
+    y: f32,
+) -> (f32, f32) {
+    (
+        origin.x as f32 + (offset.0 + x) * scale,
+        origin.y as f32 + (offset.1 + y) * scale,
+    )
 }
 
 /// 卡片初始边长（逻辑像素）。
@@ -118,19 +131,128 @@ fn install_resize(ui: &MainWindow) {
             return;
         };
         let window = ui.window();
-        let size = window.size();
-        let scale = window.scale_factor();
 
         // 第一次移动时记下基准尺寸与按下点；之后都以它们为原点计算总增量。
         if anchor_move.get().is_none() {
-            base_move.set(size.width as f32 / scale);
+            base_move.set(ui.get_card_side());
         }
         let start = anchor_move.get().unwrap_or((x, y));
         anchor_move.set(Some(start));
 
         let side = resized_side(base_move.get(), start, (x, y));
+        // 卡片边长与窗口尺寸是两件事：菜单展开时窗口更大，缩放在菜单收起后才会一一对应。
+        ui.set_card_side(side);
         window.set_size(slint::LogicalSize::new(side, side));
     });
+}
+
+/// 右键菜单面板尺寸（逻辑像素），必须与 `ui/floating-window.slint` 里的
+/// `menu.width` / `menu.height` 保持一致。
+const MENU_W: f32 = 196.0;
+const MENU_H: f32 = 180.0;
+/// 面板与卡片之间的间距（逻辑像素）。
+const MENU_GAP: f32 = 8.0;
+
+/// 右键菜单：面板摆在卡片旁边，窗口临时扩成「卡片 ∪ 面板」的并集。
+///
+/// 卡片用 `card-x` / `card-y` 抵消窗口位移，所以撑开窗口时卡片在屏幕上纹丝不动；
+/// 收起时窗口缩回卡片大小并挪回原位。
+fn install_menu(ui: &MainWindow) {
+    let ui_weak = ui.as_weak();
+    ui.on_menu_open_requested(move |px: f32, py: f32| {
+        if let Some(ui) = ui_weak.upgrade() {
+            open_menu(&ui, px, py);
+        }
+    });
+
+    let ui_weak = ui.as_weak();
+    ui.on_menu_closed(move || {
+        if let Some(ui) = ui_weak.upgrade() {
+            close_menu(&ui);
+        }
+    });
+}
+
+/// 展开菜单：优先摆在卡片右侧、与点击处同高；右边放不下翻到左侧，两侧都放不下
+/// 就贴着点击点，最后统一夹进显示器范围。
+fn open_menu(ui: &MainWindow, px: f32, py: f32) {
+    let window = ui.window();
+    let scale = window.scale_factor();
+    let pos = window.position();
+    let side = ui.get_card_side() * scale;
+    let card_left = pos.x as f32 + ui.get_card_x() * scale;
+    let card_top = pos.y as f32 + ui.get_card_y() * scale;
+
+    let menu_w = MENU_W * scale;
+    let menu_h = MENU_H * scale;
+    let gap = MENU_GAP * scale;
+
+    let mut menu_left = card_left + side + gap;
+    let mut menu_top = card_top + py * scale;
+    if let Some((left, top, right, bottom)) = monitor_rect(ui) {
+        if menu_left + menu_w > right {
+            menu_left = card_left - gap - menu_w;
+        }
+        if menu_left < left {
+            menu_left = card_left + px * scale;
+        }
+        menu_left = menu_left.clamp(left, (right - menu_w).max(left));
+        menu_top = menu_top.clamp(top, (bottom - menu_h).max(top));
+    }
+
+    // 窗口 = 卡片 ∪ 面板；取整后所有偏移都相对同一个左上角，避免 1px 抖动。
+    let win_left = card_left.min(menu_left).round();
+    let win_top = card_top.min(menu_top).round();
+    let win_right = (card_left + side).max(menu_left + menu_w).round();
+    let win_bottom = (card_top + side).max(menu_top + menu_h).round();
+
+    ui.set_card_x((card_left - win_left) / scale);
+    ui.set_card_y((card_top - win_top) / scale);
+    ui.set_menu_x((menu_left - win_left) / scale);
+    ui.set_menu_y((menu_top - win_top) / scale);
+
+    window.set_position(PhysicalPosition::new(win_left as i32, win_top as i32));
+    window.set_size(slint::LogicalSize::new(
+        ((win_right - win_left) / scale).max(ui.get_card_side()),
+        ((win_bottom - win_top) / scale).max(ui.get_card_side()),
+    ));
+}
+
+/// 收起菜单：窗口缩回卡片大小，并挪到卡片当前所在的屏幕位置。
+fn close_menu(ui: &MainWindow) {
+    let window = ui.window();
+    let scale = window.scale_factor();
+    let pos = window.position();
+    let card_left = pos.x as f32 + ui.get_card_x() * scale;
+    let card_top = pos.y as f32 + ui.get_card_y() * scale;
+
+    ui.set_card_x(0.0);
+    ui.set_card_y(0.0);
+    let side = ui.get_card_side();
+    window.set_size(slint::LogicalSize::new(side, side));
+    window.set_position(PhysicalPosition::new(
+        card_left.round() as i32,
+        card_top.round() as i32,
+    ));
+}
+
+/// 当前窗口所在显示器的物理边界 `(left, top, right, bottom)`。
+///
+/// 取不到（窗口还没建好、或者不是 winit 后端）时返回 `None`，菜单就只按窗口内位置摆。
+fn monitor_rect(ui: &MainWindow) -> Option<(f32, f32, f32, f32)> {
+    use slint::winit_030::WinitWindowAccessor;
+
+    ui.window().with_winit_window(|winit_window| {
+        let monitor = winit_window.current_monitor()?;
+        let pos = monitor.position();
+        let size = monitor.size();
+        Some((
+            pos.x as f32,
+            pos.y as f32,
+            (pos.x + size.width as i32) as f32,
+            (pos.y + size.height as i32) as f32,
+        ))
+    })?
 }
 
 /// 缩放后的边长：按下点到当前点的位移取横纵较大者，再夹在上下限内。
@@ -194,10 +316,13 @@ mod tests {
     fn window_already_following_yields_no_movement() {
         let scale = 1.25;
         let origin = PhysicalPosition::new(100, 100);
-        let anchored = screen_cursor(origin, scale, 20.0, 20.0);
+        let anchored = screen_cursor(origin, scale, (0.0, 0.0), 20.0, 20.0);
 
         assert_eq!(
-            drag_delta(anchored, screen_cursor(origin, scale, 20.0, 20.0)),
+            drag_delta(
+                anchored,
+                screen_cursor(origin, scale, (0.0, 0.0), 20.0, 20.0)
+            ),
             (0, 0)
         );
     }
@@ -207,8 +332,8 @@ mod tests {
     fn delta_scales_with_dpi() {
         let scale = 1.25;
         let origin = PhysicalPosition::new(10, 20);
-        let prev = screen_cursor(origin, scale, 5.0, 5.0);
-        let now = screen_cursor(origin, scale, 45.0, 25.0);
+        let prev = screen_cursor(origin, scale, (0.0, 0.0), 5.0, 5.0);
+        let now = screen_cursor(origin, scale, (0.0, 0.0), 45.0, 25.0);
 
         assert_eq!(drag_delta(prev, now), (50, 25));
     }
@@ -220,11 +345,11 @@ mod tests {
     fn accumulated_delta_matches_total_travel() {
         let scale = 1.0;
         let mut origin = PhysicalPosition::new(0, 0);
-        let mut prev = screen_cursor(origin, scale, 10.0, 10.0);
+        let mut prev = screen_cursor(origin, scale, (0.0, 0.0), 10.0, 10.0);
         let mut total = (0, 0);
 
         for _ in 0..10 {
-            let now = screen_cursor(origin, scale, 14.0, 10.0);
+            let now = screen_cursor(origin, scale, (0.0, 0.0), 14.0, 10.0);
             let (dx, dy) = drag_delta(prev, now);
             origin = PhysicalPosition::new(origin.x + dx, origin.y + dy);
             total = (total.0 + dx, total.1 + dy);
