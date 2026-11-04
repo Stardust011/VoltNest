@@ -167,8 +167,8 @@ export component MainWindow inherits Window {
     callback resize-begin();
     callback resize-move(length, length);
     callback resize-end();
-    // 菜单展开：把「卡片内」的点击坐标交给 Rust，由它算窗口与面板的位置。
-    callback menu-open-requested(length, length);
+    // 菜单展开：把点击处的横坐标交给 Rust，由它算窗口与面板的位置。
+    callback menu-open-requested(length);
     // 菜单收起（点空白 / 再点右键 / 开始拖拽缩放）：Rust 据此把窗口缩回卡片大小。
     callback menu-closed();
     callback close-requested();
@@ -299,7 +299,7 @@ export component MainWindow inherits Window {
                     if (event.button == PointerEventButton.right
                         && root.inside-card(self.mouse-x, self.mouse-y)) {
                         root.menu-open = true;
-                        root.menu-open-requested(self.mouse-x, self.mouse-y);
+                        root.menu-open-requested(self.mouse-x);
                     } else if (event.button == PointerEventButton.left
                         && root.inside-card(self.mouse-x, self.mouse-y)) {
                         root.dragging = true;

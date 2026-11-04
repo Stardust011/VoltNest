@@ -159,9 +159,9 @@ const MENU_GAP: f32 = 8.0;
 /// 收起时窗口缩回卡片大小并挪回原位。
 fn install_menu(ui: &MainWindow) {
     let ui_weak = ui.as_weak();
-    ui.on_menu_open_requested(move |px: f32, py: f32| {
+    ui.on_menu_open_requested(move |px: f32| {
         if let Some(ui) = ui_weak.upgrade() {
-            open_menu(&ui, px, py);
+            open_menu(&ui, px);
         }
     });
 
@@ -173,9 +173,9 @@ fn install_menu(ui: &MainWindow) {
     });
 }
 
-/// 展开菜单：优先摆在卡片右侧、与点击处同高；右边放不下翻到左侧，两侧都放不下
-/// 就贴着点击点，最后统一夹进显示器范围。
-fn open_menu(ui: &MainWindow, px: f32, py: f32) {
+/// 展开菜单：面板与卡片顶边对齐，优先摆在卡片右侧；右边放不下翻到左侧，
+/// 两侧都放不下就贴着点击处，最后统一夹进显示器范围。
+fn open_menu(ui: &MainWindow, px: f32) {
     let window = ui.window();
     let scale = window.scale_factor();
     let pos = window.position();
@@ -188,7 +188,7 @@ fn open_menu(ui: &MainWindow, px: f32, py: f32) {
     let gap = MENU_GAP * scale;
 
     let mut menu_left = card_left + side + gap;
-    let mut menu_top = card_top + py * scale;
+    let mut menu_top = card_top;
     if let Some((left, top, right, bottom)) = monitor_rect(ui) {
         if menu_left + menu_w > right {
             menu_left = card_left - gap - menu_w;
