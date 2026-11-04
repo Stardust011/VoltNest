@@ -1,8 +1,8 @@
-//! 桌面悬浮窗：始终置顶、无边框、圆角正方形的毛玻璃卡片，支持鼠标拖拽移动。
+//! 桌面悬浮窗：始终置顶、无边框、圆角正方形的毛玻璃卡片，可拖拽移动、可拖右下角缩放。
 //!
 //! 运行：`cargo run -p voltnest-floating`。
-//! 窗口的置顶 / 无边框 / 透明 / 玻璃外观全部由 `ui/floating-window.slint` 声明，
-//! 本文件负责拖拽的坐标换算与数据绑定。
+//! 窗口的置顶 / 无边框 / 透明 / 玻璃外观 / 圆角命中判定全部由
+//! `ui/floating-window.slint` 声明，本文件负责拖拽与缩放的坐标换算、数据绑定。
 //!
 //! 关于「背景模糊」：Windows 11 的 DWM Acrylic（`DWMWA_SYSTEMBACKDROP_TYPE`）会铺满
 //! 整个窗口矩形且不理会逐像素 alpha，圆角处会露出方块状的模糊底，与卡片的圆角外形
@@ -34,6 +34,7 @@ fn main() {
     ui.show().expect("显示悬浮窗失败");
 
     install_drag(&ui);
+    install_resize(&ui);
     let _ticker = install_demo_data(&ui);
 
     log::info!("VoltNest 悬浮窗已启动");
@@ -87,6 +88,52 @@ fn screen_cursor(origin: PhysicalPosition, scale: f32, x: f32, y: f32) -> (f32, 
     (origin.x as f32 + x * scale, origin.y as f32 + y * scale)
 }
 
+/// 缩放边长下限 / 上限（逻辑像素）。
+const MIN_SIDE: f32 = 140.0;
+const MAX_SIDE: f32 = 520.0;
+
+/// 右下角缩放：窗口左上角固定，因此「指针相对窗口左上角的位移」直接等于尺寸增量。
+///
+/// 卡片是圆角正方形，缩放时保持长宽相等：取横纵位移中较大的一边作为边长增量，
+/// 拖右、拖下或斜拖都能按直觉放大。
+fn install_resize(ui: &MainWindow) {
+    let base = Rc::new(Cell::new(MIN_SIDE));
+    let anchor: Rc<Cell<Option<(f32, f32)>>> = Rc::new(Cell::new(None));
+
+    let anchor_begin = anchor.clone();
+    ui.on_resize_begin(move || anchor_begin.set(None));
+
+    let anchor_end = anchor.clone();
+    ui.on_resize_end(move || anchor_end.set(None));
+
+    let anchor_move = anchor;
+    let base_move = base.clone();
+    let ui_weak = ui.as_weak();
+    ui.on_resize_move(move |x: f32, y: f32| {
+        let Some(ui) = ui_weak.upgrade() else {
+            return;
+        };
+        let window = ui.window();
+        let size = window.size();
+        let scale = window.scale_factor();
+
+        // 第一次移动时记下基准尺寸与按下点；之后都以它们为原点计算总增量。
+        if anchor_move.get().is_none() {
+            base_move.set(size.width as f32 / scale);
+        }
+        let start = anchor_move.get().unwrap_or((x, y));
+        anchor_move.set(Some(start));
+
+        let side = resized_side(base_move.get(), start, (x, y));
+        window.set_size(slint::LogicalSize::new(side, side));
+    });
+}
+
+/// 缩放后的边长：按下点到当前点的位移取横纵较大者，再夹在上下限内。
+fn resized_side(base: f32, start: (f32, f32), now: (f32, f32)) -> f32 {
+    (base + (now.0 - start.0).max(now.1 - start.1)).clamp(MIN_SIDE, MAX_SIDE)
+}
+
 /// 本帧窗口需要移动的物理像素增量。
 fn drag_delta(prev: (f32, f32), now: (f32, f32)) -> (i32, i32) {
     (
@@ -122,6 +169,20 @@ fn install_demo_data(ui: &MainWindow) -> Timer {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 缩放按横纵位移中较大的一边计算边长，按住右下角斜拖最直观。
+    #[test]
+    fn resize_takes_the_larger_axis() {
+        assert_eq!(resized_side(180.0, (170.0, 170.0), (250.0, 240.0)), 260.0);
+        assert_eq!(resized_side(180.0, (170.0, 170.0), (200.0, 300.0)), 310.0);
+    }
+
+    /// 边长被夹在上下限之间，向左上拖不会小于下限。
+    #[test]
+    fn resize_is_clamped() {
+        assert_eq!(resized_side(180.0, (170.0, 170.0), (0.0, 0.0)), MIN_SIDE);
+        assert_eq!(resized_side(500.0, (0.0, 0.0), (900.0, 900.0)), MAX_SIDE);
+    }
 
     /// 窗口已经跟到指针位置时，相对坐标不变，增量必须为 0（否则会抖或漂移）。
     #[test]
