@@ -92,8 +92,8 @@ fn screen_cursor(origin: PhysicalPosition, scale: f32, x: f32, y: f32) -> (f32, 
 
 /// 卡片初始边长（逻辑像素）。
 const DEFAULT_SIDE: f32 = 180.0;
-/// 缩放边长下限 / 上限（逻辑像素）。
-const MIN_SIDE: f32 = 140.0;
+/// 缩放边长下限 / 上限（逻辑像素）。下限放到 88，卡面只有图标，小尺寸仍看得清。
+const MIN_SIDE: f32 = 88.0;
 const MAX_SIDE: f32 = 520.0;
 
 /// 右下角缩放：窗口左上角固定，因此「指针相对窗口左上角的位移」直接等于尺寸增量。
