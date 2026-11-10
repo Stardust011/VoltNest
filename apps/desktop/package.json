@@ -22,7 +22,7 @@
     "tauri": "tauri"
   },
   "dependencies": {
-    "@lucide/vue": "^1.62.0",
+    "@lucide/vue": "^1.67.0",
     "@tauri-apps/api": "^2.1.1",
     "@vueuse/core": "^15.0.0",
     "class-variance-authority": "^0.7.1",
@@ -33,16 +33,16 @@
     "vue": "^3.5.13"
   },
   "devDependencies": {
-    "@tailwindcss/vite": "^4.3.3",
+    "@tailwindcss/vite": "^4.3.4",
     "@tauri-apps/cli": "^2.1.0",
-    "@types/node": "^26.6.5",
+    "@types/node": "^26.6.6",
     "@vitejs/plugin-vue": "^6.0.10",
     "prettier": "^3.9.10",
     "prettier-plugin-tailwindcss": "^0.8.1",
-    "tailwindcss": "^4.3.3",
+    "tailwindcss": "^4.3.4",
     "typescript": "^6.0.3",
     "vite": "^8.3.5",
-    "vitest": "^5.0.5",
-    "vue-tsc": "^3.3.13"
+    "vitest": "^5.1.0",
+    "vue-tsc": "^3.3.14"
   }
 }
