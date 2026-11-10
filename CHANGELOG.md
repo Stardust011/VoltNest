@@ -1,5 +1,37 @@
 # Changelog
 
+## [0.5.0](https://github.com/Stardust011/VoltNest/compare/v0.4.0...v0.5.0) (2026-11-10)
+
+
+### 新功能
+
+* **core:** 快照单元增加 anchor_id 作为悬浮窗锚点 ([8e890d5](https://github.com/Stardust011/VoltNest/commit/8e890d564af66860598e1109572d41ffcb081ac7))
+* **desktop:** 接入悬浮窗宿主进程与托盘入口 ([c8c9428](https://github.com/Stardust011/VoltNest/commit/c8c942844428e6afa2c44e832765a4c9770aae38))
+* **desktop:** 设备卡片支持单独开关悬浮窗 ([fe854cc](https://github.com/Stardust011/VoltNest/commit/fe854cc2b71326e1a18f9dc5af905545fffbffda))
+* **floating:** 关闭按钮移到卡片右上角外侧，悬停浮出淡红圆 ([d98b7dc](https://github.com/Stardust011/VoltNest/commit/d98b7dc0b817b8acae0787f734502252a00bc71c))
+* **floating:** 卡面只留圆环与类型图标，关闭与详情改走右键菜单 ([e30b595](https://github.com/Stardust011/VoltNest/commit/e30b5953dd177b805d830ccff70aede81fb43525))
+* **floating:** 右键菜单改为自绘面板，新增透明度滑块 ([09f658a](https://github.com/Stardust011/VoltNest/commit/09f658a98bd90d4a4b9ecc42d92e0bde2bdcc0e9))
+* **floating:** 合并桌面悬浮窗功能 ([6b32adb](https://github.com/Stardust011/VoltNest/commit/6b32adb7b05d54248fb188a849199f9045ba49ae))
+* **floating:** 拆成多窗口库，支持宿主托管与 NDJSON 协议 ([aa6f906](https://github.com/Stardust011/VoltNest/commit/aa6f906f5fb78ed4fd0af72e4a6ac30f668bf9a2))
+* **floating:** 拖拽范围贴合可见卡片，右下角支持缩放 ([5be3428](https://github.com/Stardust011/VoltNest/commit/5be3428afb581b31fc9fec2ae0d8abbcea9506a0))
+* **floating:** 新增置顶无边框毛玻璃悬浮窗 ([4de55dd](https://github.com/Stardust011/VoltNest/commit/4de55ddd28bfade60ec99f215c38424226fff422))
+* **storage:** 新增悬浮窗布局与显隐设置 ([17dc14e](https://github.com/Stardust011/VoltNest/commit/17dc14ea53573e2ae14f59d2ca780a88892869bb))
+
+
+### 构建
+
+* **deps:** bump the rust group with 2 updates ([#13](https://github.com/Stardust011/VoltNest/issues/13)) ([f29c422](https://github.com/Stardust011/VoltNest/commit/f29c42223cce0be9785829f2959d1a43024ba89a))
+* **deps:** bump the web group with 6 updates ([#14](https://github.com/Stardust011/VoltNest/issues/14)) ([5bac4dd](https://github.com/Stardust011/VoltNest/commit/5bac4dd53cc522ac416994fc02b856eb37b10f82))
+
+
+### 样式
+
+* **floating:** 关闭按钮移到左上角，悬停才显形 ([b2bed72](https://github.com/Stardust011/VoltNest/commit/b2bed72d185a5377387d3f60bd36f96906fb9b67))
+* **floating:** 卡片改圆角正方形，图标改圆环 + 设备标志 ([4416996](https://github.com/Stardust011/VoltNest/commit/4416996e435c1e6024a449a78ae78050e51516e1))
+* **floating:** 右键面板与卡片顶边对齐 ([dda3d9c](https://github.com/Stardust011/VoltNest/commit/dda3d9c54da7d23c14bf45352e6f4436103f5146))
+* **floating:** 放大圆环与类型图标，最小尺寸放宽到 88 ([880bd4c](https://github.com/Stardust011/VoltNest/commit/880bd4ce3782bc21e322c244f45186ea88d58d53))
+* **floating:** 详细信息改成右键菜单里的平铺条目 ([ef81f4e](https://github.com/Stardust011/VoltNest/commit/ef81f4e670ed0dee42cbbfe11795c29c9d29617d))
+
 ## [0.4.0](https://github.com/Stardust011/VoltNest/compare/v0.3.1...v0.4.0) (2026-11-03)
 
 
