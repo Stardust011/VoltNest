@@ -8,7 +8,17 @@ targets = [
 
 [advisories]
 version = 2
-unmaintained = "none"
+unmaintained = "all"
+# These are transitive dependencies with no maintained compatible replacement
+# in the current Slint/Tauri Linux stacks; keep checking all other advisories.
+ignore = [
+  "RUSTSEC-2024-0370", # proc-macro-error
+  "RUSTSEC-2026-0192", # ttf-parser
+  "RUSTSEC-2026-0370", # zvariant
+  "RUSTSEC-2026-0371", # zbus_names
+  "RUSTSEC-2026-0372", # zvariant_derive
+  "RUSTSEC-2026-0441", # pin-utils
+]
 
 [bans]
 multiple-versions = "warn"
