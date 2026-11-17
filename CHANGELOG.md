@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.5.1](https://github.com/Stardust011/VoltNest/compare/v0.5.0...v0.5.1) (2026-11-17)
+
+
+### 构建
+
+* **deps:** bump the rust group with 2 updates ([#16](https://github.com/Stardust011/VoltNest/issues/16)) ([ea79541](https://github.com/Stardust011/VoltNest/commit/ea7954179d1b44cbd1d221b0a02c4064ad01a095))
+* **deps:** bump the web group with 5 updates ([#15](https://github.com/Stardust011/VoltNest/issues/15)) ([6cd6007](https://github.com/Stardust011/VoltNest/commit/6cd6007c1745f8d3ccb6a4d750909c994e157e44))
+* **deps:** update dependencies for cargo-deny compliance ([#17](https://github.com/Stardust011/VoltNest/issues/17)) ([d50cde5](https://github.com/Stardust011/VoltNest/commit/d50cde5eb1fd20737972c125bd599ea65b4bac8a))
+
 ## [0.5.0](https://github.com/Stardust011/VoltNest/compare/v0.4.0...v0.5.0) (2026-11-10)
 
 
