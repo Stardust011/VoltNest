@@ -21,4 +21,4 @@ serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 
 [build-dependencies]
-slint-build = ">=1.18.1"
+slint-build = ">=1.19.0"
