@@ -22,7 +22,7 @@ voltnest-floating = { path = "crates/voltnest-floating" }
 serde = { version = ">=1.0.229", features = ["derive"] }
 serde_json = { version = ">=1.0.154", features = ["preserve_order"] }
 log = ">=0.4.34"
-slint = ">=1.18.1"
+slint = ">=1.19.0"
 
 [profile.release]
 codegen-units = 1
@@ -31,4 +31,3 @@ opt-level = "s"
 strip = "symbols"
 # 不要设置 panic = "abort"：采集线程靠 catch_unwind 做故障隔离，
 # unwind 表被裁掉后单个 transport 的 panic 会直接带走整个进程。
-
