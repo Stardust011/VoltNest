@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.5.1](https://github.com/Stardust011/VoltNest/compare/v0.5.0...v0.5.1) (2026-11-25)
+
+
+### 构建
+
+* **deps:** bump 依赖组（[#15](https://github.com/Stardust011/VoltNest/issues/15)、[#16](https://github.com/Stardust011/VoltNest/issues/16)、[#19](https://github.com/Stardust011/VoltNest/issues/19)、[#20](https://github.com/Stardust011/VoltNest/issues/20)） ([d5d9447](https://github.com/Stardust011/VoltNest/commit/d5d9447b66a5ca4aa5e081e8fad50e1270774669))
+* **deps:** update dependencies for cargo-deny compliance ([#17](https://github.com/Stardust011/VoltNest/issues/17)) ([715847a](https://github.com/Stardust011/VoltNest/commit/715847a0ec744d10fbe4f0748c85faabbfa18e57))
+
 ## [0.5.0](https://github.com/Stardust011/VoltNest/compare/v0.4.0...v0.5.0) (2026-11-10)
 
 
