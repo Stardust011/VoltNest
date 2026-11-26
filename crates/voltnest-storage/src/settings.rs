@@ -164,22 +164,22 @@ impl DeviceSettings {
         self.normalize();
     }
 
-    /// 新建合并组：任一成员已在别的合并组里则失败（不静默抢走别人的成员）。
+    /// 合并：`primary` 已在某个合并组里时把 `members` 并入该组（组锚点与现有成员保留），
+    /// 否则新建合并组。来自别的组的成员一律拒绝（不静默抢走别人的成员）。
     pub fn merge(&mut self, primary: &str, members: &[String], name: &str) -> Result<(), String> {
-        let mut all = vec![primary.to_string()];
+        let group_idx = self
+            .merges
+            .iter()
+            .position(|group| group.members.iter().any(|id| id == primary));
+        let mut all = match group_idx {
+            Some(index) => self.merges[index].members.clone(),
+            None => vec![primary.to_string()],
+        };
         for id in members {
-            if id == primary {
-                return Err("不能把设备与自身合并".to_string());
-            }
-            if all.contains(id) {
+            // 已在组内（含主设备本身）视为已并入，重复提交保持幂等。
+            if id == primary || all.contains(id) {
                 continue;
             }
-            all.push(id.clone());
-        }
-        if all.len() < 2 {
-            return Err("至少需要两台设备才能合并".to_string());
-        }
-        for id in &all {
             if self.is_removed(id) {
                 return Err(format!("设备 {id} 已被删除，请先添加"));
             }
@@ -193,23 +193,36 @@ impl DeviceSettings {
                     }
                 ));
             }
+            all.push(id.clone());
+        }
+        if all.len() < 2 {
+            return Err("至少需要两台设备才能合并".to_string());
         }
         let trimmed = name.trim();
-        self.merges.push(MergeGroup {
-            primary: primary.to_string(),
-            members: all,
-            name: if trimmed.is_empty() {
-                primary.to_string()
-            } else {
-                trimmed.to_string()
-            },
-            extra: Map::new(),
-        });
+        match group_idx {
+            // 追加成员时只有显式改名才覆盖原合并名。
+            Some(index) => {
+                self.merges[index].members = all;
+                if !trimmed.is_empty() {
+                    self.merges[index].name = trimmed.to_string();
+                }
+            }
+            None => self.merges.push(MergeGroup {
+                primary: primary.to_string(),
+                members: all,
+                name: if trimmed.is_empty() {
+                    primary.to_string()
+                } else {
+                    trimmed.to_string()
+                },
+                extra: Map::new(),
+            }),
+        }
         self.normalize();
         Ok(())
     }
 
-    /// 分离以 `primary` 为锚点的合并组；返回是否真的存在。
+    /// 分离整组：按锚点解散，所有成员一起散开；返回是否真的存在。
     pub fn separate(&mut self, primary: &str) -> bool {
         let before = self.merges.len();
         self.merges.retain(|group| group.primary != primary);
@@ -888,21 +901,82 @@ mod tests {
         let a = "hid:1111:0001".to_string();
         let b = "ble:02:00:00:00:00:01".to_string();
 
-        d.merge(&a, std::slice::from_ref(&b), "桌面").unwrap();
-        assert_eq!(d.group_of(&b).map(|g| g.primary.as_str()), Some(a.as_str()));
-        assert!(
-            d.merge(&a, std::slice::from_ref(&b), "再来一次").is_err(),
-            "重复合并应失败"
-        );
+        // 未成组时：只有自己、或没有其它设备，都凑不出两台。
         assert!(
             d.merge(&a, std::slice::from_ref(&a), "自己").is_err(),
             "自己合并自己应失败"
         );
         assert!(d.merge(&a, &[], "少一台").is_err());
 
+        d.merge(&a, std::slice::from_ref(&b), "桌面").unwrap();
+        assert_eq!(d.group_of(&b).map(|g| g.primary.as_str()), Some(a.as_str()));
+        d.merge(&a, std::slice::from_ref(&b), "再来一次").unwrap();
+        assert_eq!(
+            d.group_of(&a).map(|g| g.members.len()),
+            Some(2),
+            "重复合并应幂等"
+        );
+
         assert!(d.separate(&a));
         assert!(!d.separate(&a), "重复分离应返回 false");
         assert!(d.group_of(&a).is_none());
+    }
+
+    #[test]
+    fn merge_accepts_more_than_two_members() {
+        let mut d = DeviceSettings::default();
+        let a = "hid:1111:0001".to_string();
+        let b = "ble:02:00:00:00:00:01".to_string();
+        let c = "hid:2222:0002".to_string();
+
+        d.merge(&a, &[b.clone(), c.clone()], "三台").unwrap();
+        let group = d.group_of(&c).expect("第三台应进组");
+        assert_eq!(group.primary, a);
+        assert_eq!(group.members.len(), 3);
+        assert_eq!(d.group_of(&b).map(|g| g.members.len()), Some(3));
+
+        assert!(d.separate(&a), "一次分离解散整组");
+        assert!(d.group_of(&a).is_none());
+        assert!(d.group_of(&b).is_none());
+        assert!(d.group_of(&c).is_none());
+    }
+
+    #[test]
+    fn merge_appends_to_existing_group() {
+        let mut d = DeviceSettings::default();
+        let a = "hid:1111:0001".to_string();
+        let b = "ble:02:00:00:00:00:01".to_string();
+        let c = "hid:2222:0002".to_string();
+        let e = "hid:3333:0003".to_string();
+        let f = "ble:02:00:00:00:00:02".to_string();
+
+        d.merge(&a, std::slice::from_ref(&b), "桌面").unwrap();
+        // 空名称沿用原合并名，锚点不变。
+        d.merge(&a, std::slice::from_ref(&c), "").unwrap();
+        let group = d.group_of(&c).expect("第三台应并入原组");
+        assert_eq!(group.primary, a);
+        assert_eq!(group.name, "桌面");
+        assert_eq!(group.members.len(), 3);
+        assert_eq!(d.merges.len(), 1, "并入不能新增合并组");
+
+        // 显式改名才覆盖。
+        d.merge(&a, &[], "新名").unwrap();
+        assert_eq!(d.group_of(&b).map(|g| g.name.clone()), Some("新名".into()));
+
+        // 来自别的组的成员仍然拒绝。
+        d.merge(&e, std::slice::from_ref(&f), "耳机").unwrap();
+        assert!(
+            d.merge(&a, std::slice::from_ref(&e), "抢成员").is_err(),
+            "跨组合并应失败"
+        );
+
+        assert!(d.separate(&a));
+        assert!(d.group_of(&a).is_none() && d.group_of(&b).is_none() && d.group_of(&c).is_none());
+        assert_eq!(
+            d.group_of(&e).map(|g| g.members.len()),
+            Some(2),
+            "其它组不受影响"
+        );
     }
 
     #[test]

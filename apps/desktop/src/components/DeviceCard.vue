@@ -181,11 +181,11 @@ const secondary = computed(() => {
       </ContextMenuItem>
       <ContextMenuItem :disabled="!canMerge" @select="emit('merge')">
         <Link2 aria-hidden="true" />
-        与其它设备合并
+        {{ userMerged ? "追加设备到合并组" : "与其它设备合并" }}
       </ContextMenuItem>
       <ContextMenuItem v-if="card" @select="emit('separate')">
         <Split aria-hidden="true" />
-        {{ userMerged ? "分离合并" : "分离设备" }}
+        {{ userMerged ? "解散合并" : "分离设备" }}
       </ContextMenuItem>
       <ContextMenuSeparator />
       <ContextMenuItem variant="destructive" @select="emit('remove')">

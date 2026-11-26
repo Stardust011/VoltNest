@@ -156,10 +156,8 @@ const rows = computed<Row[]>(() => {
       deviceId: device.stableId,
       card,
       inactiveText: card?.inactiveMemberText,
-      // 已合并的卡片先分离才能再合并：菜单项按此置灰，避免点了才报错。
-      canMerge:
-        card?.userMerged !== true &&
-        visibleIds.some((id) => !members.has(id) && !claimedByUser.has(id)),
+      // 已合并的卡片可以直接追加设备：并入同一组，解散时整组一起散开。
+      canMerge: visibleIds.some((id) => !members.has(id) && !claimedByUser.has(id)),
     });
   }
   return result;
@@ -194,6 +192,8 @@ const addOpen = ref(false);
 const mergeSource = ref<{
   primary: { id: string; name: string };
   others: Array<{ id: string; name: string }>;
+  /** 锚点已在用户合并组里：并入该组而不是新建。 */
+  merged: boolean;
 } | null>(null);
 /** 改名对话框的入参。 */
 const renameTarget = ref<{ target: string; value: string; merged: boolean } | null>(null);
@@ -234,6 +234,7 @@ function openMerge(row: Row) {
   mergeSource.value = {
     primary: { id: row.deviceId, name: rowLabel(row) },
     others,
+    merged: row.card?.userMerged === true,
   };
 }
 
@@ -626,6 +627,7 @@ onBeforeUnmount(() => {
       v-if="mergeSource"
       :primary="mergeSource.primary"
       :others="mergeSource.others"
+      :merged="mergeSource.merged"
       @close="mergeSource = null"
       @merged="
         mergeSource = null;
